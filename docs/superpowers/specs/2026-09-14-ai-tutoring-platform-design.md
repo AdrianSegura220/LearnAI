@@ -239,8 +239,45 @@ p_expected = 1 / (1 + exp(-(strength - item.difficulty) / SCALE))
 strength'  = strength + K * w * (outcome - p_expected)
 ```
 
-`w` is the evidence weight (§8.2). Item difficulty updates symmetrically with a smaller constant,
-and only once its template has accumulated a minimum response count.
+**Units.** Strength and difficulty share one latent scale, and only their difference enters the
+formula, so the units are a free choice — and choosing them *is* choosing `SCALE`. Use **logits**
+(`SCALE = 1`, the Rasch/1PL convention), because the numbers then mean something:
+
+| `strength − difficulty` | −2 | −1 | 0 | +1 | +2 | +3 |
+|---|---|---|---|---|---|---|
+| `p_expected` | 0.12 | 0.27 | 0.50 | 0.73 | 0.88 | 0.95 |
+
+Both quantities are unbounded in principle and sit in roughly `[−4, +4]` in practice. This is what
+makes the §7.3 mastery threshold expressible as *"1.5 logits above the skill's core difficulty
+band"* — i.e. ~82% expected success on a core item — rather than as an uninterpretable constant.
+The scale is **per skill**: `difficulty = 0` means a median item *for that skill*, so strengths on
+different skills are not comparable. If Elo-style display numbers are ever wanted, convert at the
+presentation layer (`SCALE = 400/ln(10) ≈ 173.7`); never store display units.
+
+**The three multipliers.**
+
+- `outcome ∈ {0, 1}` — did the attempt succeed. Binary, deliberately. A correct method with an
+  arithmetic slip is a 0; the error *type* is recorded separately for diagnosis and misconception
+  tracking, where it is useful, rather than blurred into the competence estimate as partial credit.
+- `K` — step size, in logits; the **statistical** dial, governing how fast any estimate may move.
+  ≈0.3–0.5 early, decayed with observation count (`K = K₀ / (1 + c·n)`) so estimates adapt quickly
+  when little is known and stabilise once well-determined.
+- `w` — evidence weight (§8.2); the **policy** dial, governing how much *this* observation is
+  permitted to count: `unassisted_cold` and `timed_exam` → 1.0, `post_instruction` → ≈0.1,
+  `assisted` → **0.0**. Principle P2 is arithmetic, not prose: an assisted attempt multiplies to
+  exactly zero change.
+
+`(outcome − p_expected)` is the *surprise* term — the estimate moves only insofar as reality
+differed from prediction, so a correct answer on a hard item moves strength far more than a
+correct answer on an easy one, and neither moves it much once the model already expected that
+result.
+
+**Identifiability.** Adding a constant to every strength and every difficulty leaves all
+predictions unchanged, so a model where both sides update is unidentified up to a shift, and
+difficulty values will drift as the population improves. Anchor it: freeze difficulty for a seed
+set of items per skill, or periodically re-centre each skill's item difficulties to mean zero.
+Item difficulty otherwise updates symmetrically with a smaller constant, and only once its
+template has accumulated a minimum response count.
 
 ### 7.2 Stability — half-life with a spacing effect
 
