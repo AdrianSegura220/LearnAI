@@ -521,7 +521,17 @@ ModeContract(
   tutoring continues in full. The escape hatch offered first is always "drop to the
   prerequisite"; a full reveal is never offered, and unlocks only when the student asks for it
   after documented effort — at least two genuine attempts with the hint ladder exhausted — and it
-  carries the fresh-variant price, so nothing is credited until they clear a new variant cold.
+  carries the **fresh-variant price**: the engine immediately serves a new instance of the same
+  skill (same generator, different parameters) which the student must solve unaided.
+
+  That immediate variant is the *price*, not the *evidence*. Served in the same session as the
+  reveal, it classes as `post_instruction` under §8.2 and barely moves mastery — by P5, succeeding
+  minutes after seeing a solution demonstrates working memory, not learning. Its purpose is to
+  convert a passively received solution into an act of construction. The evidence comes from a
+  further variant the reveal **queues for a later session**, where a cold success counts in full.
+  A variant rather than a repeat of the same problem, because re-solving the identical item would
+  measure recall of a remembered procedure instead of the skill — which is exactly what generators
+  (§6.2) make free.
 - **Review** — the spaced mode. Mixes Cards (declarative retrieval) with fresh generator variants
   (procedural re-checks). This is the flashcard experience, driven by the same scheduler as
   everything else rather than living in a silo.
