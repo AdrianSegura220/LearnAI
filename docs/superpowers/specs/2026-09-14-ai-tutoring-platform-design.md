@@ -292,6 +292,34 @@ first success: stability  = S_0                              # ≈ 1 day
 Retrieval at low retrievability strengthens more than retrieval at high retrievability — the
 spacing effect, and the same reason `post_instruction` evidence earns almost nothing.
 
+**Units.** `t` is the evaluation instant — normally *now*, supplied by the `Clock` port.
+`t − last_success_at` is **elapsed wall-clock time in days, as a float**, matching `stability`,
+which is a half-life in days; the ratio is dimensionless, so the two must share units. Fractional
+days matter — two retrievals in one afternoon are not two retrievals on consecutive days — so
+store UTC instants and subtract, never quantise to calendar days. Elapsed time is wall-clock, not
+study time: memory decays on the days a student does not open the app.
+
+**The half-life is not the review interval.** With `R_TARGET = 0.9`, the interval to the next
+review is `stability × log₂(1/0.9) ≈ 0.152 × stability`:
+
+| `stability` | interval at 90% target retention |
+|---|---|
+| 1 day | ~3.6 hours |
+| 10 days | 1.5 days |
+| 60 days | 9 days |
+| 180 days | 27 days |
+| 365 days | 55 days |
+
+Intervals lengthen because stability grows multiplicatively on each successful retrieval, not
+because the target moves. A student experiences "this keeps coming back less often"; the engine
+holds recall probability roughly constant.
+
+**Known simplification.** A constant half-life decays faster in the long tail than human
+forgetting actually does — the empirical curve is closer to a power law, which is what FSRS uses.
+The exponential form is adequate to start and far easier to reason about, and replacing it later
+means changing one function and replaying the evidence log. This is precisely the scenario P6
+exists for.
+
 ### 7.3 Derived states
 
 ```python
