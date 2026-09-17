@@ -500,12 +500,12 @@ ModeContract(
   reveal_price,             # none | self_explain | fresh_variant_cold
   evidence_weight,
   min_vetting_level,
-  interrupt_policy,         # let_run | immediate | by_error_type | never
+  intervention_timing,      # let_run | immediate | by_error_type | never
   timed, mixes_skills,
 )
 ```
 
-| Mode | Base rung | Full reveal | Price | Evidence | Interrupt |
+| Mode | Base rung | Full reveal | Price | Evidence | Intervention |
 |---|---|---|---|---|---|
 | **Learn** | full_reveal | — | self_explain | `post_instruction` (≈0.1) | let_run |
 | **Practice** | name_method | after ≥2 genuine attempts and ladder exhausted | fresh_variant_cold | `unassisted_cold` → 1.0 | let_run |
@@ -574,13 +574,28 @@ This is the *assistance dilemma* (Koedinger & Aleven) resolved contingently rath
 rule. It is also why the mastery model is not merely a progress bar — it is the input that decides
 how the tutor behaves.
 
-### 8.4 Error interruption
+### 8.4 Intervention timing and lapses
 
 When the CAS detects that equivalence broke at a step, the tutor stays quiet for a step or two and
 lets the student meet the contradiction themselves, then walks back to where the error entered.
 This matches observed expert-tutor behaviour and preserves the productive-failure benefit.
-Mock exam never interrupts; Review interrupts immediately, because review items are short and
-compounding a misconception there is pure loss.
+`intervention_timing` governs only **when the tutor speaks about a wrong step inside a problem**.
+It never ends a task or a session: a wrong answer closes the item, records the evidence, and the
+session proceeds to the next task.
+
+Mock exam is `never` — no feedback of any kind during the exam, as in the real thing. Review is
+`immediate`, because review items are short, often single-step, and there is no later contradiction
+for the student to discover; letting a broken two-line derivation run has no productive-failure
+value.
+
+**A Review lapse schedules; it does not tutor.** At most one nudge and a retry; if the item is
+still wrong, show the correction briefly, mark the lapse (stability × `F`, §7.2), and move on. A
+student may explicitly choose "work on this now", which switches modes into Practice on that skill
+— but it is never automatic. The reason is tempo: a ten-minute review session containing three
+lapses must not become a forty-minute tutoring session, because a student who learns that reviews
+are unpredictably long stops doing them, and retention is the entire purpose of the mode. Skills
+that lapse repeatedly are returned to the frontier by the repair-before-advance rule (§7.6), which
+is where the real relearning belongs.
 
 ### 8.5 Planning
 
@@ -828,7 +843,7 @@ These are recorded deliberately, each with the trigger that will force a decisio
 | Competence model | Elo over BKT | Works from the first attempt with no fitted parameters; co-estimates item difficulty |
 | Memory model | Half-life with spacing effect | Drives both scheduling and the honest freshness display from one quantity |
 | Tutor policy | Contingent generosity with priced reveals | Expert tutors explain freely; the research (VanLehn, Chi ICAP, worked-example/expertise reversal) says granularity of interaction matters more than withholding. Integrity is carried by the unassisted gate, so the tutor can be warm |
-| Error interruption | Let it run, then backtrack | Matches expert-tutor behaviour; preserves productive failure and the skill of self-catching |
+| Intervention timing | Let it run, then backtrack (Review excepted) | Matches expert-tutor behaviour; preserves productive failure and the skill of self-catching |
 | Answer-withholding enforcement | CAS LeakGuard | A prompt instruction is a hope; a deterministic check is a fact |
 | Content | Generators + CAS, LLM for the long tail | Ground-truth answers, unlimited variants, zero serve cost, where it matters most |
 | Curriculum | Dependency graph with course overlays | Curriculum-agnostic core, curriculum-specific presentation |
