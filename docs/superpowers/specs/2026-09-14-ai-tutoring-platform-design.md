@@ -322,6 +322,21 @@ Intervals lengthen because stability grows multiplicatively on each successful r
 because the target moves. A student experiences "this keeps coming back less often"; the engine
 holds recall probability roughly constant.
 
+**`R_TARGET` is the retention-versus-effort dial**, and the single most consequential scheduling
+parameter. It fixes what fraction of a half-life elapses before the next review:
+
+| `R_TARGET` | interval | consequence |
+|---|---|---|
+| 0.95 | 0.074 × stability | frequent reviews, few lapses, high time cost |
+| 0.90 | 0.152 × stability | the default; Anki's long-standing choice |
+| 0.85 | 0.234 × stability | ~50% longer intervals, noticeably more lapses |
+| 0.80 | 0.322 × stability | double the default interval |
+| 0.50 | 1.00 × stability | review at the half-life; half of all reviews fail |
+
+It need not be global. Raising it for exam-blueprint skills inside the exam horizon (§7.6) buys
+confidence exactly where it matters; lowering it for long-consolidated maintenance material buys
+session time back. Treat it as a per-skill policy value, not a constant.
+
 **A trajectory.** Reviewed on time at the 90% target, each success multiplies stability by
 `1 + A × (1 − retrievability)`; with `A = 5` that is a constant ×1.5 per review. Starting from
 `S_0 = 1` day:
