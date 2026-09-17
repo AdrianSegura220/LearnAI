@@ -337,6 +337,17 @@ It need not be global. Raising it for exam-blueprint skills inside the exam hori
 confidence exactly where it matters; lowering it for long-consolidated maintenance material buys
 session time back. Treat it as a per-skill policy value, not a constant.
 
+**`R_TARGET` is measurable, not merely tunable**, and it is the primary monitoring signal for the
+memory model. It is a prediction about the system's own behaviour: if stability is calibrated, the
+observed success rate on scheduled reviews should equal `R_TARGET`. Reviews failing materially
+more often than `1 − R_TARGET` mean stability is running high and intervals are too long; failing
+far less often means the student is being reviewed more than necessary. Track this per skill and
+in aggregate.
+
+Note also that raising `R_TARGET` is not straightforwardly better: knowledge retained per minute
+of study peaks at an intermediate value, since a very high target spends most of the session
+re-reviewing well-consolidated material. Fit it from data rather than assuming.
+
 **A trajectory.** Reviewed on time at the 90% target, each success multiplies stability by
 `1 + A × (1 − retrievability)`; with `A = 5` that is a constant ×1.5 per review. Starting from
 `S_0 = 1` day:
