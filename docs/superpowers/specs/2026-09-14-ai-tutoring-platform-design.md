@@ -292,6 +292,14 @@ first success: stability  = S_0                              # ≈ 1 day
 Retrieval at low retrievability strengthens more than retrieval at high retrievability — the
 spacing effect, and the same reason `post_instruction` evidence earns almost nothing.
 
+**What stability means.** Strength (§7.1) and stability answer different questions. Strength is
+whether the student can do it at all when fresh — competence, which does not decay. Stability is
+how long that competence survives without practice — durability, expressed as the number of days
+for recall probability to fall to 50%. A student can be strong but unstable (learned it properly
+yesterday, will have lost it by next month) or weak but stable (they will not forget the little
+they do have), which is why one number cannot carry both. Stability is never observed directly;
+it is inferred from successes and failures at varying delays.
+
 **Units.** `t` is the evaluation instant — normally *now*, supplied by the `Clock` port.
 `t − last_success_at` is **elapsed wall-clock time in days, as a float**, matching `stability`,
 which is a half-life in days; the ratio is dimensionless, so the two must share units. Fractional
@@ -313,6 +321,34 @@ review is `stability × log₂(1/0.9) ≈ 0.152 × stability`:
 Intervals lengthen because stability grows multiplicatively on each successful retrieval, not
 because the target moves. A student experiences "this keeps coming back less often"; the engine
 holds recall probability roughly constant.
+
+**A trajectory.** Reviewed on time at the 90% target, each success multiplies stability by
+`1 + A × (1 − retrievability)`; with `A = 5` that is a constant ×1.5 per review. Starting from
+`S_0 = 1` day:
+
+| Successful reviews | `stability` | gap to the next review |
+|---|---|---|
+| 1 | 1.0 d | 3.6 hours |
+| 3 | 2.3 d | 8 hours |
+| 5 | 5.1 d | 19 hours |
+| 6 | 7.6 d | 1.2 days |
+| 8 | 17 d | 2.6 days |
+| 10 | 38 d | 6 days |
+| 12 | 87 d | 13 days |
+| 14 | 195 d | 30 days |
+
+Fourteen successful retrievals carry a skill from "gone by tomorrow" to monthly upkeep — a
+plausible arc across a school year. Same-day repetition early is correct, not a defect: freshly
+learned material genuinely needs it.
+
+Two asymmetries fall out of the same rule. A **late** successful review earns more, because
+retrievability has fallen further — at `R = 0.6` the multiplier is ×3.0 rather than ×1.5, so a
+student who returns after a gap and still remembers is rewarded for the harder retrieval. A
+**failure** multiplies by `F ≈ 0.3`, dropping roughly three reviews' worth of progress and
+returning the skill to short intervals until it is re-earned.
+
+`A`, `F`, `S_0` and `R_TARGET` are shapes here, not tuned values; they require fitting against
+real response data (§14).
 
 **Known simplification.** A constant half-life decays faster in the long tail than human
 forgetting actually does — the empirical curve is closer to a power law, which is what FSRS uses.
