@@ -373,8 +373,7 @@ student who returns after a gap and still remembers is rewarded for the harder r
 **failure** multiplies by `F ≈ 0.3`, dropping roughly three reviews' worth of progress and
 returning the skill to short intervals until it is re-earned.
 
-`A`, `F`, `S_0` and `R_TARGET` are shapes here, not tuned values; they require fitting against
-real response data (§14).
+`A`, `F`, `S_0` and `R_TARGET` are shapes here, not tuned values; calibration is §7.8.
 
 **Known simplification.** A constant half-life decays faster in the long tail than human
 forgetting actually does — the empirical curve is closer to a power law, which is what FSRS uses.
@@ -442,6 +441,49 @@ course midpoint and use the graph to skip: success on a downstream skill provisi
 prerequisites; failure walks down. Ten to fifteen items localises the frontier, versus a
 forty-question placement nobody finishes. Provisional credit is marked as such and is superseded
 by direct evidence.
+
+### 7.8 Parameter calibration
+
+`R_TARGET` is a **policy** choice and can simply start at a published default. `A`, `F`, `S_0` and
+the Elo `K₀`/`c` are **empirical** and must eventually be fitted — but there is no data on day one,
+so calibration proceeds in three stages.
+
+**Stage 1 — derive from target behaviour.** Reviewed on time, each success multiplies stability by
+`m = 1 + A × (1 − R_TARGET)`. Deciding how many successes should carry a skill to maintenance
+therefore fixes `m`, and `m` fixes `A`:
+
+```
+m = (S_maintenance / S_0) ** (1 / n)
+A = (m - 1) / (1 - R_TARGET)
+```
+
+Choosing "a month between reviews after roughly fourteen successes", with `S_0 = 1` day, gives
+`m = 1.5` and `A = 5`. `F` follows the same way from how much a lapse should cost: forfeiting `k`
+reviews' worth of progress means `F = m ** -k`, so `k = 3` gives `F ≈ 0.3`. Both constants are
+consequences of product decisions that can be made before any student exists.
+
+**Stage 2 — sanity-check by simulation.** Run the Layer 2 simulated students (§12) against the
+chosen constants and inspect the trajectories: do intervals reach maintenance on a plausible
+timetable, does a lapse recover without a punitive spiral, does review load stay within the §7.6
+cap. This catches bad constants before a student meets them.
+
+**Stage 3 — fit from the evidence log.** Every scheduled review is a labelled prediction: the model
+asserted a retrievability, the outcome was 0 or 1. Fit `A`, `F`, `S_0` by minimising log loss over
+held-out reviews, monitored by the calibration check in §7.2. Fit globally first; move to per-skill
+parameters shrunk toward the global prior only once a skill has the volume to support it. Replay
+from the append-only log (P6) is what makes refitting possible at all.
+
+**Interval jitter is required for identifiability, not for load-balancing.** A scheduler that
+always reviews at `R_TARGET` observes the forgetting curve at exactly one point, and its own policy
+then censors the data needed to improve it. Randomise scheduled intervals by roughly ±20% and
+deliberately place a small fraction of reviews early or late, so the log contains outcomes across a
+range of retrievabilities. Without this, no volume of accumulated data will improve the memory
+model.
+
+**`S_0` should become a function, not stay a constant.** Initial stability after a first cold
+success plausibly depends on how that success went — strength margin over item difficulty, stated
+confidence, hesitant versus immediate. Begin with a constant and promote it once the log supports
+the comparison.
 
 ---
 
