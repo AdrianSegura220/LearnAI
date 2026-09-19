@@ -263,10 +263,13 @@ class EvidenceClass(Enum):
 
 
 class Confidence(IntEnum):
-    GUESSING = 0
-    UNSURE = 1
-    FAIRLY_SURE = 2
-    CERTAIN = 3
+    NO_IDEA = 0
+    """Declined to answer. Distinct from guessing, which submits something."""
+
+    GUESSING = 1
+    UNSURE = 2
+    FAIRLY_SURE = 3
+    CERTAIN = 4
 
 
 class VettingLevel(IntEnum):
@@ -293,6 +296,8 @@ class Verdict(Enum):
     CORRECT = "correct"
     WRONG = "wrong"
     MALFORMED = "malformed"
+    NO_ANSWER = "no_answer"
+    """The student declined. Same competence signal as wrong, different pedagogy."""
 ```
 
 - [ ] **Step 5: Write the skill types**
@@ -2610,7 +2615,10 @@ impossible too. Defaults live on the dataclass so no call site is noisier for it
 ```python
 # src/learnai/domain/parameters.py
 """Tuned parameters of the mastery model. See spec §7.8 for how each is calibrated."""
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+
+from learnai.domain.enums import Confidence
 
 
 @dataclass(frozen=True, slots=True)
@@ -2642,6 +2650,24 @@ class MasteryParameters:
     # --- Calibration (spec §7.5) ---------------------------------------------
     calibration_ema_alpha: float = 0.2
     overconfidence_threshold: float = 0.15
+    confidence_probability: Mapping[Confidence, float] = field(
+        default_factory=lambda: {
+            Confidence.NO_IDEA: 0.02,
+            Confidence.GUESSING: 0.15,
+            Confidence.UNSURE: 0.40,
+            Confidence.FAIRLY_SURE: 0.75,
+            Confidence.CERTAIN: 0.93,
+        }
+    )
+    """P(correct | stated confidence). Free-response priors, not MCQ ones: a guess
+    at "factor x^2 + 3x + 2" is nothing like a guess among four options, and the
+    MCQ value of 0.25 would libel every honest low-confidence student.
+
+    Fit from data, but **at population level only** — fitting each student against
+    their own history makes everyone calibrated by construction and the metric
+    measures nothing. Key it by answer kind once multiple-choice items exist.
+    Treat the dict as immutable.
+    """
 
     # --- Planning (spec §7.6) ------------------------------------------------
     target_logit_margin: float = 1.1
@@ -3189,7 +3215,7 @@ git commit -m "feat: memory stability, retrievability, and derived mastery state
 
 **Interfaces:**
 - Consumes: `SkillGraph` (Task 1), `SkillState`, `update_stability`, `is_learned` (Tasks 9–10), `Confidence` (Task 1), constants (Task 9).
-- Produces: `propagate_success(states, graph, skill_id, now) -> dict[SkillId, SkillState]`; `CONFIDENCE_PROBABILITY: dict[Confidence, float]`, `update_calibration(gap, confidence, correct) -> float`, `is_overconfident(gap) -> bool`.
+- Produces: `propagate_success(states, graph, skill_id, now, params) -> dict[SkillId, SkillState]`; `update_calibration(gap, confidence, correct, params) -> float`, `is_overconfident(gap, params) -> bool`. The confidence-to-probability mapping is `params.confidence_probability`, not a module constant.
 
 - [ ] **Step 1: Write the failing propagation test**
 
@@ -3345,19 +3371,32 @@ Expected: PASS — 6 tests.
 
 ```python
 # tests/domain/test_calibration.py
-from learnai.domain.calibration import (
-    CONFIDENCE_PROBABILITY,
-    is_overconfident,
-    update_calibration,
-)
+from learnai.domain.calibration import is_overconfident, update_calibration
 from learnai.domain.enums import Confidence
+from learnai.domain.parameters import DEFAULT_PARAMETERS
+
+MAPPING = DEFAULT_PARAMETERS.confidence_probability
 
 
 def test_every_confidence_level_maps_to_a_probability():
-    assert set(CONFIDENCE_PROBABILITY) == set(Confidence)
-    values = [CONFIDENCE_PROBABILITY[c] for c in sorted(Confidence)]
+    assert set(MAPPING) == set(Confidence)
+    values = [MAPPING[c] for c in sorted(Confidence)]
     assert values == sorted(values), "probabilities must rise with confidence"
     assert all(0.0 < v < 1.0 for v in values)
+
+
+def test_the_priors_are_free_response_shaped_not_multiple_choice():
+    """A guess at a free-response item is nothing like a guess among four options."""
+    assert MAPPING[Confidence.NO_IDEA] < 0.05
+    assert MAPPING[Confidence.GUESSING] < 0.20
+
+
+def test_declining_and_being_wrong_is_near_perfect_calibration():
+    gap = 0.0
+    for _ in range(20):
+        gap = update_calibration(gap, Confidence.NO_IDEA, correct=False)
+    assert abs(gap) < 0.05
+    assert not is_overconfident(gap)
 
 
 def test_certain_and_wrong_pushes_the_gap_positive():
@@ -3396,13 +3435,6 @@ def test_a_calibrated_student_is_not_flagged():
 from learnai.domain.enums import Confidence
 from learnai.domain.parameters import DEFAULT_PARAMETERS, MasteryParameters
 
-CONFIDENCE_PROBABILITY: dict[Confidence, float] = {
-    Confidence.GUESSING: 0.25,
-    Confidence.UNSURE: 0.50,
-    Confidence.FAIRLY_SURE: 0.75,
-    Confidence.CERTAIN: 0.95,
-}
-
 
 def update_calibration(
     gap: float,
@@ -3416,7 +3448,7 @@ def update_calibration(
     failure it exists to fix is students not knowing what they do not know, and
     this number is that failure, measured.
     """
-    observation = CONFIDENCE_PROBABILITY[confidence] - (1.0 if correct else 0.0)
+    observation = params.confidence_probability[confidence] - (1.0 if correct else 0.0)
     alpha = params.calibration_ema_alpha
     return (1.0 - alpha) * gap + alpha * observation
 
@@ -3428,7 +3460,7 @@ def is_overconfident(gap: float, params: MasteryParameters = DEFAULT_PARAMETERS)
 - [ ] **Step 7: Run the calibration tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/domain/test_calibration.py -v`
-Expected: PASS — 6 tests.
+Expected: PASS — 8 tests.
 
 - [ ] **Step 8: Commit**
 
@@ -3596,6 +3628,14 @@ def test_effort_plus_an_exhausted_ladder_unlocks_the_reveal():
     assert next_rung(PRACTICE, state) is HelpRung.FULL_REVEAL
 
 
+def test_declines_do_not_climb_toward_a_reveal():
+    """record_attempt is never called for a decline, so the counter stays put."""
+    state = HelpState()
+    for rung in (HelpRung.NUDGE, HelpRung.NEXT_STEP, HelpRung.NAME_METHOD):
+        state = record_help(state, rung)
+    assert not reveal_unlocked(PRACTICE, state)
+
+
 def test_attempts_alone_do_not_unlock_a_reveal():
     state = record_attempt(record_attempt(record_attempt(HelpState())))
     assert not reveal_unlocked(PRACTICE, state)
@@ -3675,13 +3715,20 @@ def record_help(state: HelpState, rung: HelpRung) -> HelpState:
 
 
 def record_attempt(state: HelpState) -> HelpState:
+    """Count an *answered* attempt.
+
+    Never called for a decline. If declining counted, the cheapest route to a
+    full reveal would be: decline, decline, click through the ladder — zero
+    effort, complete answer, which is precisely the hint abuse the effort
+    condition exists to prevent.
+    """
     return replace(state, attempts=state.attempts + 1)
 ```
 
 - [ ] **Step 6: Run the ladder tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/domain/test_help_ladder.py -v`
-Expected: PASS — 8 tests.
+Expected: PASS — 9 tests.
 
 - [ ] **Step 7: Commit**
 
@@ -3840,7 +3887,7 @@ git commit -m "feat: CAS-backed leak guard over tutor drafts"
 from dataclasses import dataclass
 from enum import Enum
 
-from learnai.domain.enums import HelpRung
+from learnai.domain.enums import HelpRung, Verdict
 from learnai.domain.graph import SkillGraph
 from learnai.domain.ids import MisconceptionId, SkillId
 from learnai.domain.items import Item, StepDiff
@@ -3879,6 +3926,9 @@ class TurnContext:
     step_diff: StepDiff | None
     diagnosis: MisconceptionId | None
     permitted_rung: HelpRung
+    last_verdict: Verdict | None = None
+    """NO_ANSWER means the student declined: there is no work to diagnose, so the
+    tutor's opening move is orientation rather than error correction."""
     transcript: tuple[TranscriptEntry, ...] = ()
 
 
@@ -4995,6 +5045,47 @@ def test_a_leaking_tutor_turn_never_reaches_the_student():
     assert turn is None, "every retry leaked, so nothing may be delivered"
 
 
+def test_declining_costs_the_same_as_a_wrong_answer():
+    engine, session, _ = build()
+    task = session.current_task
+    session, states, outcome = engine.submit(
+        session, {}, steps=[], final_answer="", confidence=Confidence.CERTAIN
+    )
+    assert outcome.verdict is Verdict.NO_ANSWER
+    assert outcome.evidence_class is EvidenceClass.UNASSISTED_COLD
+    assert states[task.skill_id].strength < 0.0, "a decline is the same competence signal"
+    assert outcome.tutor_turn is not None, "and it summons the tutor"
+
+
+def test_declining_forces_the_no_idea_confidence_reading():
+    engine, session, _ = build()
+    engine.submit(session, {}, steps=[], final_answer="  ", confidence=Confidence.CERTAIN)
+    recorded = engine.evidence_log.events()[0]
+    assert recorded.confidence is Confidence.NO_IDEA
+
+
+def test_declining_does_not_climb_toward_a_reveal():
+    """Otherwise the cheapest route to the answer is two declines and three hints."""
+    engine, session, _ = build()
+    for _ in range(2):
+        session, _, _ = engine.submit(
+            session, {}, steps=[], final_answer="", confidence=Confidence.NO_IDEA
+        )
+    for _ in range(3):
+        session, turn = engine.request_help(session, {})
+        assert turn is not None
+    session, turn = engine.request_help(session, {})
+    assert turn is None, "declines are not documented effort"
+
+
+def test_the_tutor_is_told_the_student_declined():
+    tutor = FakeTutor()
+    engine, session, _ = build(tutor)
+    engine.submit(session, {}, steps=[], final_answer="", confidence=Confidence.NO_IDEA)
+    assert tutor.contexts_seen[0].last_verdict is Verdict.NO_ANSWER
+    assert tutor.contexts_seen[0].step_diff is None
+
+
 def test_the_session_advances_and_finishes():
     engine, session, _ = build()
     for _ in range(4):
@@ -5056,6 +5147,7 @@ from learnai.domain.planner import plan_session
 from learnai.domain.ports import Clock, EvidenceLog, ItemSource, Tutor, Verifier
 from learnai.domain.projection import apply_event
 from learnai.domain.session import Session, Task, TaskState, advance, replace_task
+from learnai.domain.verification import CheckResult
 from learnai.domain.skills import Misconception
 from learnai.domain.turn import (
     SkillPack,
@@ -5146,17 +5238,29 @@ class PracticeEngine:
         final_answer: str,
         confidence: Confidence,
     ) -> tuple[Session, dict[SkillId, SkillState], SubmitOutcome]:
+        """Submit an answer, or decline by passing an empty `final_answer`.
+
+        A decline costs exactly what a wrong answer costs — it is the same
+        competence signal, and making it cheaper would teach students to stop
+        trying. What differs is the tutor's opening move and the calibration
+        reading, which for an honest decline is near-perfect.
+        """
         task = session.current_task
         if task is None:
             raise ValueError("session has no active task")
 
+        declined = not final_answer.strip()
         verifier = self._verifier_for(task.skill_id)
-        result = verifier.check_answer(final_answer, task.item.answer_spec)
+        if declined:
+            confidence = Confidence.NO_IDEA
+            result = CheckResult(Verdict.NO_ANSWER)
+        else:
+            result = verifier.check_answer(final_answer, task.item.answer_spec)
         correct = result.verdict is Verdict.CORRECT
 
         step_diff: StepDiff | None = None
         diagnosis: MisconceptionId | None = None
-        if not correct and steps:
+        if not correct and not declined and steps:
             step_diff = verifier.diff_steps(steps)
             diagnosis = diagnose(step_diff, self._catalogue(task.skill_id), self.matcher)
 
@@ -5182,13 +5286,20 @@ class PracticeEngine:
         self.evidence_log.append(event)
         states = apply_event(states, event, self.graph, self._params_for(task.skill_id))
 
-        task = replace(task, help_state=record_attempt(task.help_state))
+        if not declined:
+            task = replace(task, help_state=record_attempt(task.help_state))
         tutor_turn: TutorTurn | None = None
         if not correct and self._should_intervene():
             # Unprompted feedback opens at the bottom of the ladder. The ceiling is
             # what the student may climb to on request, not where the tutor starts.
             tutor_turn = self._ask_tutor(
-                session, task, states, step_diff, diagnosis, rung_override=HelpRung.NUDGE
+                session,
+                task,
+                states,
+                step_diff,
+                diagnosis,
+                rung_override=HelpRung.NUDGE,
+                last_verdict=result.verdict,
             )
 
         task = replace(
@@ -5262,6 +5373,7 @@ class PracticeEngine:
         step_diff: StepDiff | None,
         diagnosis: MisconceptionId | None,
         rung_override: HelpRung | None = None,
+        last_verdict: Verdict | None = None,
     ) -> TurnContext:
         skill = self.graph.skills[task.skill_id]
         state = states.get(task.skill_id)
@@ -5282,6 +5394,7 @@ class PracticeEngine:
             ),
             step_diff=step_diff,
             diagnosis=diagnosis,
+            last_verdict=last_verdict,
             permitted_rung=(
                 rung_override
                 if rung_override is not None
@@ -5297,9 +5410,12 @@ class PracticeEngine:
         step_diff: StepDiff | None,
         diagnosis: MisconceptionId | None,
         rung_override: HelpRung | None = None,
+        last_verdict: Verdict | None = None,
     ) -> TutorTurn | None:
         """Ask, validate, and retry. A turn that fails validation never reaches the student."""
-        context = self._build_context(task, states, step_diff, diagnosis, rung_override)
+        context = self._build_context(
+            task, states, step_diff, diagnosis, rung_override, last_verdict
+        )
         for _ in range(MAX_TUTOR_RETRIES):
             turn = self._tutor.respond(context)
             verifier = self._verifier_for(task.skill_id)
@@ -5311,7 +5427,7 @@ class PracticeEngine:
 - [ ] **Step 4: Run the engine tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/domain/test_engine.py -v`
-Expected: PASS — 9 tests.
+Expected: PASS — 13 tests.
 
 - [ ] **Step 5: Run the whole suite**
 

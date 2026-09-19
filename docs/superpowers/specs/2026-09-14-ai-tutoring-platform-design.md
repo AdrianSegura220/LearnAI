@@ -433,8 +433,25 @@ scheduler (high confidence-but-wrong rates are re-checked sooner, because that i
 will hurt), and a shrinking gap over a term is a genuinely meaningful thing to show a student or
 a parent in a way that a problem count is not.
 
-Confidence levels map to probabilities; `calibration_gap` is an exponential moving average of
+Five levels, because "I have no idea" is not the same statement as a low-confidence guess:
+`no_idea` (the student declined to answer), `guessing`, `unsure`, `fairly_sure`, `certain`. Each
+maps to a probability, and `calibration_gap` is an exponential moving average of
 `stated_probability - outcome`. Positive means overconfident.
+
+Two properties of that mapping matter more than the numbers in it.
+
+**It is item-format specific.** P(correct | guessing) is around 0.03 on free response and 0.25 on
+four-option multiple choice. Borrowing multiple-choice values for free-response items records
+every honest guesser as overconfident, inverting the signal for exactly the students it should
+reassure. The defaults are free-response; the mapping is keyed by answer kind once diagnostic
+multiple choice exists.
+
+**It is fitted at population level and held fixed for individuals.** Fitting each student's
+mapping to their own observed rate makes every student perfectly calibrated by construction and
+the metric measures nothing. The statement the platform needs to be able to make is "when people
+say they are certain they are right 93% of the time, and you are right 40% of the time", which
+requires a shared reference. Collect from the first day; show a student their number only once
+the mapping has been fitted.
 
 ### 7.6 Scheduler priority
 
@@ -565,6 +582,14 @@ Task(session_id, item_id, skill_id, state)
 Attempt(task_id, steps, verdict, confidence, assistance_level, evidence_class, at)
 HelpEvent(task_id, rung, at)
 ```
+
+**Declining is a first-class answer.** A student may answer "I don't know" instead of submitting
+work. It costs exactly what a wrong answer costs — it is the same competence signal, and making
+it cheaper would teach students to stop trying — but it differs in two ways that matter: the
+tutor opens with orientation rather than error diagnosis, since there is no work to diagnose, and
+the calibration reading for an honest decline is near-perfect rather than a penalty. A decline
+also does not count toward the effort condition that unlocks a reveal, or the cheapest route to
+the answer would be two declines and a walk up the hint ladder.
 
 `evidence_class ∈ {unassisted_cold, post_instruction, assisted, timed_exam}`.
 **Only `unassisted_cold` and `timed_exam` move mastery.** An attempt is `post_instruction` if the
@@ -865,6 +890,8 @@ These are recorded deliberately, each with the trigger that will force a decisio
 | Curriculum | Dependency graph with course overlays | Curriculum-agnostic core, curriculum-specific presentation |
 | Verification kind | Opaque token plus a registry | Enumerating adapter kinds in the core would mean every new subject edits the engine, contradicting the seam it names |
 | Tuned parameters | Injected value object | Module constants cannot be varied per skill or A/B compared, which §7.2 and §7.8 both require |
+| Declining to answer | Costs the same as a wrong answer | The same competence signal; a cheaper decline is a standing invitation to stop trying |
+| Confidence mapping | Population-fitted, per item format | Per-student fitting makes everyone calibrated by construction; MCQ priors libel honest free-response guessers |
 | Form vocabulary | Opaque tokens, adapter-owned | An enum of math forms in the domain core would grow a union of every subject's vocabulary and break the `verification_kind` seam |
 | Provider abstraction | Task-level ports only | A generic `LLMClient` forfeits caching, thinking, structured outputs, and Batch — the features carrying the economics |
 | Persistence | Append-only evidence log with projection | The mastery algorithm will change; student history must survive it |
