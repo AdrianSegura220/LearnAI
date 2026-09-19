@@ -187,6 +187,15 @@ Card(id, concept_id, kind, prompt, answer)     # cloze | qa
 # vetting_level: cas_verified | human_reviewed | llm_only
 ```
 
+**Form constraints are opaque to the core.** `AnswerSpec.form_constraints` carries tokens the
+domain never interprets — `"fully_factored"`, later `"correct_units"` — and each `Verifier`
+adapter declares the vocabulary it can judge through `supported_constraints`. The CAS adapter
+owns the mathematical forms; a physics adapter will own units and significant figures without
+editing the core. Content is validated against the responsible verifier's vocabulary, so a token
+no adapter understands fails loudly rather than silently passing a wrongly-formed answer. Without
+this the form vocabulary would accumulate every subject's terms inside the shared domain, which
+is precisely the coupling `verification_kind` exists to prevent.
+
 A **generator** is code written once per skill, not a problem written once per problem. For
 "solve a quadratic by factoring" it samples integer roots in a constrained range, expands, and
 returns both the problem and the exact answer. The answer key is correct by construction, there
@@ -847,6 +856,7 @@ These are recorded deliberately, each with the trigger that will force a decisio
 | Answer-withholding enforcement | CAS LeakGuard | A prompt instruction is a hope; a deterministic check is a fact |
 | Content | Generators + CAS, LLM for the long tail | Ground-truth answers, unlimited variants, zero serve cost, where it matters most |
 | Curriculum | Dependency graph with course overlays | Curriculum-agnostic core, curriculum-specific presentation |
+| Form vocabulary | Opaque tokens, adapter-owned | An enum of math forms in the domain core would grow a union of every subject's vocabulary and break the `verification_kind` seam |
 | Provider abstraction | Task-level ports only | A generic `LLMClient` forfeits caching, thinking, structured outputs, and Batch — the features carrying the economics |
 | Persistence | Append-only evidence log with projection | The mastery algorithm will change; student history must survive it |
 | First slice | Quadratics, Practice only | Proves or kills the thesis with the smallest honest end-to-end system |

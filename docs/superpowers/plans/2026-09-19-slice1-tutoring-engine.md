@@ -45,7 +45,7 @@ src/learnai/
     ids.py                     # NewType id aliases
     skills.py                  # Skill, Concept, Misconception, PrereqEdge
     graph.py                   # SkillGraph: traversal, frontier, cycle detection
-    items.py                   # Item, AnswerSpec, FormConstraint, Provenance, StepDiff
+    items.py                   # Item, AnswerSpec, Provenance, StepDiff
     ports.py                   # Protocols: Verifier, ItemSource, Tutor, Clock, EvidenceLog
     mastery.py                 # SkillState, strength, stability, derived states
     evidence.py                # evidence classification and weights
@@ -61,6 +61,7 @@ src/learnai/
     engine.py                  # PracticeEngine — orchestrates one task's lifecycle
   adapters/
     clock.py                   # SystemClock, FakeClock
+    cas/constraints.py         # the math form vocabulary (adapter-owned)
     cas/parse.py               # safe parsing of student/author input
     cas/sympy_verifier.py      # Verifier implementation
     content/loader.py          # YAML -> SkillGraph
@@ -799,7 +800,7 @@ git commit -m "feat: quadratics skill cluster and validating content loader"
 
 **Interfaces:**
 - Consumes: ids and enums from Task 1.
-- Produces: `FormConstraint` (enum: `FULLY_FACTORED`, `EXPANDED`, `SIMPLIFIED`, `EXACT_NOT_DECIMAL`, `COMPLETED_SQUARE`); `AnswerKind` (enum: `EXPRESSION`, `EQUATION`, `SOLUTION_SET`); `AnswerSpec(expression: str, form_constraints: tuple[FormConstraint, ...], kind: AnswerKind)`; `Provenance(template_id: TemplateId | None, seed: int | None, kind: str)` with constructors `Provenance.generated(template_id, seed)` and `Provenance.authored()`; `Item(id, skill_id, provenance, statement, answer_spec, worked_steps, difficulty, vetting_level)`; `StepDiff(index: int, previous: str, current: str)`.
+- Produces: `FormConstraint = NewType("FormConstraint", str)` — **opaque to the domain**, which never interprets one; each `Verifier` adapter owns its own vocabulary (see Task 5). `AnswerKind` (enum: `EXPRESSION`, `EQUATION`, `SOLUTION_SET`); `AnswerSpec(expression: str, form_constraints: tuple[FormConstraint, ...], kind: AnswerKind)`; `Provenance(template_id: TemplateId | None, seed: int | None, kind: str)` with constructors `Provenance.generated(template_id, seed)` and `Provenance.authored()`; `Item(id, skill_id, provenance, statement, answer_spec, worked_steps, difficulty, vetting_level)`; `StepDiff(index: int, previous: str, current: str)`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -829,7 +830,7 @@ def test_item_is_immutable():
         provenance=Provenance.generated(TemplateId("t"), 1),
         statement="Factor x^2 + 3x + 2",
         answer_spec=AnswerSpec(
-            "(x + 1)*(x + 2)", (FormConstraint.FULLY_FACTORED,), AnswerKind.EXPRESSION
+            "(x + 1)*(x + 2)", (FormConstraint("fully_factored"),), AnswerKind.EXPRESSION
         ),
         worked_steps=("x^2 + 3x + 2", "(x + 1)*(x + 2)"),
         difficulty=0.0,
@@ -840,6 +841,12 @@ def test_item_is_immutable():
     except AttributeError:
         return
     raise AssertionError("Item must be frozen")
+
+
+def test_a_form_constraint_is_just_an_opaque_token():
+    """The domain must not know what 'fully_factored' means — only the verifier does."""
+    token = FormConstraint("anything_the_adapter_understands")
+    assert AnswerSpec("x", (token,)).form_constraints == (token,)
 
 
 def test_answer_kind_defaults_to_expression():
@@ -864,17 +871,20 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'learnai.domain.items'`
 # src/learnai/domain/items.py
 from dataclasses import dataclass
 from enum import Enum
+from typing import NewType
 
 from learnai.domain.enums import VettingLevel
 from learnai.domain.ids import ItemId, SkillId, TemplateId
 
+FormConstraint = NewType("FormConstraint", str)
+"""A required form for an answer, e.g. "fully_factored".
 
-class FormConstraint(Enum):
-    FULLY_FACTORED = "fully_factored"
-    EXPANDED = "expanded"
-    SIMPLIFIED = "simplified"
-    EXACT_NOT_DECIMAL = "exact_not_decimal"
-    COMPLETED_SQUARE = "completed_square"
+Deliberately opaque: the domain knows an answer may carry form requirements and
+that the Verifier judges them, but never what any particular one means. Each
+subject adapter owns its own vocabulary and declares it via
+`Verifier.supported_constraints`, so adding physics or chemistry never edits
+the core. See spec §6.2.
+"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -931,7 +941,7 @@ class StepDiff:
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/domain/test_items.py -v`
-Expected: PASS — 5 tests.
+Expected: PASS — 6 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -1261,17 +1271,28 @@ git commit -m "feat: allowlisted math parser and CAS equivalence checking"
 
 **Files:**
 - Create: `src/learnai/domain/verification.py`, `src/learnai/domain/ports.py`
-- Create: `src/learnai/adapters/cas/sympy_verifier.py`
+- Create: `src/learnai/adapters/cas/constraints.py`, `src/learnai/adapters/cas/sympy_verifier.py`
 - Test: `tests/adapters/test_sympy_verifier.py`
 
 **Interfaces:**
 - Consumes: `AnswerKind`, `AnswerSpec`, `FormConstraint`, `StepDiff`, `Verdict` (Tasks 1 and 3); `parse_math`, the three equivalence functions (Task 4).
-- Produces: `CheckResult(verdict: Verdict, failed_constraints: tuple[FormConstraint, ...], step_diff: StepDiff | None)`; the `Verifier` protocol with `check_answer(submitted: str, spec: AnswerSpec) -> CheckResult`, `diff_steps(steps: Sequence[str]) -> StepDiff | None`, `extract_candidate_expressions(text: str) -> tuple[str, ...]`, `matches_answer(expression: str, spec: AnswerSpec) -> bool`; `SympyVerifier` implementing it. (`diff_steps` is stubbed to `None` in this task and implemented in Task 6.)
+- Produces: `CheckResult(verdict: Verdict, failed_constraints: tuple[FormConstraint, ...], step_diff: StepDiff | None)`; the `Verifier` protocol with `check_answer(submitted: str, spec: AnswerSpec) -> CheckResult`, `diff_steps(steps: Sequence[str]) -> StepDiff | None`, `extract_candidate_expressions(text: str) -> tuple[str, ...]`, `matches_answer(expression: str, spec: AnswerSpec) -> bool`; `supported_constraints -> frozenset[FormConstraint]`; `SympyVerifier` implementing it. In `adapters/cas/constraints.py`: the tokens `FULLY_FACTORED`, `EXPANDED`, `SIMPLIFIED`, `EXACT_NOT_DECIMAL`, `COMPLETED_SQUARE`, the set `MATH_CONSTRAINTS`, and `UnknownConstraintError`. (`diff_steps` is stubbed to `None` in this task and implemented in Task 6.)
+
+**Why the vocabulary lives here:** `_satisfies` is the only code in the system that ever interprets a form constraint, so the tokens belong beside it. A physics adapter will declare `correct_units` and `significant_figures` without touching the domain, which is the whole point of the `verification_kind` seam.
 
 - [ ] **Step 1: Write the failing verifier test**
 
 ```python
 # tests/adapters/test_sympy_verifier.py
+import pytest
+
+from learnai.adapters.cas.constraints import (
+    COMPLETED_SQUARE,
+    EXACT_NOT_DECIMAL,
+    EXPANDED,
+    FULLY_FACTORED,
+    MATH_CONSTRAINTS,
+)
 from learnai.adapters.cas.sympy_verifier import SympyVerifier
 from learnai.domain.enums import Verdict
 from learnai.domain.items import AnswerKind, AnswerSpec, FormConstraint
@@ -1294,27 +1315,27 @@ def test_unparseable_answer_is_malformed_not_wrong():
 
 
 def test_factored_form_is_required_when_the_constraint_says_so():
-    spec = AnswerSpec("(x + 1)*(x + 2)", (FormConstraint.FULLY_FACTORED,))
+    spec = AnswerSpec("(x + 1)*(x + 2)", (FULLY_FACTORED,))
     assert V.check_answer("(x+1)(x+2)", spec).verdict is Verdict.CORRECT
 
     result = V.check_answer("x^2 + 3x + 2", spec)
     assert result.verdict is Verdict.WRONG
-    assert result.failed_constraints == (FormConstraint.FULLY_FACTORED,)
+    assert result.failed_constraints == (FULLY_FACTORED,)
 
 
 def test_an_irreducible_expression_satisfies_fully_factored():
-    spec = AnswerSpec("x^2 + 1", (FormConstraint.FULLY_FACTORED,))
+    spec = AnswerSpec("x^2 + 1", (FULLY_FACTORED,))
     assert V.check_answer("x^2 + 1", spec).verdict is Verdict.CORRECT
 
 
 def test_expanded_form_is_required_when_the_constraint_says_so():
-    spec = AnswerSpec("x^2 + 3*x + 2", (FormConstraint.EXPANDED,))
+    spec = AnswerSpec("x^2 + 3*x + 2", (EXPANDED,))
     assert V.check_answer("x^2 + 3x + 2", spec).verdict is Verdict.CORRECT
     assert V.check_answer("(x+1)(x+2)", spec).verdict is Verdict.WRONG
 
 
 def test_exact_form_rejects_a_decimal_approximation():
-    spec = AnswerSpec("sqrt(2)", (FormConstraint.EXACT_NOT_DECIMAL,))
+    spec = AnswerSpec("sqrt(2)", (EXACT_NOT_DECIMAL,))
     assert V.check_answer("sqrt(2)", spec).verdict is Verdict.CORRECT
     assert V.check_answer("1.41421356", spec).verdict is Verdict.WRONG
 
@@ -1332,22 +1353,34 @@ def test_equation_answers_compare_solution_sets():
 
 
 def test_completed_square_form_is_required_when_the_constraint_says_so():
-    spec = AnswerSpec("(x + 3)**2 - 4", (FormConstraint.COMPLETED_SQUARE,))
+    spec = AnswerSpec("(x + 3)**2 - 4", (COMPLETED_SQUARE,))
     assert V.check_answer("(x+3)^2 - 4", spec).verdict is Verdict.CORRECT
 
     result = V.check_answer("x^2 + 6x + 5", spec)
     assert result.verdict is Verdict.WRONG
-    assert result.failed_constraints == (FormConstraint.COMPLETED_SQUARE,)
+    assert result.failed_constraints == (COMPLETED_SQUARE,)
 
 
 def test_solution_set_constraints_apply_to_every_root():
     spec = AnswerSpec(
         "1 + sqrt(2), 1 - sqrt(2)",
-        (FormConstraint.EXACT_NOT_DECIMAL,),
+        (EXACT_NOT_DECIMAL,),
         kind=AnswerKind.SOLUTION_SET,
     )
     assert V.check_answer("1 - sqrt(2), 1 + sqrt(2)", spec).verdict is Verdict.CORRECT
     assert V.check_answer("2.414213, -0.414213", spec).verdict is Verdict.WRONG
+
+
+def test_the_verifier_declares_the_vocabulary_it_can_judge():
+    assert V.supported_constraints == MATH_CONSTRAINTS
+
+
+def test_an_unknown_constraint_fails_loudly_rather_than_silently_passing():
+    from learnai.adapters.cas.constraints import UnknownConstraintError
+
+    spec = AnswerSpec("x + 1", (FormConstraint("balanced_equation"),))
+    with pytest.raises(UnknownConstraintError):
+        V.check_answer("x + 1", spec)
 
 
 def test_extracts_candidate_expressions_from_prose():
@@ -1389,12 +1422,17 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Protocol
 
-from learnai.domain.items import AnswerSpec, StepDiff
+from learnai.domain.items import AnswerSpec, FormConstraint, StepDiff
 from learnai.domain.verification import CheckResult
 
 
 class Verifier(Protocol):
     """Deterministic judgement of student work. Implementations are subject-specific."""
+
+    @property
+    def supported_constraints(self) -> frozenset[FormConstraint]:
+        """The form vocabulary this adapter can judge. Content is validated against it."""
+        ...
 
     def check_answer(self, submitted: str, spec: AnswerSpec) -> CheckResult: ...
 
@@ -1409,12 +1447,43 @@ class Clock(Protocol):
     def now(self) -> datetime: ...
 ```
 
-- [ ] **Step 4: Write the SymPy verifier**
+- [ ] **Step 4: Write the adapter's form vocabulary**
+
+```python
+# src/learnai/adapters/cas/constraints.py
+"""Form vocabulary for `cas_symbolic` skills.
+
+The domain treats every constraint as an opaque token. This module is the only
+place that names the math ones, and `sympy_verifier._satisfies` is the only
+place that interprets them.
+"""
+from learnai.domain.items import FormConstraint
+
+FULLY_FACTORED = FormConstraint("fully_factored")
+EXPANDED = FormConstraint("expanded")
+SIMPLIFIED = FormConstraint("simplified")
+EXACT_NOT_DECIMAL = FormConstraint("exact_not_decimal")
+COMPLETED_SQUARE = FormConstraint("completed_square")
+
+MATH_CONSTRAINTS: frozenset[FormConstraint] = frozenset(
+    {FULLY_FACTORED, EXPANDED, SIMPLIFIED, EXACT_NOT_DECIMAL, COMPLETED_SQUARE}
+)
+
+
+class UnknownConstraintError(KeyError):
+    """An item demands a form this verifier cannot judge.
+
+    Raised rather than ignored: silently skipping an unknown constraint would
+    mark a wrongly-formed answer correct, which is worse than a loud failure.
+    """
+```
+
+- [ ] **Step 5: Write the SymPy verifier**
 
 ```python
 # src/learnai/adapters/cas/sympy_verifier.py
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 import sympy as sp
 
@@ -1422,6 +1491,15 @@ from learnai.adapters.cas.equivalence import (
     equations_equivalent,
     expressions_equivalent,
     solution_sets_equivalent,
+)
+from learnai.adapters.cas.constraints import (
+    COMPLETED_SQUARE,
+    EXACT_NOT_DECIMAL,
+    EXPANDED,
+    FULLY_FACTORED,
+    MATH_CONSTRAINTS,
+    SIMPLIFIED,
+    UnknownConstraintError,
 )
 from learnai.adapters.cas.parse import ParseError, parse_math
 from learnai.domain.enums import Verdict
@@ -1433,6 +1511,10 @@ _CANDIDATE_PATTERN = re.compile(r"[0-9A-Za-z_^+\-*/(). ]{3,}")
 
 class SympyVerifier:
     """Verifier for `cas_symbolic` skills."""
+
+    @property
+    def supported_constraints(self) -> frozenset[FormConstraint]:
+        return MATH_CONSTRAINTS
 
     def check_answer(self, submitted: str, spec: AnswerSpec) -> CheckResult:
         try:
@@ -1494,45 +1576,47 @@ class SympyVerifier:
         return expressions_equivalent(got, want)
 
 
-def _satisfies(expr: sp.Expr, constraint: FormConstraint) -> bool:
-    match constraint:
-        case FormConstraint.FULLY_FACTORED:
-            # factor() is idempotent: an already-factored expression is its own factorisation.
-            return sp.factor(expr) == expr
-        case FormConstraint.EXPANDED:
-            return sp.expand(expr) == expr
-        case FormConstraint.SIMPLIFIED:
-            return sp.count_ops(sp.simplify(expr)) >= sp.count_ops(expr)
-        case FormConstraint.EXACT_NOT_DECIMAL:
-            return not expr.atoms(sp.Float)
-        case FormConstraint.COMPLETED_SQUARE:
-            return _is_completed_square(expr)
-    raise AssertionError(f"unhandled constraint {constraint}")
-
-
 def _is_completed_square(expr: sp.Expr) -> bool:
     """True for (x + p)**2 + q and for a bare (x + p)**2."""
     terms = expr.args if expr.is_Add else (expr,)
     squares = [t for t in terms if t.is_Pow and t.exp == 2]
     constants = [t for t in terms if t.is_number]
     return len(squares) == 1 and len(terms) == len(squares) + len(constants)
+
+
+_FORM_CHECKS: dict[FormConstraint, Callable[[sp.Expr], bool]] = {
+    # factor() is idempotent: an already-factored expression is its own factorisation.
+    FULLY_FACTORED: lambda e: sp.factor(e) == e,
+    EXPANDED: lambda e: sp.expand(e) == e,
+    SIMPLIFIED: lambda e: sp.count_ops(sp.simplify(e)) >= sp.count_ops(e),
+    EXACT_NOT_DECIMAL: lambda e: not e.atoms(sp.Float),
+    COMPLETED_SQUARE: _is_completed_square,
+}
+assert set(_FORM_CHECKS) == MATH_CONSTRAINTS, "declared vocabulary and checks disagree"
+
+
+def _satisfies(expr: sp.Expr, constraint: FormConstraint) -> bool:
+    check = _FORM_CHECKS.get(constraint)
+    if check is None:
+        raise UnknownConstraintError(constraint)
+    return check(expr)
 ```
 
-- [ ] **Step 5: Run the verifier tests to verify they pass**
+- [ ] **Step 6: Run the verifier tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/adapters/test_sympy_verifier.py -v`
-Expected: PASS — 13 tests.
+Expected: PASS — 15 tests.
 
-- [ ] **Step 6: Run the whole suite, including the purity test**
+- [ ] **Step 7: Run the whole suite, including the purity test**
 
 Run: `.venv/bin/pytest -v`
 Expected: PASS. `tests/test_domain_purity.py` must still pass — `verification.py` and `ports.py` import no SymPy.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add src/learnai/domain/verification.py src/learnai/domain/ports.py \
-        src/learnai/adapters/cas/sympy_verifier.py tests/adapters/test_sympy_verifier.py
+        src/learnai/adapters/cas/constraints.py src/learnai/adapters/cas/sympy_verifier.py tests/adapters/test_sympy_verifier.py
 git commit -m "feat: answer checking with form constraints and answer kinds"
 ```
 
@@ -1719,9 +1803,15 @@ import random
 
 import sympy as sp
 
+from learnai.adapters.cas.constraints import (
+    COMPLETED_SQUARE,
+    EXACT_NOT_DECIMAL,
+    EXPANDED,
+    FULLY_FACTORED,
+)
 from learnai.adapters.content.types import GeneratedProblem, TemplateSpec
 from learnai.domain.ids import SkillId, TemplateId
-from learnai.domain.items import AnswerKind, FormConstraint
+from learnai.domain.items import AnswerKind
 
 X = sp.Symbol("x")
 
@@ -1744,7 +1834,7 @@ def expand_binomial(rng: random.Random) -> GeneratedProblem:
         statement=f"Expand and simplify: {sp.sstr(prompt)}",
         prompt_expression=sp.sstr(prompt),
         answer=sp.sstr(answer),
-        form_constraints=(FormConstraint.EXPANDED,),
+        form_constraints=(EXPANDED,),
         kind=AnswerKind.EXPRESSION,
         worked_steps=(sp.sstr(prompt), sp.sstr(answer)),
     )
@@ -1758,7 +1848,7 @@ def expand_square(rng: random.Random) -> GeneratedProblem:
         statement=f"Expand and simplify: {sp.sstr(prompt)}",
         prompt_expression=sp.sstr(prompt),
         answer=sp.sstr(answer),
-        form_constraints=(FormConstraint.EXPANDED,),
+        form_constraints=(EXPANDED,),
         kind=AnswerKind.EXPRESSION,
         worked_steps=(sp.sstr(prompt), sp.sstr(answer)),
     )
@@ -1777,7 +1867,7 @@ def factor_common(rng: random.Random) -> GeneratedProblem:
         statement=f"Factor completely: {sp.sstr(prompt)}",
         prompt_expression=sp.sstr(prompt),
         answer=sp.sstr(answer),
-        form_constraints=(FormConstraint.FULLY_FACTORED,),
+        form_constraints=(FULLY_FACTORED,),
         kind=AnswerKind.EXPRESSION,
         worked_steps=(sp.sstr(prompt), sp.sstr(answer)),
     )
@@ -1791,7 +1881,7 @@ def factor_monic(rng: random.Random) -> GeneratedProblem:
         statement=f"Factor: {sp.sstr(prompt)}",
         prompt_expression=sp.sstr(prompt),
         answer=sp.sstr(answer),
-        form_constraints=(FormConstraint.FULLY_FACTORED,),
+        form_constraints=(FULLY_FACTORED,),
         kind=AnswerKind.EXPRESSION,
         worked_steps=(sp.sstr(prompt), sp.sstr(answer)),
     )
@@ -1805,7 +1895,7 @@ def factor_difference_of_squares(rng: random.Random) -> GeneratedProblem:
         statement=f"Factor: {sp.sstr(prompt)}",
         prompt_expression=sp.sstr(prompt),
         answer=sp.sstr(answer),
-        form_constraints=(FormConstraint.FULLY_FACTORED,),
+        form_constraints=(FULLY_FACTORED,),
         kind=AnswerKind.EXPRESSION,
         worked_steps=(sp.sstr(prompt), sp.sstr(answer)),
     )
@@ -1820,7 +1910,7 @@ def factor_nonmonic(rng: random.Random) -> GeneratedProblem:
         statement=f"Factor: {sp.sstr(prompt)}",
         prompt_expression=sp.sstr(prompt),
         answer=sp.sstr(answer),
-        form_constraints=(FormConstraint.FULLY_FACTORED,),
+        form_constraints=(FULLY_FACTORED,),
         kind=AnswerKind.EXPRESSION,
         worked_steps=(sp.sstr(prompt), sp.sstr(answer)),
     )
@@ -1849,7 +1939,7 @@ def complete_the_square(rng: random.Random) -> GeneratedProblem:
         statement=f"Rewrite by completing the square: {sp.sstr(prompt)}",
         prompt_expression=sp.sstr(prompt),
         answer=sp.sstr(answer),
-        form_constraints=(FormConstraint.COMPLETED_SQUARE,),
+        form_constraints=(COMPLETED_SQUARE,),
         kind=AnswerKind.EXPRESSION,
         worked_steps=(sp.sstr(prompt), sp.sstr(answer)),
     )
@@ -1870,7 +1960,7 @@ def apply_quadratic_formula(rng: random.Random) -> GeneratedProblem:
         statement=f"Solve exactly using the quadratic formula: {sp.sstr(a * X**2 + b * X + c)} = 0",
         prompt_expression=None,
         answer=", ".join(sp.sstr(r) for r in roots),
-        form_constraints=(FormConstraint.EXACT_NOT_DECIMAL,),
+        form_constraints=(EXACT_NOT_DECIMAL,),
         kind=AnswerKind.SOLUTION_SET,
         worked_steps=(),
     )
@@ -1906,7 +1996,7 @@ def vertex_x_coordinate(rng: random.Random) -> GeneratedProblem:
         ),
         prompt_expression=None,
         answer=sp.sstr(sp.Rational(-b, 2 * a)),
-        form_constraints=(FormConstraint.EXACT_NOT_DECIMAL,),
+        form_constraints=(EXACT_NOT_DECIMAL,),
         kind=AnswerKind.EXPRESSION,
         worked_steps=(),
     )
@@ -2077,6 +2167,15 @@ def test_no_degenerate_coefficients(spec):
         assert "zoo" not in expr_text and "nan" not in expr_text
 
 
+@pytest.mark.parametrize("spec", QUADRATICS_TEMPLATES, ids=ids)
+def test_every_emitted_constraint_is_supported_by_the_verifier(spec):
+    """The load-time gate that replaces the old enum's compile-time safety."""
+    for seed in range(DEEP_SEEDS):
+        problem = REGISTRY.instantiate_raw(spec.id, seed)
+        unknown = set(problem.form_constraints) - VERIFIER.supported_constraints
+        assert not unknown, f"{spec.id} emits constraints the verifier cannot judge: {unknown}"
+
+
 def test_next_item_picks_the_closest_difficulty_band():
     from learnai.domain.ids import SkillId
 
@@ -2107,7 +2206,7 @@ def test_every_skill_in_the_cluster_has_a_template():
 - [ ] **Step 5: Run the contract tests**
 
 Run: `.venv/bin/pytest tests/content/test_generator_contracts.py -v`
-Expected: PASS — 63 tests (five parametrised suites over twelve templates, plus three standalone). This is the slowest suite in the project; if it exceeds about 90 seconds, lower `DEEP_SEEDS` to 30 rather than weakening an assertion.
+Expected: PASS — 75 tests (six parametrised suites over twelve templates, plus three standalone). This is the slowest suite in the project; if it exceeds about 90 seconds, lower `DEEP_SEEDS` to 30 rather than weakening an assertion.
 
 - [ ] **Step 6: Commit**
 
