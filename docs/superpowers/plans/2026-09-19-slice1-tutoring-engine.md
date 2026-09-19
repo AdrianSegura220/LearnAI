@@ -40,9 +40,9 @@ Copied verbatim from the spec; every task's requirements implicitly include thes
 pyproject.toml
 src/learnai/
   domain/                      # pure: stdlib only
-    constants.py               # tuned parameters, one place
-    enums.py                   # HelpRung, EvidenceClass, VerificationKind, Confidence, ...
-    ids.py                     # NewType id aliases
+    parameters.py              # MasteryParameters value object + defaults
+    enums.py                   # closed, subject-neutral vocabularies
+    ids.py                     # NewType aliases: ids, plus opaque tokens
     skills.py                  # Skill, Concept, Misconception, PrereqEdge
     graph.py                   # SkillGraph: traversal, frontier, cycle detection
     items.py                   # Item, AnswerSpec, Provenance, StepDiff
@@ -61,7 +61,7 @@ src/learnai/
     engine.py                  # PracticeEngine — orchestrates one task's lifecycle
   adapters/
     clock.py                   # SystemClock, FakeClock
-    cas/constraints.py         # the math form vocabulary (adapter-owned)
+    cas/vocabulary.py          # this adapter's kind, answer kinds, form tokens
     cas/parse.py               # safe parsing of student/author input
     cas/sympy_verifier.py      # Verifier implementation
     content/loader.py          # YAML -> SkillGraph
@@ -91,7 +91,7 @@ Split by responsibility, not by layer. `mastery.py` holds the two update rules a
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: `SkillId`, `MisconceptionId`, `ConceptId`, `ItemId`, `StudentId`, `SessionId`, `TaskId` (all `NewType[str]`); `PrereqStrength`, `VerificationKind`; `Skill`, `Concept`, `Misconception`, `PrereqEdge` (frozen dataclasses); `SkillGraph` with `hard_prereqs(SkillId) -> frozenset[SkillId]`, `soft_prereqs(SkillId) -> frozenset[SkillId]`, `dependents(SkillId) -> frozenset[SkillId]`, `frontier(learned: set[SkillId]) -> frozenset[SkillId]`, `topological_order() -> tuple[SkillId, ...]`, and classmethod `build(skills, edges) -> SkillGraph` which raises `CycleError` on a cycle in hard edges.
+- Produces: `SkillId`, `MisconceptionId`, `ConceptId`, `ItemId`, `StudentId`, `SessionId`, `TaskId` (all `NewType[str]`) plus the opaque token `VerificationKind`; `PrereqStrength`; `Skill`, `Concept`, `Misconception`, `PrereqEdge` (frozen dataclasses); `SkillGraph` with `hard_prereqs(SkillId) -> frozenset[SkillId]`, `soft_prereqs(SkillId) -> frozenset[SkillId]`, `dependents(SkillId) -> frozenset[SkillId]`, `frontier(learned: set[SkillId]) -> frozenset[SkillId]`, `topological_order() -> tuple[SkillId, ...]`, and classmethod `build(skills, edges) -> SkillGraph` which raises `CycleError` on a cycle in hard edges.
 
 - [ ] **Step 1: Create the project scaffold**
 
@@ -131,9 +131,9 @@ python -m venv .venv && .venv/bin/pip install -e ".[dev]"
 # tests/domain/test_graph.py
 import pytest
 
-from learnai.domain.enums import PrereqStrength, VerificationKind
+from learnai.domain.enums import PrereqStrength
 from learnai.domain.graph import CycleError, SkillGraph
-from learnai.domain.ids import SkillId
+from learnai.domain.ids import SkillId, VerificationKind
 from learnai.domain.skills import PrereqEdge, Skill
 
 
@@ -143,7 +143,7 @@ def skill(sid: str) -> Skill:
         subject_id="math",
         name=sid,
         can_do_statement=f"can do {sid}",
-        verification_kind=VerificationKind.CAS_SYMBOLIC,
+        verification_kind=VerificationKind("cas_symbolic"),
         concept_ids=(),
         misconception_ids=(),
     )
@@ -200,6 +200,15 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'learnai.domain.graph'`
 # src/learnai/domain/ids.py
 from typing import NewType
 
+VerificationKind = NewType("VerificationKind", str)
+"""Selects which Verifier adapter judges a skill, e.g. "cas_symbolic".
+
+Opaque, like FormConstraint: enumerating adapter kinds here would mean every
+new subject edits the core, which is exactly what this seam exists to prevent.
+Each adapter declares its own kind; the engine resolves skill -> verifier
+through a registry. See spec §6.1.
+"""
+
 SkillId = NewType("SkillId", str)
 ConceptId = NewType("ConceptId", str)
 MisconceptionId = NewType("MisconceptionId", str)
@@ -221,17 +230,19 @@ class PrereqStrength(Enum):
     SOFT = "soft"
 
 
-class VerificationKind(Enum):
-    CAS_SYMBOLIC = "cas_symbolic"
-    NUMERIC_UNITS = "numeric_units"
-    RUBRIC = "rubric"
-
-
 class ConceptKind(Enum):
+    """Subject-neutral taxonomy of declarative knowledge.
+
+    A history CLAIM is a cause, a maths CLAIM is a theorem; a chemistry RULE is
+    a law, a maths RULE is a formula. Naming the general shape keeps the core
+    usable for subjects that have no theorems.
+    """
+
     DEFINITION = "definition"
-    THEOREM = "theorem"
-    FORMULA = "formula"
+    CLAIM = "claim"
+    RULE = "rule"
     PROCEDURE = "procedure"
+    FACT = "fact"
 
 
 class HelpRung(IntEnum):
@@ -261,7 +272,8 @@ class Confidence(IntEnum):
 class VettingLevel(IntEnum):
     LLM_ONLY = 0
     HUMAN_REVIEWED = 1
-    CAS_VERIFIED = 2
+    MACHINE_VERIFIED = 2
+    """The answer key is derived by code, not written by a human or a model."""
 
 
 class InterventionTiming(Enum):
@@ -289,8 +301,8 @@ class Verdict(Enum):
 # src/learnai/domain/skills.py
 from dataclasses import dataclass
 
-from learnai.domain.enums import ConceptKind, PrereqStrength, VerificationKind
-from learnai.domain.ids import ConceptId, MisconceptionId, SkillId
+from learnai.domain.enums import ConceptKind, PrereqStrength
+from learnai.domain.ids import ConceptId, MisconceptionId, SkillId, VerificationKind
 
 
 @dataclass(frozen=True, slots=True)
@@ -700,9 +712,10 @@ from typing import Any
 
 import yaml
 
-from learnai.domain.enums import PrereqStrength, VerificationKind
+from learnai.adapters.cas.vocabulary import CAS_SYMBOLIC
+from learnai.domain.enums import PrereqStrength
 from learnai.domain.graph import CycleError, SkillGraph
-from learnai.domain.ids import ConceptId, MisconceptionId, SkillId
+from learnai.domain.ids import ConceptId, MisconceptionId, SkillId, VerificationKind
 from learnai.domain.skills import Concept, Misconception, PrereqEdge, Skill
 
 
@@ -755,7 +768,7 @@ def load_cluster(path: Path) -> LoadedCluster:
                 name=entry["name"],
                 can_do_statement=entry["can_do"],
                 verification_kind=VerificationKind(
-                    entry.get("verification", VerificationKind.CAS_SYMBOLIC.value)
+                    entry.get("verification", CAS_SYMBOLIC)
                 ),
                 concept_ids=(),
                 misconception_ids=tuple(mc_ids),
@@ -830,11 +843,11 @@ def test_item_is_immutable():
         provenance=Provenance.generated(TemplateId("t"), 1),
         statement="Factor x^2 + 3x + 2",
         answer_spec=AnswerSpec(
-            "(x + 1)*(x + 2)", (FormConstraint("fully_factored"),), AnswerKind.EXPRESSION
+            "(x + 1)*(x + 2)", (FormConstraint("fully_factored"),), AnswerKind.SINGLE_VALUE
         ),
         worked_steps=("x^2 + 3x + 2", "(x + 1)*(x + 2)"),
         difficulty=0.0,
-        vetting_level=VettingLevel.CAS_VERIFIED,
+        vetting_level=VettingLevel.MACHINE_VERIFIED,
     )
     try:
         item.difficulty = 1.0  # type: ignore[misc]
@@ -851,7 +864,7 @@ def test_a_form_constraint_is_just_an_opaque_token():
 
 def test_answer_kind_defaults_to_expression():
     spec = AnswerSpec("x + 1")
-    assert spec.kind is AnswerKind.EXPRESSION
+    assert spec.kind is AnswerKind.SINGLE_VALUE
     assert spec.form_constraints == ()
 
 
@@ -889,16 +902,23 @@ the core. See spec §6.2.
 
 @dataclass(frozen=True, slots=True)
 class AnswerKind(Enum):
-    EXPRESSION = "expression"
-    EQUATION = "equation"
-    SOLUTION_SET = "solution_set"
+    """How an answer is compared. Subject-neutral by construction.
+
+    RELATION covers a maths equation and a balanced chemical equation alike:
+    both are judged by what they assert, not by their surface form.
+    """
+
+    SINGLE_VALUE = "single_value"
+    RELATION = "relation"
+    VALUE_SET = "value_set"
+    """An unordered collection, compared as a set."""
 
 
 @dataclass(frozen=True, slots=True)
 class AnswerSpec:
     expression: str
     form_constraints: tuple[FormConstraint, ...] = ()
-    kind: AnswerKind = AnswerKind.EXPRESSION
+    kind: AnswerKind = AnswerKind.SINGLE_VALUE
     """SOLUTION_SET answers are comma-separated roots, compared as a set."""
 
 
@@ -1271,12 +1291,12 @@ git commit -m "feat: allowlisted math parser and CAS equivalence checking"
 
 **Files:**
 - Create: `src/learnai/domain/verification.py`, `src/learnai/domain/ports.py`
-- Create: `src/learnai/adapters/cas/constraints.py`, `src/learnai/adapters/cas/sympy_verifier.py`
+- Create: `src/learnai/adapters/cas/vocabulary.py`, `src/learnai/adapters/cas/sympy_verifier.py`
 - Test: `tests/adapters/test_sympy_verifier.py`
 
 **Interfaces:**
 - Consumes: `AnswerKind`, `AnswerSpec`, `FormConstraint`, `StepDiff`, `Verdict` (Tasks 1 and 3); `parse_math`, the three equivalence functions (Task 4).
-- Produces: `CheckResult(verdict: Verdict, failed_constraints: tuple[FormConstraint, ...], step_diff: StepDiff | None)`; the `Verifier` protocol with `check_answer(submitted: str, spec: AnswerSpec) -> CheckResult`, `diff_steps(steps: Sequence[str]) -> StepDiff | None`, `extract_candidate_expressions(text: str) -> tuple[str, ...]`, `matches_answer(expression: str, spec: AnswerSpec) -> bool`; `supported_constraints -> frozenset[FormConstraint]`; `SympyVerifier` implementing it. In `adapters/cas/constraints.py`: the tokens `FULLY_FACTORED`, `EXPANDED`, `SIMPLIFIED`, `EXACT_NOT_DECIMAL`, `COMPLETED_SQUARE`, the set `MATH_CONSTRAINTS`, and `UnknownConstraintError`. (`diff_steps` is stubbed to `None` in this task and implemented in Task 6.)
+- Produces: `CheckResult(verdict: Verdict, failed_constraints: tuple[FormConstraint, ...], step_diff: StepDiff | None)`; the `Verifier` protocol with `check_answer(submitted: str, spec: AnswerSpec) -> CheckResult`, `diff_steps(steps: Sequence[str]) -> StepDiff | None`, `extract_candidate_expressions(text: str) -> tuple[str, ...]`, `matches_answer(expression: str, spec: AnswerSpec) -> bool`; `supported_constraints -> frozenset[FormConstraint]`; `SympyVerifier` implementing it. In `adapters/cas/constraints.py`: the tokens `FULLY_FACTORED`, `EXPANDED`, `SIMPLIFIED`, `EXACT_NOT_DECIMAL`, `COMPLETED_SQUARE`, the set `MATH_CONSTRAINTS`, and `UnknownConstraintError`, and the kind token `CAS_SYMBOLIC`. (`diff_steps` is stubbed to `None` in this task and implemented in Task 6.)
 
 **Why the vocabulary lives here:** `_satisfies` is the only code in the system that ever interprets a form constraint, so the tokens belong beside it. A physics adapter will declare `correct_units` and `significant_figures` without touching the domain, which is the whole point of the `verification_kind` seam.
 
@@ -1286,7 +1306,7 @@ git commit -m "feat: allowlisted math parser and CAS equivalence checking"
 # tests/adapters/test_sympy_verifier.py
 import pytest
 
-from learnai.adapters.cas.constraints import (
+from learnai.adapters.cas.vocabulary import (
     COMPLETED_SQUARE,
     EXACT_NOT_DECIMAL,
     EXPANDED,
@@ -1341,13 +1361,13 @@ def test_exact_form_rejects_a_decimal_approximation():
 
 
 def test_solution_set_answers_ignore_order():
-    spec = AnswerSpec("-1, 2", kind=AnswerKind.SOLUTION_SET)
+    spec = AnswerSpec("-1, 2", kind=AnswerKind.VALUE_SET)
     assert V.check_answer("2, -1", spec).verdict is Verdict.CORRECT
     assert V.check_answer("-1", spec).verdict is Verdict.WRONG
 
 
 def test_equation_answers_compare_solution_sets():
-    spec = AnswerSpec("x = 5", kind=AnswerKind.EQUATION)
+    spec = AnswerSpec("x = 5", kind=AnswerKind.RELATION)
     assert V.check_answer("2x = 10", spec).verdict is Verdict.CORRECT
     assert V.check_answer("x = 8", spec).verdict is Verdict.WRONG
 
@@ -1365,7 +1385,7 @@ def test_solution_set_constraints_apply_to_every_root():
     spec = AnswerSpec(
         "1 + sqrt(2), 1 - sqrt(2)",
         (EXACT_NOT_DECIMAL,),
-        kind=AnswerKind.SOLUTION_SET,
+        kind=AnswerKind.VALUE_SET,
     )
     assert V.check_answer("1 - sqrt(2), 1 + sqrt(2)", spec).verdict is Verdict.CORRECT
     assert V.check_answer("2.414213, -0.414213", spec).verdict is Verdict.WRONG
@@ -1376,7 +1396,7 @@ def test_the_verifier_declares_the_vocabulary_it_can_judge():
 
 
 def test_an_unknown_constraint_fails_loudly_rather_than_silently_passing():
-    from learnai.adapters.cas.constraints import UnknownConstraintError
+    from learnai.adapters.cas.vocabulary import UnknownConstraintError
 
     spec = AnswerSpec("x + 1", (FormConstraint("balanced_equation"),))
     with pytest.raises(UnknownConstraintError):
@@ -1450,14 +1470,18 @@ class Clock(Protocol):
 - [ ] **Step 4: Write the adapter's form vocabulary**
 
 ```python
-# src/learnai/adapters/cas/constraints.py
-"""Form vocabulary for `cas_symbolic` skills.
+# src/learnai/adapters/cas/vocabulary.py
+"""Everything this adapter names that the domain treats as opaque.
 
-The domain treats every constraint as an opaque token. This module is the only
-place that names the math ones, and `sympy_verifier._satisfies` is the only
-place that interprets them.
+The core knows a skill has a verification kind and that an answer may carry
+form requirements; it never knows what "cas_symbolic" or "fully_factored"
+mean. This module is the only place the mathematical vocabulary is named, and
+`sympy_verifier._satisfies` is the only place it is interpreted.
 """
+from learnai.domain.ids import VerificationKind
 from learnai.domain.items import FormConstraint
+
+CAS_SYMBOLIC = VerificationKind("cas_symbolic")
 
 FULLY_FACTORED = FormConstraint("fully_factored")
 EXPANDED = FormConstraint("expanded")
@@ -1492,7 +1516,7 @@ from learnai.adapters.cas.equivalence import (
     expressions_equivalent,
     solution_sets_equivalent,
 )
-from learnai.adapters.cas.constraints import (
+from learnai.adapters.cas.vocabulary import (
     COMPLETED_SQUARE,
     EXACT_NOT_DECIMAL,
     EXPANDED,
@@ -1518,7 +1542,7 @@ class SympyVerifier:
 
     def check_answer(self, submitted: str, spec: AnswerSpec) -> CheckResult:
         try:
-            if spec.kind is AnswerKind.SOLUTION_SET:
+            if spec.kind is AnswerKind.VALUE_SET:
                 got = [parse_math(p) for p in submitted.split(",")]
                 want = [parse_math(p) for p in spec.expression.split(",")]
                 if not solution_sets_equivalent(got, want):
@@ -1532,7 +1556,7 @@ class SympyVerifier:
                     return CheckResult(Verdict.WRONG, failed_constraints=failed_roots)
                 return CheckResult(Verdict.CORRECT)
 
-            if spec.kind is AnswerKind.EQUATION:
+            if spec.kind is AnswerKind.RELATION:
                 got_eq = parse_math(submitted, allow_equation=True)
                 want_eq = parse_math(spec.expression, allow_equation=True)
                 if not isinstance(got_eq, sp.Eq) or not isinstance(want_eq, sp.Eq):
@@ -1616,7 +1640,7 @@ Expected: PASS. `tests/test_domain_purity.py` must still pass — `verification.
 
 ```bash
 git add src/learnai/domain/verification.py src/learnai/domain/ports.py \
-        src/learnai/adapters/cas/constraints.py src/learnai/adapters/cas/sympy_verifier.py tests/adapters/test_sympy_verifier.py
+        src/learnai/adapters/cas/vocabulary.py src/learnai/adapters/cas/sympy_verifier.py tests/adapters/test_sympy_verifier.py
 git commit -m "feat: answer checking with form constraints and answer kinds"
 ```
 
@@ -1803,7 +1827,7 @@ import random
 
 import sympy as sp
 
-from learnai.adapters.cas.constraints import (
+from learnai.adapters.cas.vocabulary import (
     COMPLETED_SQUARE,
     EXACT_NOT_DECIMAL,
     EXPANDED,
@@ -1835,7 +1859,7 @@ def expand_binomial(rng: random.Random) -> GeneratedProblem:
         prompt_expression=sp.sstr(prompt),
         answer=sp.sstr(answer),
         form_constraints=(EXPANDED,),
-        kind=AnswerKind.EXPRESSION,
+        kind=AnswerKind.SINGLE_VALUE,
         worked_steps=(sp.sstr(prompt), sp.sstr(answer)),
     )
 
@@ -1849,7 +1873,7 @@ def expand_square(rng: random.Random) -> GeneratedProblem:
         prompt_expression=sp.sstr(prompt),
         answer=sp.sstr(answer),
         form_constraints=(EXPANDED,),
-        kind=AnswerKind.EXPRESSION,
+        kind=AnswerKind.SINGLE_VALUE,
         worked_steps=(sp.sstr(prompt), sp.sstr(answer)),
     )
 
@@ -1868,7 +1892,7 @@ def factor_common(rng: random.Random) -> GeneratedProblem:
         prompt_expression=sp.sstr(prompt),
         answer=sp.sstr(answer),
         form_constraints=(FULLY_FACTORED,),
-        kind=AnswerKind.EXPRESSION,
+        kind=AnswerKind.SINGLE_VALUE,
         worked_steps=(sp.sstr(prompt), sp.sstr(answer)),
     )
 
@@ -1882,7 +1906,7 @@ def factor_monic(rng: random.Random) -> GeneratedProblem:
         prompt_expression=sp.sstr(prompt),
         answer=sp.sstr(answer),
         form_constraints=(FULLY_FACTORED,),
-        kind=AnswerKind.EXPRESSION,
+        kind=AnswerKind.SINGLE_VALUE,
         worked_steps=(sp.sstr(prompt), sp.sstr(answer)),
     )
 
@@ -1896,7 +1920,7 @@ def factor_difference_of_squares(rng: random.Random) -> GeneratedProblem:
         prompt_expression=sp.sstr(prompt),
         answer=sp.sstr(answer),
         form_constraints=(FULLY_FACTORED,),
-        kind=AnswerKind.EXPRESSION,
+        kind=AnswerKind.SINGLE_VALUE,
         worked_steps=(sp.sstr(prompt), sp.sstr(answer)),
     )
 
@@ -1911,7 +1935,7 @@ def factor_nonmonic(rng: random.Random) -> GeneratedProblem:
         prompt_expression=sp.sstr(prompt),
         answer=sp.sstr(answer),
         form_constraints=(FULLY_FACTORED,),
-        kind=AnswerKind.EXPRESSION,
+        kind=AnswerKind.SINGLE_VALUE,
         worked_steps=(sp.sstr(prompt), sp.sstr(answer)),
     )
 
@@ -1925,7 +1949,7 @@ def solve_by_factoring(rng: random.Random) -> GeneratedProblem:
         prompt_expression=None,
         answer=", ".join(str(r) for r in roots),
         form_constraints=(),
-        kind=AnswerKind.SOLUTION_SET,
+        kind=AnswerKind.VALUE_SET,
         worked_steps=(f"{sp.sstr(lhs)} = 0", f"{sp.sstr(sp.factor(lhs))} = 0"),
     )
 
@@ -1940,7 +1964,7 @@ def complete_the_square(rng: random.Random) -> GeneratedProblem:
         prompt_expression=sp.sstr(prompt),
         answer=sp.sstr(answer),
         form_constraints=(COMPLETED_SQUARE,),
-        kind=AnswerKind.EXPRESSION,
+        kind=AnswerKind.SINGLE_VALUE,
         worked_steps=(sp.sstr(prompt), sp.sstr(answer)),
     )
 
@@ -1961,7 +1985,7 @@ def apply_quadratic_formula(rng: random.Random) -> GeneratedProblem:
         prompt_expression=None,
         answer=", ".join(sp.sstr(r) for r in roots),
         form_constraints=(EXACT_NOT_DECIMAL,),
-        kind=AnswerKind.SOLUTION_SET,
+        kind=AnswerKind.VALUE_SET,
         worked_steps=(),
     )
 
@@ -1980,7 +2004,7 @@ def count_real_roots(rng: random.Random) -> GeneratedProblem:
         prompt_expression=None,
         answer=str(count),
         form_constraints=(),
-        kind=AnswerKind.EXPRESSION,
+        kind=AnswerKind.SINGLE_VALUE,
         worked_steps=(),
     )
 
@@ -1997,7 +2021,7 @@ def vertex_x_coordinate(rng: random.Random) -> GeneratedProblem:
         prompt_expression=None,
         answer=sp.sstr(sp.Rational(-b, 2 * a)),
         form_constraints=(EXACT_NOT_DECIMAL,),
-        kind=AnswerKind.EXPRESSION,
+        kind=AnswerKind.SINGLE_VALUE,
         worked_steps=(),
     )
 
@@ -2014,7 +2038,7 @@ def rectangle_area_word_problem(rng: random.Random) -> GeneratedProblem:
         prompt_expression=None,
         answer=str(width),
         form_constraints=(),
-        kind=AnswerKind.EXPRESSION,
+        kind=AnswerKind.SINGLE_VALUE,
         worked_steps=(),
     )
 
@@ -2082,7 +2106,7 @@ class GeneratorRegistry:
             ),
             worked_steps=problem.worked_steps,
             difficulty=spec.difficulty,
-            vetting_level=VettingLevel.CAS_VERIFIED,
+            vetting_level=VettingLevel.MACHINE_VERIFIED,
         )
 
     def next_item(self, skill_id: SkillId, target_difficulty: float, seed: int) -> Item:
@@ -2162,7 +2186,7 @@ def test_no_degenerate_coefficients(spec):
     for seed in range(DEEP_SEEDS):
         problem = REGISTRY.instantiate_raw(spec.id, seed)
         expr_text = problem.prompt_expression or problem.statement
-        for number in parse_math(problem.answer).atoms(sp.Integer) if problem.kind is AnswerKind.EXPRESSION else ():
+        for number in parse_math(problem.answer).atoms(sp.Integer) if problem.kind is AnswerKind.SINGLE_VALUE else ():
             assert abs(int(number)) <= 400, f"{spec.id} seed {seed} produced a wild coefficient"
         assert "zoo" not in expr_text and "nan" not in expr_text
 
@@ -2567,51 +2591,64 @@ git commit -m "feat: misconception diagnosis with six CAS rules and explicit def
 ### Task 9: Mastery — strength and evidence weighting
 
 **Files:**
-- Create: `src/learnai/domain/constants.py`, `src/learnai/domain/mastery.py`, `src/learnai/domain/evidence.py`
+- Create: `src/learnai/domain/parameters.py`, `src/learnai/domain/mastery.py`, `src/learnai/domain/evidence.py`
 - Test: `tests/domain/test_strength.py`, `tests/domain/test_evidence.py`
 
 **Interfaces:**
 - Consumes: ids and enums (Task 1).
-- Produces: every tuned constant in `constants.py`; `SkillState` frozen dataclass; `p_expected(strength, difficulty) -> float`, `k_factor(attempt_count) -> float`, `update_strength(state, item_difficulty, correct, weight) -> SkillState`; `EVIDENCE_WEIGHT: dict[EvidenceClass, float]` and `classify_evidence(*, attempt_index, help_taken, taught_this_session, timed) -> EvidenceClass`.
+- Produces: `MasteryParameters` (frozen, all fields defaulted) and `DEFAULT_PARAMETERS` in `parameters.py`; `SkillState` frozen dataclass; `p_expected(strength, difficulty) -> float`, `k_factor(attempt_count) -> float`, `update_strength(state, item_difficulty, correct, weight, params) -> SkillState`; every mastery function takes `params: MasteryParameters = DEFAULT_PARAMETERS` as its final argument; `EVIDENCE_WEIGHT: dict[EvidenceClass, float]` and `classify_evidence(*, attempt_index, help_taken, taught_this_session, timed) -> EvidenceClass`.
 
 **Interpretation recorded here:** the spec says "first attempt cold counts". A second attempt on the same item, even with no hint taken, follows a wrong-answer verdict — information the student did not have before — so it is **not** cold. `classify_evidence` returns `ASSISTED` for any attempt after the first. Flag this to the spec owner if they intended otherwise; it is a one-line change.
 
-- [ ] **Step 1: Write the constants**
+- [ ] **Step 1: Write the parameters value object**
+
+These are **injected, not imported.** Spec §7.2 requires `r_target` to be a per-skill
+policy value, and §7.8 requires fitting globally and then per-skill; module-level
+constants make both impossible and make a canary comparison of two configurations
+impossible too. Defaults live on the dataclass so no call site is noisier for it.
 
 ```python
-# src/learnai/domain/constants.py
-"""Tuned parameters, all in one place. See spec §7.8 for how each is calibrated."""
+# src/learnai/domain/parameters.py
+"""Tuned parameters of the mastery model. See spec §7.8 for how each is calibrated."""
+from dataclasses import dataclass
 
-# --- Strength (Elo, logit scale; see spec §7.1) -------------------------------
-STRENGTH_SCALE = 1.0
-"""SCALE = 1 means strength and difficulty are in logits: a gap of 1 is p≈0.73."""
-K0 = 0.4
-K_DECAY = 0.05
-"""K = K0 / (1 + K_DECAY * attempts): fast early, stable once well determined."""
-STRENGTH_THRESHOLD = 1.5
-"""Logits above an item's difficulty required for mastery: p≈0.82 on a core item."""
-MIN_UNASSISTED_CORRECT = 2
 
-# --- Memory (half-life days; see spec §7.2) -----------------------------------
-R_TARGET = 0.9
-STABILITY_GROWTH_A = 5.0
-"""Derived, not guessed: A = (m-1)/(1-R_TARGET) with m=1.5 reaches ~30-day
-intervals after fourteen on-time successes."""
-FAILURE_MULTIPLIER_F = 0.3
-"""F = m**-3: a lapse forfeits about three reviews' progress."""
-INITIAL_STABILITY_DAYS = 1.0
-MIN_STABILITY_DAYS = 0.2
+@dataclass(frozen=True, slots=True)
+class MasteryParameters:
+    # --- Strength (Elo, logit scale; spec §7.1) ------------------------------
+    strength_scale: float = 1.0
+    """1.0 means strength and difficulty are in logits: a gap of 1 is p≈0.73."""
+    k0: float = 0.4
+    k_decay: float = 0.05
+    """K = k0 / (1 + k_decay * attempts): fast early, stable once well determined."""
+    strength_threshold: float = 1.5
+    """Logits above an item's difficulty required for mastery: p≈0.82 on a core item."""
+    min_unassisted_correct: int = 2
 
-# --- Prerequisite propagation (spec §7.4) -------------------------------------
-PREREQ_PROPAGATION_WEIGHT = 0.3
+    # --- Memory (half-life days; spec §7.2) ----------------------------------
+    r_target: float = 0.9
+    """Per-skill policy value: raise inside an exam horizon, lower for maintenance."""
+    stability_growth_a: float = 5.0
+    """Derived, not guessed: A = (m-1)/(1-r_target) with m=1.5 reaches ~30-day
+    intervals after fourteen on-time successes."""
+    failure_multiplier_f: float = 0.3
+    """F = m**-3: a lapse forfeits about three reviews' progress."""
+    initial_stability_days: float = 1.0
+    min_stability_days: float = 0.2
 
-# --- Calibration (spec §7.5) --------------------------------------------------
-CALIBRATION_EMA_ALPHA = 0.2
-OVERCONFIDENCE_THRESHOLD = 0.15
+    # --- Prerequisite propagation (spec §7.4) --------------------------------
+    prereq_propagation_weight: float = 0.3
 
-# --- Planning (spec §7.6) -----------------------------------------------------
-TARGET_LOGIT_MARGIN = 1.1
-"""Serve items the student should clear about 75% of the time."""
+    # --- Calibration (spec §7.5) ---------------------------------------------
+    calibration_ema_alpha: float = 0.2
+    overconfidence_threshold: float = 0.15
+
+    # --- Planning (spec §7.6) ------------------------------------------------
+    target_logit_margin: float = 1.1
+    """Serve items the student should clear about 75% of the time."""
+
+
+DEFAULT_PARAMETERS = MasteryParameters()
 ```
 
 - [ ] **Step 2: Write the failing strength test**
@@ -2623,8 +2660,8 @@ import math
 from hypothesis import given
 from hypothesis import strategies as st
 
-from learnai.domain.constants import K0
 from learnai.domain.ids import SkillId, StudentId
+from learnai.domain.parameters import DEFAULT_PARAMETERS
 from learnai.domain.mastery import SkillState, k_factor, p_expected, update_strength
 
 FINITE = st.floats(min_value=-4.0, max_value=4.0, allow_nan=False, allow_infinity=False)
@@ -2666,7 +2703,7 @@ def test_failure_on_an_easy_item_costs_more_than_on_a_hard_one():
 
 
 def test_k_decays_with_observations():
-    assert k_factor(0) == K0
+    assert k_factor(0) == DEFAULT_PARAMETERS.k0
     assert k_factor(50) < k_factor(10) < k_factor(0)
 
 
@@ -2678,6 +2715,20 @@ def test_unassisted_correct_count_tracks_only_weighted_successes():
     assert update_strength(state(), 0.0, True, 1.0).unassisted_correct_count == 1
     assert update_strength(state(), 0.0, True, 0.0).unassisted_correct_count == 0
     assert update_strength(state(), 0.0, False, 1.0).unassisted_correct_count == 0
+
+
+def test_parameters_are_injected_not_baked_in():
+    """Spec §7.8 fits these per skill; a module constant could never be overridden."""
+    from dataclasses import replace as dc_replace
+
+    from learnai.domain.parameters import MasteryParameters
+
+    eager = dc_replace(MasteryParameters(), k0=2.0)
+    base = state()
+    assert (
+        update_strength(base, 0.0, True, 1.0, eager).strength
+        > update_strength(base, 0.0, True, 1.0).strength
+    )
 
 
 @given(strength=FINITE, difficulty=FINITE, correct=st.booleans())
@@ -2716,8 +2767,8 @@ import math
 from dataclasses import dataclass, replace
 from datetime import datetime
 
-from learnai.domain.constants import K0, K_DECAY, STRENGTH_SCALE
 from learnai.domain.ids import MisconceptionId, SkillId, StudentId
+from learnai.domain.parameters import DEFAULT_PARAMETERS, MasteryParameters
 
 
 @dataclass(frozen=True, slots=True)
@@ -2735,16 +2786,22 @@ class SkillState:
     active_misconceptions: tuple[MisconceptionId, ...] = ()
 
 
-def p_expected(strength: float, difficulty: float) -> float:
-    return 1.0 / (1.0 + math.exp(-(strength - difficulty) / STRENGTH_SCALE))
+def p_expected(
+    strength: float, difficulty: float, params: MasteryParameters = DEFAULT_PARAMETERS
+) -> float:
+    return 1.0 / (1.0 + math.exp(-(strength - difficulty) / params.strength_scale))
 
 
-def k_factor(attempt_count: int) -> float:
-    return K0 / (1.0 + K_DECAY * attempt_count)
+def k_factor(attempt_count: int, params: MasteryParameters = DEFAULT_PARAMETERS) -> float:
+    return params.k0 / (1.0 + params.k_decay * attempt_count)
 
 
 def update_strength(
-    state: SkillState, item_difficulty: float, correct: bool, weight: float
+    state: SkillState,
+    item_difficulty: float,
+    correct: bool,
+    weight: float,
+    params: MasteryParameters = DEFAULT_PARAMETERS,
 ) -> SkillState:
     """Elo update, scaled by how much this observation is permitted to count.
 
@@ -2752,8 +2809,8 @@ def update_strength(
     class weight. A weight of zero leaves strength untouched — that is the
     whole of P2, expressed arithmetically.
     """
-    surprise = (1.0 if correct else 0.0) - p_expected(state.strength, item_difficulty)
-    delta = k_factor(state.attempt_count) * weight * surprise
+    surprise = (1.0 if correct else 0.0) - p_expected(state.strength, item_difficulty, params)
+    delta = k_factor(state.attempt_count, params) * weight * surprise
     return replace(
         state,
         strength=state.strength + delta,
@@ -2766,7 +2823,7 @@ def update_strength(
 - [ ] **Step 5: Run the strength tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/domain/test_strength.py -v`
-Expected: PASS — 11 tests.
+Expected: PASS — 12 tests.
 
 - [ ] **Step 6: Write the failing evidence test**
 
@@ -2868,7 +2925,7 @@ Expected: PASS — 8 tests.
 - [ ] **Step 9: Commit**
 
 ```bash
-git add src/learnai/domain/constants.py src/learnai/domain/mastery.py \
+git add src/learnai/domain/parameters.py src/learnai/domain/mastery.py \
         src/learnai/domain/evidence.py tests/domain/test_strength.py tests/domain/test_evidence.py
 git commit -m "feat: Elo strength update and evidence classification"
 ```
@@ -2925,14 +2982,8 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from learnai.adapters.clock import FakeClock
-from learnai.domain.constants import (
-    FAILURE_MULTIPLIER_F,
-    INITIAL_STABILITY_DAYS,
-    MIN_STABILITY_DAYS,
-    R_TARGET,
-    STRENGTH_THRESHOLD,
-)
 from learnai.domain.ids import SkillId, StudentId
+from learnai.domain.parameters import DEFAULT_PARAMETERS as P
 from learnai.domain.mastery import (
     SkillState,
     due_at,
@@ -2974,7 +3025,7 @@ def test_retrievability_is_one_quarter_after_two_half_lives():
 def test_first_success_sets_the_initial_stability():
     clock = FakeClock()
     after = update_stability(state(), correct=True, now=clock.now())
-    assert after.stability == INITIAL_STABILITY_DAYS
+    assert after.stability == P.initial_stability_days
     assert after.last_success_at == clock.now()
 
 
@@ -2995,21 +3046,21 @@ def test_failure_collapses_stability_by_the_failure_multiplier():
     clock = FakeClock()
     s = state(stability=10.0, last_success_at=clock.now())
     after = update_stability(s, correct=False, now=clock.advance(5.0))
-    assert math.isclose(after.stability, 10.0 * FAILURE_MULTIPLIER_F, abs_tol=1e-9)
+    assert math.isclose(after.stability, 10.0 * P.failure_multiplier_f, abs_tol=1e-9)
     assert after.last_success_at == s.last_success_at, "a failure is not a success"
 
 
 def test_stability_never_falls_below_the_floor():
     clock = FakeClock()
-    s = state(stability=MIN_STABILITY_DAYS, last_success_at=clock.now())
-    assert update_stability(s, correct=False, now=clock.now()).stability == MIN_STABILITY_DAYS
+    s = state(stability=P.min_stability_days, last_success_at=clock.now())
+    assert update_stability(s, correct=False, now=clock.now()).stability == P.min_stability_days
 
 
 def test_due_at_is_about_fifteen_percent_of_the_half_life():
     clock = FakeClock()
     s = state(stability=10.0, last_success_at=clock.now())
     gap = (due_at(s) - clock.now()).total_seconds() / 86400.0
-    assert math.isclose(gap, 10.0 * math.log2(1 / R_TARGET), rel_tol=1e-6)
+    assert math.isclose(gap, 10.0 * math.log2(1 / P.r_target), rel_tol=1e-6)
     assert 1.4 < gap < 1.6
 
 
@@ -3029,7 +3080,7 @@ def test_freshness_flips_exactly_at_the_target():
 def test_learned_requires_both_strength_and_repeated_cold_success():
     assert not is_learned(state(strength=3.0, unassisted_correct_count=1))
     assert not is_learned(state(strength=0.1, unassisted_correct_count=5))
-    assert is_learned(state(strength=STRENGTH_THRESHOLD, unassisted_correct_count=2))
+    assert is_learned(state(strength=P.strength_threshold, unassisted_correct_count=2))
 
 
 @given(days=st.floats(min_value=0.0, max_value=3650.0, allow_nan=False))
@@ -3048,7 +3099,7 @@ Expected: FAIL — `ImportError: cannot import name 'retrievability' from 'learn
 
 - [ ] **Step 4: Extend mastery.py**
 
-Add these imports at the top: `from datetime import timedelta` and the constants `FAILURE_MULTIPLIER_F, INITIAL_STABILITY_DAYS, MIN_STABILITY_DAYS, MIN_UNASSISTED_CORRECT, R_TARGET, STABILITY_GROWTH_A, STRENGTH_THRESHOLD`. Then append:
+Add `from datetime import timedelta` at the top. `MasteryParameters` is already imported. Then append:
 
 ```python
 def elapsed_days(earlier: datetime, later: datetime) -> float:
@@ -3063,7 +3114,12 @@ def retrievability(state: SkillState, now: datetime) -> float:
     return 2.0 ** (-elapsed_days(state.last_success_at, now) / state.stability)
 
 
-def update_stability(state: SkillState, correct: bool, now: datetime) -> SkillState:
+def update_stability(
+    state: SkillState,
+    correct: bool,
+    now: datetime,
+    params: MasteryParameters = DEFAULT_PARAMETERS,
+) -> SkillState:
     """Grow the half-life on a successful retrieval; collapse it on a lapse.
 
     Growth scales with 1 - retrievability, so a retrieval made when the memory
@@ -3071,39 +3127,43 @@ def update_stability(state: SkillState, correct: bool, now: datetime) -> SkillSt
     an immediate re-test earns almost nothing.
     """
     if not correct:
-        collapsed = max(MIN_STABILITY_DAYS, state.stability * FAILURE_MULTIPLIER_F)
+        collapsed = max(params.min_stability_days, state.stability * params.failure_multiplier_f)
         return replace(state, stability=collapsed, last_reviewed_at=now)
 
     if state.last_success_at is None or state.stability <= 0.0:
         return replace(
             state,
-            stability=INITIAL_STABILITY_DAYS,
+            stability=params.initial_stability_days,
             last_success_at=now,
             last_reviewed_at=now,
         )
 
     r = retrievability(state, now)
-    grown = state.stability * (1.0 + STABILITY_GROWTH_A * (1.0 - r))
+    grown = state.stability * (1.0 + params.stability_growth_a * (1.0 - r))
     return replace(state, stability=grown, last_success_at=now, last_reviewed_at=now)
 
 
-def due_at(state: SkillState) -> datetime | None:
-    """When retrievability will fall to R_TARGET — roughly 0.152 half-lives."""
+def due_at(
+    state: SkillState, params: MasteryParameters = DEFAULT_PARAMETERS
+) -> datetime | None:
+    """When retrievability will fall to r_target — roughly 0.152 half-lives."""
     if state.last_success_at is None or state.stability <= 0.0:
         return None
-    gap = state.stability * math.log2(1.0 / R_TARGET)
+    gap = state.stability * math.log2(1.0 / params.r_target)
     return state.last_success_at + timedelta(days=gap)
 
 
-def is_fresh(state: SkillState, now: datetime) -> bool:
-    return retrievability(state, now) >= R_TARGET
+def is_fresh(
+    state: SkillState, now: datetime, params: MasteryParameters = DEFAULT_PARAMETERS
+) -> bool:
+    return retrievability(state, now) >= params.r_target
 
 
-def is_learned(state: SkillState) -> bool:
+def is_learned(state: SkillState, params: MasteryParameters = DEFAULT_PARAMETERS) -> bool:
     """An achievement, not a freshness reading: once earned it never un-earns."""
     return (
-        state.strength >= STRENGTH_THRESHOLD
-        and state.unassisted_correct_count >= MIN_UNASSISTED_CORRECT
+        state.strength >= params.strength_threshold
+        and state.unassisted_correct_count >= params.min_unassisted_correct
     )
 ```
 
@@ -3136,16 +3196,16 @@ git commit -m "feat: memory stability, retrievability, and derived mastery state
 ```python
 # tests/domain/test_propagation.py
 from learnai.adapters.clock import FakeClock
-from learnai.domain.enums import PrereqStrength, VerificationKind
+from learnai.domain.enums import PrereqStrength
 from learnai.domain.graph import SkillGraph
-from learnai.domain.ids import SkillId, StudentId
+from learnai.domain.ids import SkillId, StudentId, VerificationKind
 from learnai.domain.mastery import SkillState
 from learnai.domain.propagation import propagate_success
 from learnai.domain.skills import PrereqEdge, Skill
 
 
 def skill(sid: str) -> Skill:
-    return Skill(SkillId(sid), "math", sid, f"can {sid}", VerificationKind.CAS_SYMBOLIC, (), ())
+    return Skill(SkillId(sid), "math", sid, f"can {sid}", VerificationKind("cas_symbolic"), (), ())
 
 
 GRAPH = SkillGraph.build(
@@ -3240,10 +3300,10 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'learnai.domain.propaga
 from dataclasses import replace
 from datetime import datetime
 
-from learnai.domain.constants import PREREQ_PROPAGATION_WEIGHT, STABILITY_GROWTH_A
 from learnai.domain.graph import SkillGraph
 from learnai.domain.ids import SkillId
 from learnai.domain.mastery import SkillState, is_learned, retrievability
+from learnai.domain.parameters import DEFAULT_PARAMETERS, MasteryParameters
 
 
 def propagate_success(
@@ -3251,6 +3311,7 @@ def propagate_success(
     graph: SkillGraph,
     skill_id: SkillId,
     now: datetime,
+    params: MasteryParameters = DEFAULT_PARAMETERS,
 ) -> dict[SkillId, SkillState]:
     """Credit an implicit retrieval to the direct hard prerequisites of a success.
 
@@ -3262,10 +3323,10 @@ def propagate_success(
     updated = dict(states)
     for prereq_id in graph.hard_prereqs(skill_id):
         prereq = updated.get(prereq_id)
-        if prereq is None or not is_learned(prereq) or prereq.stability <= 0.0:
+        if prereq is None or not is_learned(prereq, params) or prereq.stability <= 0.0:
             continue
         r = retrievability(prereq, now)
-        growth = 1.0 + PREREQ_PROPAGATION_WEIGHT * STABILITY_GROWTH_A * (1.0 - r)
+        growth = 1.0 + params.prereq_propagation_weight * params.stability_growth_a * (1.0 - r)
         updated[prereq_id] = replace(
             prereq,
             stability=prereq.stability * growth,
@@ -3332,8 +3393,8 @@ def test_a_calibrated_student_is_not_flagged():
 
 ```python
 # src/learnai/domain/calibration.py
-from learnai.domain.constants import CALIBRATION_EMA_ALPHA, OVERCONFIDENCE_THRESHOLD
 from learnai.domain.enums import Confidence
+from learnai.domain.parameters import DEFAULT_PARAMETERS, MasteryParameters
 
 CONFIDENCE_PROBABILITY: dict[Confidence, float] = {
     Confidence.GUESSING: 0.25,
@@ -3343,7 +3404,12 @@ CONFIDENCE_PROBABILITY: dict[Confidence, float] = {
 }
 
 
-def update_calibration(gap: float, confidence: Confidence, correct: bool) -> float:
+def update_calibration(
+    gap: float,
+    confidence: Confidence,
+    correct: bool,
+    params: MasteryParameters = DEFAULT_PARAMETERS,
+) -> float:
     """Exponential moving average of (stated probability - outcome).
 
     Positive means overconfident. This is the platform's core diagnostic: the
@@ -3351,11 +3417,12 @@ def update_calibration(gap: float, confidence: Confidence, correct: bool) -> flo
     this number is that failure, measured.
     """
     observation = CONFIDENCE_PROBABILITY[confidence] - (1.0 if correct else 0.0)
-    return (1.0 - CALIBRATION_EMA_ALPHA) * gap + CALIBRATION_EMA_ALPHA * observation
+    alpha = params.calibration_ema_alpha
+    return (1.0 - alpha) * gap + alpha * observation
 
 
-def is_overconfident(gap: float) -> bool:
-    return gap > OVERCONFIDENCE_THRESHOLD
+def is_overconfident(gap: float, params: MasteryParameters = DEFAULT_PARAMETERS) -> bool:
+    return gap > params.overconfidence_threshold
 ```
 
 - [ ] **Step 7: Run the calibration tests to verify they pass**
@@ -3408,7 +3475,7 @@ def test_practice_charges_the_fresh_variant_price():
 
 
 def test_practice_only_serves_cas_verified_items():
-    assert PRACTICE.min_vetting_level is VettingLevel.CAS_VERIFIED
+    assert PRACTICE.min_vetting_level is VettingLevel.MACHINE_VERIFIED
 
 
 def test_practice_lets_an_error_run_before_intervening():
@@ -3463,7 +3530,7 @@ PRACTICE = ModeContract(
     unlock_full_reveal_after=EffortCondition(min_attempts=2, ladder_exhausted=True),
     reveal_price=RevealPrice.FRESH_VARIANT_COLD,
     evidence_weight=1.0,
-    min_vetting_level=VettingLevel.CAS_VERIFIED,
+    min_vetting_level=VettingLevel.MACHINE_VERIFIED,
     intervention_timing=InterventionTiming.LET_RUN,
     timed=False,
     mixes_skills=True,
@@ -3626,7 +3693,7 @@ git commit -m "feat: practice mode contract and hint ladder state machine"
 
 ---
 
-### Task 13: LeakGuard
+### Task 13: Leak detection
 
 **Files:**
 - Create: `src/learnai/domain/leakguard.py`
@@ -3634,7 +3701,7 @@ git commit -m "feat: practice mode contract and hint ladder state machine"
 
 **Interfaces:**
 - Consumes: `Verifier` protocol (Task 5), `AnswerSpec` (Task 3), `HelpRung` (Task 1).
-- Produces: `LeakVerdict(leaked: bool, offending_expression: str | None)`; `LeakGuard(verifier)` with `inspect(draft: str, answer_spec: AnswerSpec, permitted_rung: HelpRung) -> LeakVerdict`.
+- Produces: `LeakVerdict(leaked: bool, offending_expression: str | None)`; `detect_leak(verifier: Verifier, draft: str, answer_spec: AnswerSpec, permitted_rung: HelpRung) -> LeakVerdict`. A function rather than a class, because the verifier varies per skill once a second subject exists — binding one at construction would quietly police chemistry with the maths CAS.
 
 **Why this exists:** a system prompt saying "never reveal the answer" is a hope. Models under pressure from a frustrated teenager will cave, and the contract in Task 12 would then be decorative. This closes the gap between the policy as written and the policy as enforced, deterministically and at no token cost.
 
@@ -3647,14 +3714,14 @@ import pytest
 from learnai.adapters.cas.sympy_verifier import SympyVerifier
 from learnai.domain.enums import HelpRung
 from learnai.domain.items import AnswerSpec
-from learnai.domain.leakguard import LeakGuard
+from learnai.domain.leakguard import detect_leak
 
-GUARD = LeakGuard(SympyVerifier())
+VERIFIER = SympyVerifier()
 SPEC = AnswerSpec("(x + 1)*(x + 2)")
 
 
 def inspect(draft: str, rung: HelpRung = HelpRung.NUDGE):
-    return GUARD.inspect(draft, SPEC, rung)
+    return detect_leak(VERIFIER, draft, SPEC, rung)
 
 
 @pytest.mark.parametrize(
@@ -3703,7 +3770,7 @@ def test_unparseable_fragments_do_not_crash_the_guard():
 Run: `.venv/bin/pytest tests/domain/test_leakguard.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'learnai.domain.leakguard'`
 
-- [ ] **Step 3: Write the LeakGuard**
+- [ ] **Step 3: Write the leak detector**
 
 ```python
 # src/learnai/domain/leakguard.py
@@ -3720,21 +3787,23 @@ class LeakVerdict:
     offending_expression: str | None = None
 
 
-class LeakGuard:
-    """Deterministic enforcement of the mode contract's answer-withholding policy."""
+def detect_leak(
+    verifier: Verifier,
+    draft: str,
+    answer_spec: AnswerSpec,
+    permitted_rung: HelpRung,
+) -> LeakVerdict:
+    """Deterministic enforcement of the mode contract's answer-withholding policy.
 
-    def __init__(self, verifier: Verifier) -> None:
-        self._verifier = verifier
-
-    def inspect(
-        self, draft: str, answer_spec: AnswerSpec, permitted_rung: HelpRung
-    ) -> LeakVerdict:
-        if permitted_rung >= HelpRung.FULL_REVEAL:
-            return LeakVerdict(leaked=False)
-        for candidate in self._verifier.extract_candidate_expressions(draft):
-            if self._verifier.matches_answer(candidate, answer_spec):
-                return LeakVerdict(leaked=True, offending_expression=candidate)
+    The verifier is passed in rather than held, because which one is correct
+    depends on the skill being tutored.
+    """
+    if permitted_rung >= HelpRung.FULL_REVEAL:
         return LeakVerdict(leaked=False)
+    for candidate in verifier.extract_candidate_expressions(draft):
+        if verifier.matches_answer(candidate, answer_spec):
+            return LeakVerdict(leaked=True, offending_expression=candidate)
+    return LeakVerdict(leaked=False)
 ```
 
 - [ ] **Step 4: Run the tests to verify they pass**
@@ -3761,8 +3830,8 @@ git commit -m "feat: CAS-backed leak guard over tutor drafts"
 - Test: `tests/domain/test_turn_validation.py`, `tests/adapters/test_fake_tutor.py`
 
 **Interfaces:**
-- Consumes: `SkillGraph` (Task 1), `Item` (Task 3), `HelpRung` (Task 1), `LeakGuard` (Task 13), `Misconception` (Task 1).
-- Produces: `SkillPack`, `StudentSummary`, `TranscriptEntry`, `TurnContext`; `ProposalKind`, `Proposal`, `TutorTurn`; `RejectionReason`, `ValidationResult`; `validate_turn(turn, context, graph, leak_guard) -> ValidationResult`; `Tutor` protocol; `FakeTutor`.
+- Consumes: `SkillGraph` (Task 1), `Item` (Task 3), `HelpRung` (Task 1), `detect_leak` (Task 13), `Misconception` (Task 1).
+- Produces: `SkillPack`, `StudentSummary`, `TranscriptEntry`, `TurnContext`; `ProposalKind`, `Proposal`, `TutorTurn`; `RejectionReason`, `ValidationResult`; `validate_turn(turn, context, graph, verifier) -> ValidationResult`; `Tutor` protocol; `FakeTutor`.
 
 - [ ] **Step 1: Write the turn types and the Tutor port**
 
@@ -3775,7 +3844,8 @@ from learnai.domain.enums import HelpRung
 from learnai.domain.graph import SkillGraph
 from learnai.domain.ids import MisconceptionId, SkillId
 from learnai.domain.items import Item, StepDiff
-from learnai.domain.leakguard import LeakGuard
+from learnai.domain.leakguard import detect_leak
+from learnai.domain.ports import Verifier
 from learnai.domain.skills import Misconception
 
 
@@ -3852,7 +3922,7 @@ def validate_turn(
     turn: TutorTurn,
     context: TurnContext,
     graph: SkillGraph,
-    leak_guard: LeakGuard,
+    verifier: Verifier,
 ) -> ValidationResult:
     """Gate every tutor turn before a character of it reaches the student.
 
@@ -3878,7 +3948,9 @@ def validate_turn(
                     f"{target} is not a hard prerequisite of {context.skill_pack.skill_id}",
                 )
 
-    verdict = leak_guard.inspect(turn.message, context.item.answer_spec, context.permitted_rung)
+    verdict = detect_leak(
+        verifier, turn.message, context.item.answer_spec, context.permitted_rung
+    )
     if verdict.leaked:
         return ValidationResult(
             False, RejectionReason.ANSWER_LEAKED, verdict.offending_expression
@@ -3901,11 +3973,10 @@ with `from learnai.domain.turn import TurnContext, TutorTurn` guarded under `if 
 ```python
 # tests/domain/test_turn_validation.py
 from learnai.adapters.cas.sympy_verifier import SympyVerifier
-from learnai.domain.enums import HelpRung, PrereqStrength, VerificationKind, VettingLevel
+from learnai.domain.enums import HelpRung, PrereqStrength, VettingLevel
 from learnai.domain.graph import SkillGraph
-from learnai.domain.ids import ItemId, SkillId
+from learnai.domain.ids import ItemId, SkillId, VerificationKind
 from learnai.domain.items import AnswerSpec, Item, Provenance
-from learnai.domain.leakguard import LeakGuard
 from learnai.domain.skills import PrereqEdge, Skill
 from learnai.domain.turn import (
     Proposal,
@@ -3918,11 +3989,11 @@ from learnai.domain.turn import (
     validate_turn,
 )
 
-GUARD = LeakGuard(SympyVerifier())
+VERIFIER = SympyVerifier()
 
 
 def _skill(sid: str) -> Skill:
-    return Skill(SkillId(sid), "math", sid, f"can {sid}", VerificationKind.CAS_SYMBOLIC, (), ())
+    return Skill(SkillId(sid), "math", sid, f"can {sid}", VerificationKind("cas_symbolic"), (), ())
 
 
 GRAPH = SkillGraph.build(
@@ -3938,7 +4009,7 @@ ITEM = Item(
     answer_spec=AnswerSpec("(x + 1)*(x + 2)"),
     worked_steps=(),
     difficulty=0.0,
-    vetting_level=VettingLevel.CAS_VERIFIED,
+    vetting_level=VettingLevel.MACHINE_VERIFIED,
 )
 
 
@@ -3955,24 +4026,24 @@ def context(permitted: HelpRung = HelpRung.NUDGE) -> TurnContext:
 
 def test_a_clean_nudge_is_accepted():
     turn = TutorTurn("What multiplies to 2 and adds to 3?", HelpRung.NUDGE)
-    assert validate_turn(turn, context(), GRAPH, GUARD).accepted
+    assert validate_turn(turn, context(), GRAPH, VERIFIER).accepted
 
 
 def test_a_turn_above_the_permitted_rung_is_rejected():
     turn = TutorTurn("Here is the method in full.", HelpRung.NAME_METHOD)
-    result = validate_turn(turn, context(HelpRung.NUDGE), GRAPH, GUARD)
+    result = validate_turn(turn, context(HelpRung.NUDGE), GRAPH, VERIFIER)
     assert not result.accepted and result.reason is RejectionReason.RUNG_EXCEEDED
 
 
 def test_a_leaking_turn_is_rejected_even_at_a_permitted_rung():
     turn = TutorTurn("Just write (x+1)(x+2).", HelpRung.NUDGE)
-    result = validate_turn(turn, context(HelpRung.NUDGE), GRAPH, GUARD)
+    result = validate_turn(turn, context(HelpRung.NUDGE), GRAPH, VERIFIER)
     assert not result.accepted and result.reason is RejectionReason.ANSWER_LEAKED
 
 
 def test_the_same_turn_is_fine_once_a_reveal_is_permitted():
     turn = TutorTurn("Just write (x+1)(x+2).", HelpRung.FULL_REVEAL)
-    assert validate_turn(turn, context(HelpRung.FULL_REVEAL), GRAPH, GUARD).accepted
+    assert validate_turn(turn, context(HelpRung.FULL_REVEAL), GRAPH, VERIFIER).accepted
 
 
 def test_a_valid_prerequisite_proposal_is_accepted():
@@ -3981,7 +4052,7 @@ def test_a_valid_prerequisite_proposal_is_accepted():
         HelpRung.NUDGE,
         proposals=(Proposal(ProposalKind.DROP_TO_PREREQUISITE, SkillId("quad.expand.binomial")),),
     )
-    assert validate_turn(turn, context(), GRAPH, GUARD).accepted
+    assert validate_turn(turn, context(), GRAPH, VERIFIER).accepted
 
 
 def test_a_proposal_to_an_unrelated_skill_is_rejected():
@@ -3990,7 +4061,7 @@ def test_a_proposal_to_an_unrelated_skill_is_rejected():
         HelpRung.NUDGE,
         proposals=(Proposal(ProposalKind.DROP_TO_PREREQUISITE, SkillId("unrelated")),),
     )
-    result = validate_turn(turn, context(), GRAPH, GUARD)
+    result = validate_turn(turn, context(), GRAPH, VERIFIER)
     assert not result.accepted and result.reason is RejectionReason.INVALID_PROPOSAL
 
 
@@ -3998,11 +4069,11 @@ def test_a_prerequisite_proposal_with_no_target_is_rejected():
     turn = TutorTurn(
         "Back a step.", HelpRung.NUDGE, proposals=(Proposal(ProposalKind.DROP_TO_PREREQUISITE),)
     )
-    assert not validate_turn(turn, context(), GRAPH, GUARD).accepted
+    assert not validate_turn(turn, context(), GRAPH, VERIFIER).accepted
 
 
 def test_an_empty_message_is_rejected():
-    result = validate_turn(TutorTurn("   ", HelpRung.NUDGE), context(), GRAPH, GUARD)
+    result = validate_turn(TutorTurn("   ", HelpRung.NUDGE), context(), GRAPH, VERIFIER)
     assert not result.accepted and result.reason is RejectionReason.EMPTY_MESSAGE
 ```
 
@@ -4056,19 +4127,17 @@ from learnai.adapters.cas.sympy_verifier import SympyVerifier
 from learnai.adapters.tutor.fake_tutor import FakeTutor
 from learnai.domain.enums import HelpRung, VettingLevel
 from learnai.domain.graph import SkillGraph
-from learnai.domain.ids import ItemId, SkillId
+from learnai.domain.ids import ItemId, SkillId, VerificationKind
 from learnai.domain.items import AnswerSpec, Item, Provenance
-from learnai.domain.leakguard import LeakGuard
 from learnai.domain.skills import Skill
 from learnai.domain.turn import SkillPack, StudentSummary, TurnContext, TutorTurn, validate_turn
-from learnai.domain.enums import VerificationKind
 
 GRAPH = SkillGraph.build(
-    [Skill(SkillId("s"), "math", "s", "can s", VerificationKind.CAS_SYMBOLIC, (), ())], []
+    [Skill(SkillId("s"), "math", "s", "can s", VerificationKind("cas_symbolic"), (), ())], []
 )
 ITEM = Item(
     ItemId("i"), SkillId("s"), Provenance.authored(), "Factor x^2 + 3x + 2",
-    AnswerSpec("(x + 1)*(x + 2)"), (), 0.0, VettingLevel.CAS_VERIFIED,
+    AnswerSpec("(x + 1)*(x + 2)"), (), 0.0, VettingLevel.MACHINE_VERIFIED,
 )
 
 
@@ -4085,10 +4154,10 @@ def ctx(permitted=HelpRung.NUDGE) -> TurnContext:
 
 def test_the_default_response_always_passes_validation():
     tutor = FakeTutor()
-    guard = LeakGuard(SympyVerifier())
+    verifier = SympyVerifier()
     for _ in range(5):
         turn = tutor.respond(ctx())
-        assert validate_turn(turn, ctx(), GRAPH, guard).accepted
+        assert validate_turn(turn, ctx(), GRAPH, verifier).accepted
 
 
 def test_the_script_is_played_in_order_then_falls_back():
@@ -4106,7 +4175,7 @@ def test_contexts_are_recorded_for_assertions():
 
 def test_a_scripted_leak_is_caught_by_validation():
     tutor = FakeTutor([TutorTurn("It is (x+1)(x+2).", HelpRung.NUDGE)])
-    result = validate_turn(tutor.respond(ctx()), ctx(), GRAPH, LeakGuard(SympyVerifier()))
+    result = validate_turn(tutor.respond(ctx()), ctx(), GRAPH, SympyVerifier())
     assert not result.accepted
 ```
 
@@ -4219,7 +4288,7 @@ from learnai.domain.session import Session, Task, TaskState, advance, end_sessio
 
 def item(n: int) -> Item:
     return Item(ItemId(f"i{n}"), SkillId("s"), Provenance.authored(), f"q{n}",
-                AnswerSpec("1"), (), 0.0, VettingLevel.CAS_VERIFIED)
+                AnswerSpec("1"), (), 0.0, VettingLevel.MACHINE_VERIFIED)
 
 
 def session(n_tasks: int = 2) -> Session:
@@ -4269,12 +4338,12 @@ def test_transitions_never_mutate_the_original():
 from learnai.adapters.clock import FakeClock
 from learnai.adapters.content.generators.quadratics import QUADRATICS_TEMPLATES
 from learnai.adapters.content.registry import GeneratorRegistry
-from learnai.domain.constants import TARGET_LOGIT_MARGIN
 from learnai.domain.contracts import PRACTICE
-from learnai.domain.enums import PrereqStrength, VerificationKind
+from learnai.domain.enums import PrereqStrength
 from learnai.domain.graph import SkillGraph
-from learnai.domain.ids import CourseId, SessionId, SkillId, StudentId
+from learnai.domain.ids import CourseId, SessionId, SkillId, StudentId, VerificationKind
 from learnai.domain.mastery import SkillState
+from learnai.domain.parameters import DEFAULT_PARAMETERS
 from learnai.domain.planner import plan_session, select_skills, target_difficulty
 from learnai.domain.skills import PrereqEdge, Skill
 
@@ -4282,7 +4351,7 @@ REGISTRY = GeneratorRegistry(QUADRATICS_TEMPLATES)
 
 
 def _skill(sid: str) -> Skill:
-    return Skill(SkillId(sid), "math", sid, f"can {sid}", VerificationKind.CAS_SYMBOLIC, (), ())
+    return Skill(SkillId(sid), "math", sid, f"can {sid}", VerificationKind("cas_symbolic"), (), ())
 
 
 GRAPH = SkillGraph.build(
@@ -4301,12 +4370,12 @@ def learned(sid: str, clock: FakeClock, stability: float = 30.0) -> SkillState:
 
 
 def test_an_unknown_skill_targets_items_below_the_default_strength():
-    assert target_difficulty(None) == -TARGET_LOGIT_MARGIN
+    assert target_difficulty(None) == -DEFAULT_PARAMETERS.target_logit_margin
 
 
 def test_target_difficulty_tracks_strength():
     state = SkillState(StudentId("stu"), SkillId("s"), strength=2.0)
-    assert target_difficulty(state) == 2.0 - TARGET_LOGIT_MARGIN
+    assert target_difficulty(state) == 2.0 - DEFAULT_PARAMETERS.target_logit_margin
 
 
 def test_an_empty_history_starts_at_the_graph_root():
@@ -4371,19 +4440,21 @@ def test_a_plan_never_repeats_an_item():
 from collections.abc import Sequence
 from datetime import datetime
 
-from learnai.domain.constants import TARGET_LOGIT_MARGIN
 from learnai.domain.contracts import ModeContract
 from learnai.domain.graph import SkillGraph
 from learnai.domain.ids import CourseId, SessionId, SkillId, StudentId, TaskId
 from learnai.domain.mastery import SkillState, is_fresh, is_learned
+from learnai.domain.parameters import DEFAULT_PARAMETERS, MasteryParameters
 from learnai.domain.ports import ItemSource
 from learnai.domain.session import Session, Task
 
 
-def target_difficulty(state: SkillState | None) -> float:
+def target_difficulty(
+    state: SkillState | None, params: MasteryParameters = DEFAULT_PARAMETERS
+) -> float:
     """Aim an item the student should clear about 75% of the time."""
     strength = 0.0 if state is None else state.strength
-    return strength - TARGET_LOGIT_MARGIN
+    return strength - params.target_logit_margin
 
 
 def select_skills(
@@ -4392,13 +4463,14 @@ def select_skills(
     course_skills: Sequence[SkillId],
     count: int,
     now: datetime,
+    params: MasteryParameters = DEFAULT_PARAMETERS,
 ) -> tuple[SkillId, ...]:
     """Repair stale prerequisites before advancing to new material.
 
     Slice 1 has no spaced-review queue; freshness enters only through this
     repair rule. The full due-queue arbitration arrives with the scheduler.
     """
-    learned = {sid for sid, state in states.items() if is_learned(state)}
+    learned = {sid for sid, state in states.items() if is_learned(state, params)}
     frontier = graph.frontier(learned) & set(course_skills)
     ordered_frontier = [sid for sid in course_skills if sid in frontier]
 
@@ -4406,7 +4478,12 @@ def select_skills(
     for sid in ordered_frontier:
         for prereq in sorted(graph.hard_prereqs(sid)):
             state = states.get(prereq)
-            if state and is_learned(state) and not is_fresh(state, now) and prereq not in repair:
+            if (
+                state
+                and is_learned(state, params)
+                and not is_fresh(state, now, params)
+                and prereq not in repair
+            ):
                 repair.append(prereq)
 
     ordered = repair + ordered_frontier
@@ -4428,13 +4505,14 @@ def plan_session(
     budget_items: int,
     now: datetime,
     seed: int,
+    params: MasteryParameters = DEFAULT_PARAMETERS,
 ) -> Session:
-    skills = select_skills(graph, states, course_skills, budget_items, now)
+    skills = select_skills(graph, states, course_skills, budget_items, now, params)
     tasks: list[Task] = []
     for position, skill_id in enumerate(skills):
         item = item_source.next_item(
             skill_id,
-            target_difficulty(states.get(skill_id)),
+            target_difficulty(states.get(skill_id), params),
             seed=seed * 1000 + position,
         )
         if item.vetting_level < contract.min_vetting_level:
@@ -4534,10 +4612,10 @@ from hypothesis import strategies as st
 
 from learnai.adapters.clock import FakeClock
 from learnai.adapters.persistence.in_memory import InMemoryEvidenceLog
-from learnai.domain.enums import Confidence, EvidenceClass, HelpRung, PrereqStrength, VerificationKind
+from learnai.domain.enums import Confidence, EvidenceClass, HelpRung, PrereqStrength
 from learnai.domain.events import AttemptRecorded, HelpTaken
 from learnai.domain.graph import SkillGraph
-from learnai.domain.ids import ItemId, SkillId, StudentId, TaskId
+from learnai.domain.ids import ItemId, SkillId, StudentId, TaskId, VerificationKind
 from learnai.domain.mastery import is_learned
 from learnai.domain.projection import apply_event, project
 from learnai.domain.skills import PrereqEdge, Skill
@@ -4548,7 +4626,7 @@ PREREQ = SkillId("quad.expand.binomial")
 
 
 def _skill(sid: SkillId) -> Skill:
-    return Skill(sid, "math", str(sid), "can", VerificationKind.CAS_SYMBOLIC, (), ())
+    return Skill(sid, "math", str(sid), "can", VerificationKind("cas_symbolic"), (), ())
 
 
 GRAPH = SkillGraph.build(
@@ -4668,11 +4746,15 @@ from learnai.domain.evidence import EVIDENCE_WEIGHT
 from learnai.domain.graph import SkillGraph
 from learnai.domain.ids import SkillId, StudentId
 from learnai.domain.mastery import SkillState, update_stability, update_strength
+from learnai.domain.parameters import DEFAULT_PARAMETERS, MasteryParameters
 from learnai.domain.propagation import propagate_success
 
 
 def apply_event(
-    states: dict[SkillId, SkillState], event: EvidenceEvent, graph: SkillGraph
+    states: dict[SkillId, SkillState],
+    event: EvidenceEvent,
+    graph: SkillGraph,
+    params: MasteryParameters = DEFAULT_PARAMETERS,
 ) -> dict[SkillId, SkillState]:
     """Fold one event into the projection. Used live and on replay — never diverge."""
     if isinstance(event, HelpTaken):
@@ -4682,32 +4764,35 @@ def apply_event(
     weight = event.contract_weight * EVIDENCE_WEIGHT[event.evidence_class]
     current = states.get(event.skill_id) or SkillState(event.student_id, event.skill_id)
 
-    updated = update_strength(current, event.item_difficulty, event.correct, weight)
+    updated = update_strength(current, event.item_difficulty, event.correct, weight, params)
     if weight > 0.0:
-        updated = update_stability(updated, event.correct, event.at)
+        updated = update_stability(updated, event.correct, event.at, params)
     updated = dc_replace(
         updated,
         calibration_gap=update_calibration(
-            current.calibration_gap, event.confidence, event.correct
+            current.calibration_gap, event.confidence, event.correct, params
         ),
     )
 
     result = dict(states)
     result[event.skill_id] = updated
     if event.correct and weight > 0.0:
-        result = propagate_success(result, graph, event.skill_id, event.at)
+        result = propagate_success(result, graph, event.skill_id, event.at, params)
     return result
 
 
 def project(
-    events: Iterable[EvidenceEvent], graph: SkillGraph, student_id: StudentId
+    events: Iterable[EvidenceEvent],
+    graph: SkillGraph,
+    student_id: StudentId,
+    params: MasteryParameters = DEFAULT_PARAMETERS,
 ) -> dict[SkillId, SkillState]:
     """Rebuild a student's whole mastery state from the log. The truth is the log."""
     states: dict[SkillId, SkillState] = {}
     for event in events:
         if event.student_id != student_id:
             continue
-        states = apply_event(states, event, graph)
+        states = apply_event(states, event, graph, params)
     return states
 ```
 
@@ -4762,7 +4847,13 @@ git commit -m "feat: append-only evidence log with replayable projection"
 
 **Interfaces:**
 - Consumes: everything from Tasks 1–16.
-- Produces: `SubmitOutcome(verdict, step_diff, diagnosis, evidence_class, tutor_turn, task_completed)`; `PracticeEngine(graph, misconceptions, item_source, verifier, tutor, matcher, leak_guard, evidence_log, clock, contract)` with `start_session(...) -> Session`, `submit(session, states, steps, final_answer, confidence) -> tuple[Session, states, SubmitOutcome]`, `request_help(session, states) -> tuple[Session, TutorTurn | None]`.
+- Produces: `SubmitOutcome(verdict, step_diff, diagnosis, evidence_class, tutor_turn, task_completed)`; `PracticeEngine(graph, misconceptions, item_source, verifiers, tutor, matcher, evidence_log, clock, contract, parameters, parameter_overrides)` — `verifiers` is a `Mapping[VerificationKind, Verifier]` resolved per skill, and `parameter_overrides` a `Mapping[SkillId, MasteryParameters]` with `start_session(...) -> Session`, `submit(session, states, steps, final_answer, confidence) -> tuple[Session, states, SubmitOutcome]`, `request_help(session, states) -> tuple[Session, TutorTurn | None]`.
+
+**Two seams made real here.** The engine resolves a verifier per skill through
+`verifiers[skill.verification_kind]`, so `verification_kind` is a live lookup rather than a
+notional one — Slice 1 registers a single entry and physics adds a second without touching this
+class. Likewise `_params_for(skill_id)` consults `parameter_overrides`, which is what spec §7.8
+step 3 needs when parameters start being fitted per skill.
 
 **The cost shape to preserve:** a correct first attempt must invoke the tutor **zero** times. The generator serves the item, the CAS checks it, the engine records evidence. That is the property that makes Opus-tier tutoring affordable, and there is a test for it.
 
@@ -4778,13 +4869,13 @@ from learnai.adapters.clock import FakeClock
 from learnai.adapters.content.generators.quadratics import QUADRATICS_TEMPLATES
 from learnai.adapters.content.loader import load_cluster
 from learnai.adapters.content.registry import GeneratorRegistry
+from learnai.adapters.cas.vocabulary import CAS_SYMBOLIC
 from learnai.adapters.persistence.in_memory import InMemoryEvidenceLog
 from learnai.adapters.tutor.fake_tutor import FakeTutor
 from learnai.domain.contracts import PRACTICE
 from learnai.domain.engine import PracticeEngine
 from learnai.domain.enums import Confidence, EvidenceClass, HelpRung, Verdict
 from learnai.domain.ids import CourseId, SessionId, StudentId
-from learnai.domain.leakguard import LeakGuard
 from learnai.domain.mastery import is_learned
 
 CLUSTER = load_cluster(
@@ -4800,10 +4891,9 @@ def build(tutor: FakeTutor | None = None, clock: FakeClock | None = None):
         graph=CLUSTER.graph,
         misconceptions=CLUSTER.misconceptions,
         item_source=GeneratorRegistry(QUADRATICS_TEMPLATES),
-        verifier=verifier,
+        verifiers={CAS_SYMBOLIC: verifier},
         tutor=tutor or FakeTutor(),
         matcher=SympyMisconceptionRules(),
-        leak_guard=LeakGuard(verifier),
         evidence_log=InMemoryEvidenceLog(),
         clock=clock,
         contract=PRACTICE,
@@ -4956,11 +5046,12 @@ from learnai.domain.ids import (
     SkillId,
     StudentId,
     TaskId,
+    VerificationKind,
 )
 from learnai.domain.items import StepDiff
-from learnai.domain.leakguard import LeakGuard
 from learnai.domain.mastery import SkillState, is_fresh
 from learnai.domain.misconceptions import MisconceptionMatcher, diagnose
+from learnai.domain.parameters import DEFAULT_PARAMETERS, MasteryParameters
 from learnai.domain.planner import plan_session
 from learnai.domain.ports import Clock, EvidenceLog, ItemSource, Tutor, Verifier
 from learnai.domain.projection import apply_event
@@ -4996,24 +5087,26 @@ class PracticeEngine:
         graph: SkillGraph,
         misconceptions: Mapping[MisconceptionId, Misconception],
         item_source: ItemSource,
-        verifier: Verifier,
+        verifiers: Mapping[VerificationKind, Verifier],
         tutor: Tutor,
         matcher: MisconceptionMatcher,
-        leak_guard: LeakGuard,
         evidence_log: EvidenceLog,
         clock: Clock,
         contract: ModeContract,
+        parameters: MasteryParameters = DEFAULT_PARAMETERS,
+        parameter_overrides: Mapping[SkillId, MasteryParameters] | None = None,
     ) -> None:
         self.graph = graph
         self.misconceptions = misconceptions
         self.item_source = item_source
-        self.verifier = verifier
+        self.verifiers = dict(verifiers)
         self._tutor = tutor
         self.matcher = matcher
-        self.leak_guard = leak_guard
         self.evidence_log = evidence_log
         self.clock = clock
         self.contract = contract
+        self.parameters = parameters
+        self.parameter_overrides = dict(parameter_overrides or {})
 
     # -- session lifecycle ---------------------------------------------------
 
@@ -5040,6 +5133,7 @@ class PracticeEngine:
             budget_items=budget_items,
             now=self.clock.now(),
             seed=seed,
+            params=self.parameters,
         )
 
     # -- the loop ------------------------------------------------------------
@@ -5056,13 +5150,14 @@ class PracticeEngine:
         if task is None:
             raise ValueError("session has no active task")
 
-        result = self.verifier.check_answer(final_answer, task.item.answer_spec)
+        verifier = self._verifier_for(task.skill_id)
+        result = verifier.check_answer(final_answer, task.item.answer_spec)
         correct = result.verdict is Verdict.CORRECT
 
         step_diff: StepDiff | None = None
         diagnosis: MisconceptionId | None = None
         if not correct and steps:
-            step_diff = self.verifier.diff_steps(steps)
+            step_diff = verifier.diff_steps(steps)
             diagnosis = diagnose(step_diff, self._catalogue(task.skill_id), self.matcher)
 
         evidence_class = classify_evidence(
@@ -5085,7 +5180,7 @@ class PracticeEngine:
             contract_weight=self.contract.evidence_weight,
         )
         self.evidence_log.append(event)
-        states = apply_event(states, event, self.graph)
+        states = apply_event(states, event, self.graph, self._params_for(task.skill_id))
 
         task = replace(task, help_state=record_attempt(task.help_state))
         tutor_turn: TutorTurn | None = None
@@ -5143,6 +5238,16 @@ class PracticeEngine:
 
     # -- internals -----------------------------------------------------------
 
+    def _verifier_for(self, skill_id: SkillId) -> Verifier:
+        kind = self.graph.skills[skill_id].verification_kind
+        try:
+            return self.verifiers[kind]
+        except KeyError as exc:
+            raise KeyError(f"no verifier registered for verification kind {kind!r}") from exc
+
+    def _params_for(self, skill_id: SkillId) -> MasteryParameters:
+        return self.parameter_overrides.get(skill_id, self.parameters)
+
     def _should_intervene(self) -> bool:
         return self.contract.intervention_timing is not InterventionTiming.NEVER
 
@@ -5171,7 +5276,7 @@ class PracticeEngine:
             item=task.item,
             student_summary=StudentSummary(
                 strength=state.strength if state else 0.0,
-                is_fresh=is_fresh(state, now) if state else False,
+                is_fresh=is_fresh(state, now, self._params_for(task.skill_id)) if state else False,
                 calibration_gap=state.calibration_gap if state else 0.0,
                 prior_misconceptions=state.active_misconceptions if state else (),
             ),
@@ -5197,7 +5302,8 @@ class PracticeEngine:
         context = self._build_context(task, states, step_diff, diagnosis, rung_override)
         for _ in range(MAX_TUTOR_RETRIES):
             turn = self._tutor.respond(context)
-            if validate_turn(turn, context, self.graph, self.leak_guard).accepted:
+            verifier = self._verifier_for(task.skill_id)
+            if validate_turn(turn, context, self.graph, verifier).accepted:
                 return turn
         return None
 ```
@@ -5250,13 +5356,13 @@ from learnai.adapters.clock import FakeClock
 from learnai.adapters.content.generators.quadratics import QUADRATICS_TEMPLATES
 from learnai.adapters.content.loader import load_cluster
 from learnai.adapters.content.registry import GeneratorRegistry
+from learnai.adapters.cas.vocabulary import CAS_SYMBOLIC
 from learnai.adapters.persistence.in_memory import InMemoryEvidenceLog
 from learnai.adapters.tutor.fake_tutor import FakeTutor
 from learnai.domain.contracts import PRACTICE
 from learnai.domain.engine import PracticeEngine
 from learnai.domain.enums import Confidence
 from learnai.domain.ids import CourseId, SessionId, SkillId, StudentId
-from learnai.domain.leakguard import LeakGuard
 from learnai.domain.mastery import SkillState
 from learnai.domain.session import Task
 
@@ -5339,10 +5445,9 @@ def run_term(
         graph=CLUSTER.graph,
         misconceptions=CLUSTER.misconceptions,
         item_source=GeneratorRegistry(QUADRATICS_TEMPLATES),
-        verifier=verifier,
+        verifiers={CAS_SYMBOLIC: verifier},
         tutor=FakeTutor(),
         matcher=SympyMisconceptionRules(),
-        leak_guard=LeakGuard(verifier),
         evidence_log=result.log,
         clock=result.clock,
         contract=PRACTICE,

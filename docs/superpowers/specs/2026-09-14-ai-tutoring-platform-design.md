@@ -141,13 +141,13 @@ Prerequisite edges encode genuine dependency, not curricular convention. The gra
 about any national curriculum.
 
 ```python
-Subject(id, name, default_verification)        # cas_symbolic | numeric_units | rubric
+Subject(id, name, default_verification)        # an opaque VerificationKind token
 Skill(id, subject_id, name, can_do_statement,
       verification_kind,                       # overrides subject default where needed
       concept_ids, misconception_ids)
 PrereqEdge(from_skill, to_skill, strength)     # hard | soft
 
-Concept(id, skill_id, kind, prompt, answer)    # definition | theorem | formula | procedure
+Concept(id, skill_id, kind, prompt, answer)    # definition | claim | rule | procedure | fact
 Misconception(id, skill_id, name, description, signature)
 
 Course(id, name, curriculum_tag, level, skill_sequence, exam_blueprint)
@@ -155,7 +155,10 @@ Course(id, name, curriculum_tag, level, skill_sequence, exam_blueprint)
 
 **`verification_kind` is the subject-extensibility seam.** It selects the `Verifier` adapter for
 an attempt. Adding chemistry means writing one adapter and authoring skills, not touching the
-engine.
+engine — and to keep that literally true it is an **opaque token**, not an enumeration of adapter
+kinds: each adapter declares its own, and the engine resolves skill → verifier through a registry.
+`ConceptKind` and `AnswerKind` stay closed enumerations because they name subject-neutral shapes
+(a claim, an unordered set of values), not subject-specific ones.
 
 **`Course` is a thin curricular overlay** — an ordered path through the graph plus metadata.
 "1º Bachillerato Matemáticas" and "AP Calculus AB" are two courses sharing most of the same
@@ -184,7 +187,7 @@ Item(id, skill_id, provenance, statement, answer_spec,
 Card(id, concept_id, kind, prompt, answer)     # cloze | qa
 
 # provenance: Generated(template_id, seed) | Authored | LlmBatch(run_id)
-# vetting_level: cas_verified | human_reviewed | llm_only
+# vetting_level: machine_verified | human_reviewed | llm_only
 ```
 
 **Form constraints are opaque to the core.** `AnswerSpec.form_constraints` carries tokens the
@@ -226,6 +229,10 @@ human verifies, not deciding what a student knows.
 
 Two quantities per `(student, skill)`, because *"did they learn it"* and *"do they still have it"*
 are different questions.
+
+Every tuned parameter named in this section lives on an injected `MasteryParameters` value object
+rather than as a module constant, so `r_target` can genuinely vary per skill (§7.2), parameters can
+be fitted per skill (§7.8), and two configurations can be compared side by side.
 
 ```python
 SkillState(student_id, skill_id,
@@ -856,6 +863,8 @@ These are recorded deliberately, each with the trigger that will force a decisio
 | Answer-withholding enforcement | CAS LeakGuard | A prompt instruction is a hope; a deterministic check is a fact |
 | Content | Generators + CAS, LLM for the long tail | Ground-truth answers, unlimited variants, zero serve cost, where it matters most |
 | Curriculum | Dependency graph with course overlays | Curriculum-agnostic core, curriculum-specific presentation |
+| Verification kind | Opaque token plus a registry | Enumerating adapter kinds in the core would mean every new subject edits the engine, contradicting the seam it names |
+| Tuned parameters | Injected value object | Module constants cannot be varied per skill or A/B compared, which §7.2 and §7.8 both require |
 | Form vocabulary | Opaque tokens, adapter-owned | An enum of math forms in the domain core would grow a union of every subject's vocabulary and break the `verification_kind` seam |
 | Provider abstraction | Task-level ports only | A generic `LLMClient` forfeits caching, thinking, structured outputs, and Batch — the features carrying the economics |
 | Persistence | Append-only evidence log with projection | The mastery algorithm will change; student history must survive it |
