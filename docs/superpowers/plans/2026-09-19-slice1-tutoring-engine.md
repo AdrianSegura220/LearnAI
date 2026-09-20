@@ -2601,7 +2601,7 @@ git commit -m "feat: misconception diagnosis with six CAS rules and explicit def
 
 **Interfaces:**
 - Consumes: ids and enums (Task 1).
-- Produces: `MasteryParameters` (frozen, all fields defaulted) and `DEFAULT_PARAMETERS` in `parameters.py`; `SkillState` frozen dataclass; `p_expected(strength, difficulty) -> float`, `k_factor(attempt_count) -> float`, `update_strength(state, item_difficulty, correct, weight, params) -> SkillState`; every mastery function takes `params: MasteryParameters = DEFAULT_PARAMETERS` as its final argument; `EVIDENCE_WEIGHT: dict[EvidenceClass, float]` and `classify_evidence(*, attempt_index, help_taken, taught_this_session, timed) -> EvidenceClass`.
+- Produces: `MasteryParameters` (frozen, all fields defaulted, including `guess_baseline` and `confidence_probability`) and `DEFAULT_PARAMETERS` in `parameters.py`; `SkillState` frozen dataclass; `p_expected(strength, difficulty) -> float`, `k_factor(attempt_count) -> float`, `update_strength(state, item_difficulty, outcome: float, weight, params) -> SkillState`; every mastery function takes `params: MasteryParameters = DEFAULT_PARAMETERS` as its final argument; `EVIDENCE_WEIGHT: dict[EvidenceClass, float]` and `classify_evidence(*, attempt_index, help_taken, taught_this_session, timed) -> EvidenceClass`.
 
 **Interpretation recorded here:** the spec says "first attempt cold counts". A second attempt on the same item, even with no hint taken, follows a wrong-answer verdict — information the student did not have before — so it is **not** cold. `classify_evidence` returns `ASSISTED` for any attempt after the first. Flag this to the spec owner if they intended otherwise; it is a one-line change.
 
@@ -2619,6 +2619,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from learnai.domain.enums import Confidence
+from learnai.domain.items import AnswerKind
 
 
 @dataclass(frozen=True, slots=True)
@@ -2650,6 +2651,21 @@ class MasteryParameters:
     # --- Calibration (spec §7.5) ---------------------------------------------
     calibration_ema_alpha: float = 0.2
     overconfidence_threshold: float = 0.15
+    guess_baseline: Mapping[AnswerKind, float] = field(
+        default_factory=lambda: {
+            AnswerKind.SINGLE_VALUE: 0.03,
+            AnswerKind.RELATION: 0.03,
+            AnswerKind.VALUE_SET: 0.02,
+        }
+    )
+    """P(correct | pure guess), per answer format.
+
+    A decline is scored at this value rather than at zero, which makes declining
+    and guessing cost exactly the same in expectation — at any guess rate. That
+    matters little on free response (the edge is ~0.012 logits) and a great deal
+    once four-option multiple choice exists, where guessing would otherwise pay
+    about 0.1 logits an item. Fitted from data like every value here.
+    """
     confidence_probability: Mapping[Confidence, float] = field(
         default_factory=lambda: {
             Confidence.NO_IDEA: 0.02,
@@ -2687,8 +2703,9 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from learnai.domain.ids import SkillId, StudentId
-from learnai.domain.parameters import DEFAULT_PARAMETERS
+from learnai.domain.items import AnswerKind
 from learnai.domain.mastery import SkillState, k_factor, p_expected, update_strength
+from learnai.domain.parameters import DEFAULT_PARAMETERS
 
 FINITE = st.floats(min_value=-4.0, max_value=4.0, allow_nan=False, allow_infinity=False)
 
@@ -2716,15 +2733,15 @@ def test_p_expected_rises_with_strength():
 
 def test_success_on_a_hard_item_moves_more_than_on_an_easy_one():
     base = state(strength=0.5)
-    hard = update_strength(base, item_difficulty=2.5, correct=True, weight=1.0)
-    easy = update_strength(base, item_difficulty=-1.5, correct=True, weight=1.0)
+    hard = update_strength(base, item_difficulty=2.5, outcome=1.0, weight=1.0)
+    easy = update_strength(base, item_difficulty=-1.5, outcome=1.0, weight=1.0)
     assert hard.strength - base.strength > easy.strength - base.strength
 
 
 def test_failure_on_an_easy_item_costs_more_than_on_a_hard_one():
     base = state(strength=0.5)
-    easy = update_strength(base, item_difficulty=-1.5, correct=False, weight=1.0)
-    hard = update_strength(base, item_difficulty=2.5, correct=False, weight=1.0)
+    easy = update_strength(base, item_difficulty=-1.5, outcome=0.0, weight=1.0)
+    hard = update_strength(base, item_difficulty=2.5, outcome=0.0, weight=1.0)
     assert base.strength - easy.strength > base.strength - hard.strength
 
 
@@ -2734,13 +2751,26 @@ def test_k_decays_with_observations():
 
 
 def test_attempt_count_increments():
-    assert update_strength(state(), 0.0, True, 1.0).attempt_count == 1
+    assert update_strength(state(), 0.0, 1.0, 1.0).attempt_count == 1
 
 
 def test_unassisted_correct_count_tracks_only_weighted_successes():
-    assert update_strength(state(), 0.0, True, 1.0).unassisted_correct_count == 1
-    assert update_strength(state(), 0.0, True, 0.0).unassisted_correct_count == 0
-    assert update_strength(state(), 0.0, False, 1.0).unassisted_correct_count == 0
+    assert update_strength(state(), 0.0, 1.0, 1.0).unassisted_correct_count == 1
+    assert update_strength(state(), 0.0, 1.0, 0.0).unassisted_correct_count == 0
+    assert update_strength(state(), 0.0, 0.0, 1.0).unassisted_correct_count == 0
+    assert update_strength(state(), 0.0, 0.03, 1.0).unassisted_correct_count == 0
+
+
+def test_declining_and_guessing_cost_the_same_in_expectation():
+    """Scoring a decline at the guess baseline removes the incentive to guess."""
+    base = state(strength=0.5)
+    g = DEFAULT_PARAMETERS.guess_baseline[AnswerKind.SINGLE_VALUE]
+
+    declined = update_strength(base, 0.0, g, 1.0).strength - base.strength
+    guessed = g * (update_strength(base, 0.0, 1.0, 1.0).strength - base.strength) + (
+        1 - g
+    ) * (update_strength(base, 0.0, 0.0, 1.0).strength - base.strength)
+    assert math.isclose(declined, guessed, abs_tol=1e-12)
 
 
 def test_parameters_are_injected_not_baked_in():
@@ -2752,8 +2782,8 @@ def test_parameters_are_injected_not_baked_in():
     eager = dc_replace(MasteryParameters(), k0=2.0)
     base = state()
     assert (
-        update_strength(base, 0.0, True, 1.0, eager).strength
-        > update_strength(base, 0.0, True, 1.0).strength
+        update_strength(base, 0.0, 1.0, 1.0, eager).strength
+        > update_strength(base, 0.0, 1.0, 1.0).strength
     )
 
 
@@ -2761,7 +2791,7 @@ def test_parameters_are_injected_not_baked_in():
 def test_zero_weight_evidence_never_moves_strength(strength, difficulty, correct):
     """P2 and P4 in arithmetic: assistance cannot move mastery, at all."""
     before = state(strength=strength)
-    after = update_strength(before, difficulty, correct, weight=0.0)
+    after = update_strength(before, difficulty, float(correct), weight=0.0)
     assert after.strength == before.strength
     assert after.unassisted_correct_count == before.unassisted_correct_count
 
@@ -2769,14 +2799,14 @@ def test_zero_weight_evidence_never_moves_strength(strength, difficulty, correct
 @given(strength=FINITE, difficulty=FINITE)
 def test_a_correct_unassisted_attempt_never_lowers_strength(strength, difficulty):
     before = state(strength=strength)
-    after = update_strength(before, difficulty, correct=True, weight=1.0)
+    after = update_strength(before, difficulty, outcome=1.0, weight=1.0)
     assert after.strength >= before.strength
 
 
 @given(strength=FINITE, difficulty=FINITE)
 def test_a_wrong_unassisted_attempt_never_raises_strength(strength, difficulty):
     before = state(strength=strength)
-    after = update_strength(before, difficulty, correct=False, weight=1.0)
+    after = update_strength(before, difficulty, outcome=0.0, weight=1.0)
     assert after.strength <= before.strength
 ```
 
@@ -2825,31 +2855,38 @@ def k_factor(attempt_count: int, params: MasteryParameters = DEFAULT_PARAMETERS)
 def update_strength(
     state: SkillState,
     item_difficulty: float,
-    correct: bool,
+    outcome: float,
     weight: float,
     params: MasteryParameters = DEFAULT_PARAMETERS,
 ) -> SkillState:
     """Elo update, scaled by how much this observation is permitted to count.
 
+    `outcome` is 1.0 for a correct answer and 0.0 for a wrong one. A decline is
+    scored at the format's guess baseline instead, so declining and guessing
+    cost the same in expectation and the system never teaches a stuck student
+    to guess rather than say so.
+
     `weight` is the product of the mode contract's weight and the evidence
     class weight. A weight of zero leaves strength untouched — that is the
     whole of P2, expressed arithmetically.
     """
-    surprise = (1.0 if correct else 0.0) - p_expected(state.strength, item_difficulty, params)
+    surprise = outcome - p_expected(state.strength, item_difficulty, params)
     delta = k_factor(state.attempt_count, params) * weight * surprise
     return replace(
         state,
         strength=state.strength + delta,
         attempt_count=state.attempt_count + 1,
+        # Only an actual correct answer counts toward the mastery gate: a decline
+        # scored near the guess baseline must never mint evidence of competence.
         unassisted_correct_count=state.unassisted_correct_count
-        + (1 if correct and weight > 0.0 else 0),
+        + (1 if outcome >= 1.0 and weight > 0.0 else 0),
     )
 ```
 
 - [ ] **Step 5: Run the strength tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/domain/test_strength.py -v`
-Expected: PASS — 12 tests.
+Expected: PASS — 14 tests.
 
 - [ ] **Step 6: Write the failing evidence test**
 
@@ -4634,10 +4671,15 @@ class AttemptRecorded:
     item_id: ItemId
     task_id: TaskId
     item_difficulty: float
-    correct: bool
+    outcome: float
+    """1.0 correct, 0.0 wrong, the format's guess baseline for a decline."""
     evidence_class: EvidenceClass
     confidence: Confidence
     contract_weight: float
+
+    @property
+    def correct(self) -> bool:
+        return self.outcome >= 1.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -4685,10 +4727,11 @@ GRAPH = SkillGraph.build(
 
 
 def attempt(clock, *, skill=SKILL, correct=True, evidence=EvidenceClass.UNASSISTED_COLD,
-            confidence=Confidence.FAIRLY_SURE, difficulty=0.0):
+            confidence=Confidence.FAIRLY_SURE, difficulty=0.0, outcome=None):
     return AttemptRecorded(
         at=clock.now(), student_id=STUDENT, skill_id=skill, item_id=ItemId("i"),
-        task_id=TaskId("t"), item_difficulty=difficulty, correct=correct,
+        task_id=TaskId("t"), item_difficulty=difficulty,
+        outcome=(1.0 if correct else 0.0) if outcome is None else outcome,
         evidence_class=evidence, confidence=confidence, contract_weight=1.0,
     )
 
@@ -4721,7 +4764,7 @@ def test_events_for_other_students_are_ignored():
     clock = FakeClock()
     other = AttemptRecorded(
         clock.now(), StudentId("someone_else"), SKILL, ItemId("i"), TaskId("t"),
-        0.0, True, EvidenceClass.UNASSISTED_COLD, Confidence.CERTAIN, 1.0,
+        0.0, 1.0, EvidenceClass.UNASSISTED_COLD, Confidence.CERTAIN, 1.0,
     )
     assert project([other], GRAPH, STUDENT) == {}
 
@@ -4756,6 +4799,17 @@ def test_rebuilding_from_the_log_reproduces_the_live_projection():
         live = apply_event(live, event, GRAPH)
         clock.advance(3.0)
     assert project(log.events(), GRAPH, STUDENT) == live
+
+
+def test_a_decline_never_counts_toward_the_mastery_gate():
+    """It is scored near the guess baseline, which must not read as competence."""
+    clock = FakeClock()
+    events = [
+        attempt(clock, outcome=0.03, confidence=Confidence.NO_IDEA) for _ in range(30)
+    ]
+    states = project(events, GRAPH, STUDENT)
+    assert states[SKILL].unassisted_correct_count == 0
+    assert not is_learned(states[SKILL])
 
 
 def test_the_log_is_append_only():
@@ -4814,7 +4868,7 @@ def apply_event(
     weight = event.contract_weight * EVIDENCE_WEIGHT[event.evidence_class]
     current = states.get(event.skill_id) or SkillState(event.student_id, event.skill_id)
 
-    updated = update_strength(current, event.item_difficulty, event.correct, weight, params)
+    updated = update_strength(current, event.item_difficulty, event.outcome, weight, params)
     if weight > 0.0:
         updated = update_stability(updated, event.correct, event.at, params)
     updated = dc_replace(
@@ -4876,7 +4930,7 @@ class EvidenceLog(Protocol):
 - [ ] **Step 4: Run the projection tests**
 
 Run: `.venv/bin/pytest tests/domain/test_projection.py -v`
-Expected: PASS — 9 tests.
+Expected: PASS — 10 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -5250,6 +5304,7 @@ class PracticeEngine:
             raise ValueError("session has no active task")
 
         declined = not final_answer.strip()
+        params = self._params_for(task.skill_id)
         verifier = self._verifier_for(task.skill_id)
         if declined:
             confidence = Confidence.NO_IDEA
@@ -5257,6 +5312,13 @@ class PracticeEngine:
         else:
             result = verifier.check_answer(final_answer, task.item.answer_spec)
         correct = result.verdict is Verdict.CORRECT
+
+        # A decline is scored at the guess baseline, not at zero, so that saying
+        # "I don't know" never costs more in expectation than guessing would.
+        if declined:
+            outcome = params.guess_baseline.get(task.item.answer_spec.kind, 0.0)
+        else:
+            outcome = 1.0 if correct else 0.0
 
         step_diff: StepDiff | None = None
         diagnosis: MisconceptionId | None = None
@@ -5278,13 +5340,13 @@ class PracticeEngine:
             item_id=task.item.id,
             task_id=task.id,
             item_difficulty=task.item.difficulty,
-            correct=correct,
+            outcome=outcome,
             evidence_class=evidence_class,
             confidence=confidence,
             contract_weight=self.contract.evidence_weight,
         )
         self.evidence_log.append(event)
-        states = apply_event(states, event, self.graph, self._params_for(task.skill_id))
+        states = apply_event(states, event, self.graph, params)
 
         if not declined:
             task = replace(task, help_state=record_attempt(task.help_state))

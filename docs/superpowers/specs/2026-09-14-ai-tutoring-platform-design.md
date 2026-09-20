@@ -255,6 +255,10 @@ p_expected = 1 / (1 + exp(-(strength - item.difficulty) / SCALE))
 strength'  = strength + K * w * (outcome - p_expected)
 ```
 
+`outcome` is 1 for a correct answer and 0 for a wrong one. It is a real number rather than a bit
+so that a decline can be scored at the format's guess baseline (§8.2), which is what makes
+honesty and guessing cost the same.
+
 **Units.** Strength and difficulty share one latent scale, and only their difference enters the
 formula, so the units are a free choice — and choosing them *is* choosing `SCALE`. Use **logits**
 (`SCALE = 1`, the Rasch/1PL convention), because the numbers then mean something:
@@ -404,6 +408,11 @@ is_learned(state)   # strength >= THRESHOLD and unassisted_correct_count >= 2 on
 is_fresh(state, now) # retrievability(now) >= R_TARGET
 due_at(state)       # last_success_at + stability * log2(1 / R_TARGET)
 ```
+
+One caveat scales with item format: a lucky guess is a correct answer and does increment the
+count. On free response that is rare enough to be covered by the strength threshold; on
+four-option multiple choice it would not be, so diagnostic MCQ items will need a higher bar
+before they may gate mastery.
 
 **Mastery decays; achievement does not.** `is_learned` is a badge earned by proving it cold, and
 it never un-earns. `is_fresh` is a separate, quieter state meaning this one needs a tune-up. Same
@@ -584,12 +593,23 @@ HelpEvent(task_id, rung, at)
 ```
 
 **Declining is a first-class answer.** A student may answer "I don't know" instead of submitting
-work. It costs exactly what a wrong answer costs — it is the same competence signal, and making
-it cheaper would teach students to stop trying — but it differs in two ways that matter: the
-tutor opens with orientation rather than error diagnosis, since there is no work to diagnose, and
-the calibration reading for an honest decline is near-perfect rather than a penalty. A decline
-also does not count toward the effort condition that unlocks a reveal, or the cheapest route to
-the answer would be two declines and a walk up the hint ladder.
+work, and it is scored at the format's **guess baseline** rather than as a flat zero. That makes
+declining and guessing cost exactly the same in expectation, at any guess rate.
+
+Both alternatives teach something false. Scoring a decline as a wrong answer makes guessing
+marginally the better play — negligibly so on free response (about 0.012 logits) but around 0.1
+logits an item on four-option multiple choice, which is worth gaming — and a system that pays
+students to guess rather than admit they are stuck is training the exact habit this platform
+exists to break. Scoring a decline as free makes it cheaper than attempting, which trains
+disengagement instead. The guess baseline sits between them by construction rather than by a
+tuned compromise.
+
+A decline never increments unassisted-correct evidence, so it cannot contribute to mastery. It
+differs from a wrong answer in two further ways: the tutor opens with orientation rather than
+error diagnosis, there being no work to diagnose, and the calibration reading for an honest
+decline is near-perfect rather than a penalty. It also does not count toward the effort condition
+that unlocks a reveal — otherwise the cheapest route to the answer would be two declines and a
+walk up the hint ladder.
 
 `evidence_class ∈ {unassisted_cold, post_instruction, assisted, timed_exam}`.
 **Only `unassisted_cold` and `timed_exam` move mastery.** An attempt is `post_instruction` if the
@@ -890,7 +910,7 @@ These are recorded deliberately, each with the trigger that will force a decisio
 | Curriculum | Dependency graph with course overlays | Curriculum-agnostic core, curriculum-specific presentation |
 | Verification kind | Opaque token plus a registry | Enumerating adapter kinds in the core would mean every new subject edits the engine, contradicting the seam it names |
 | Tuned parameters | Injected value object | Module constants cannot be varied per skill or A/B compared, which §7.2 and §7.8 both require |
-| Declining to answer | Costs the same as a wrong answer | The same competence signal; a cheaper decline is a standing invitation to stop trying |
+| Declining to answer | Scored at the guess baseline | Makes honesty and guessing cost the same in expectation; zero would pay students to guess, free would pay them to disengage |
 | Confidence mapping | Population-fitted, per item format | Per-student fitting makes everyone calibrated by construction; MCQ priors libel honest free-response guessers |
 | Form vocabulary | Opaque tokens, adapter-owned | An enum of math forms in the domain core would grow a union of every subject's vocabulary and break the `verification_kind` seam |
 | Provider abstraction | Task-level ports only | A generic `LLMClient` forfeits caching, thinking, structured outputs, and Batch — the features carrying the economics |
