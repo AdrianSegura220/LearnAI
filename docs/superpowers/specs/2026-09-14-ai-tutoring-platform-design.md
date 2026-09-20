@@ -732,6 +732,22 @@ TutorTurn(
 )
 ```
 
+**`step_diff` is one defect shape, not the only one.** It assumes work decomposes into ordered
+steps, that each step transforms the previous one, and that validity is a local property of
+consecutive pairs. That holds for algebra, calculus manipulation, stoichiometry, physics
+derivations and code refactoring. It does not hold for a geometry or induction proof, where each
+line *adds* a justified statement rather than transforming the last, nor for an essay, where the
+defect is an unsupported claim rather than a broken transition. The boundary is transformational
+versus non-transformational work — not mathematics versus other subjects, which is why a maths
+proof falls outside it.
+
+Nothing breaks in the meantime: a `Verifier` with no notion of steps returns `None`, and
+diagnosis degrades to a novel error. When proofs or rubric-judged subjects arrive, `TurnContext`
+gains a sibling field carrying that verifier's defect shape — `UnjustifiedStep(line, cited_rule)`
+for a proof, a rubric finding for an essay — rather than `StepDiff` being generalised. One
+example is too few to design an abstraction from; the second will say what it should be. See §14
+D10.
+
 ### 9.1 Proposals
 
 The model may request: drop to a prerequisite, serve an easier item, switch to a worked example,
@@ -951,10 +967,11 @@ item that wants it, not a subject that arrives.
 | D4 | **Orchestration adapter** — Tool Runner vs. manual loop. Domain is unaffected. | At `AnthropicTutor` implementation |
 | D5 | **Accounts, minors' data, and GDPR posture.** Minimal auth in Slice 1; a real compliance position is required before any public launch with minors. | Before launch, not before Slice 1 |
 | D6 | **UI language (Spanish/English).** Content is curriculum-agnostic; copy is not yet decided. | Before launch |
+| D7 | **Bring-your-own-problem mode.** Agreed in principle with a practice tail — the tutor helps under the strictest contract, then the engine queues generated variants of the skills involved for later cold practice. Deferred to Slice 6; the skill-identification hook is designed for now. | Slice 6 |
 | D8 | **`ORDERED_SEQUENCE` answer kind.** Reaction mechanisms, chronologies, algorithm steps — and, within mathematics, "list these steps in order". Cheap: the CAS comparison is `len(a) == len(b) and all(expressions_equivalent(x, y) for x, y in zip(a, b))`, reusing the element comparison and the comma parsing that `VALUE_SET` already has. Not added yet only because no item wants it and the input widget cannot be designed in the abstract. Adding the member without a branch would compare a list as one expression, which is why the verifier raises `UnsupportedAnswerKindError`. | First item that wants an ordered answer — plausibly in mathematics, not necessarily a new subject |
 | D8b | **`MAPPING` answer kind.** Matching terms to definitions. Genuinely more design than D8: delimiter and key normalisation, and whether a missing or extra pair is wrong or partially wrong — which drags in D9. Weak mathematics use case. | A subject built on matching items |
 | D9 | **Composite answers and partial credit — one change, not two.** Fill-three-blanks and tables need `AnswerSpec.parts: tuple[AnswerSpec, ...] = ()`, which is additive and migrates nothing. The real cost is that a composite answer is inherently partially correct, so `Verdict` stops being binary and `CheckResult` gains a score. The mastery half is already done: `update_strength` takes `outcome: float`. Until then, model each blank as its own item — usually fine, occasionally wrong. | When an item genuinely cannot be split |
-| D7 | **Bring-your-own-problem mode.** Agreed in principle with a practice tail — the tutor helps under the strictest contract, then the engine queues generated variants of the skills involved for later cold practice. Deferred to Slice 6; the skill-identification hook is designed for now. | Slice 6 |
+| D10 | **A sibling defect shape for non-transformational work.** `StepDiff` assumes each step transforms the previous one and that validity is local to consecutive pairs — true of algebra, stoichiometry and derivations, false of a geometry or induction proof (each line *adds* a justified statement) and of an essay (the defect is an unsupported claim, not a broken transition). See §9. `TurnContext` should gain a sibling field carrying that verifier's defect shape rather than `StepDiff` being generalised from a single example. Nothing breaks meanwhile: a verifier with no notion of steps returns `None` and diagnosis degrades to a novel error. | First proof-based or rubric-judged skill |
 
 ---
 
