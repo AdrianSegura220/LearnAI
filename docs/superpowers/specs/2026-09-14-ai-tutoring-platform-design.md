@@ -202,6 +202,19 @@ they are wrong*; feedback can address the belief; and generators can produce dis
 deliberately applying the misconception, turning multiple choice from guessing into diagnosis
 (an available item format, not one Slice 1 uses).
 
+**A misconception's `signature` keys its rule, and that rule should be a transform.** The
+signature is an opaque token — like `verification_kind` and form constraints — that the subject's
+matcher adapter resolves to code; the domain never interprets it. It is deliberately separate
+from the misconception's `id`, which is content identity an author may rename, whereas the
+signature is a contract with a registered rule.
+
+Rules start life as *predicates*: given the step before and the step after, does this transition
+exhibit the belief? That is all diagnosis needs. Distractor generation needs the other direction
+— given the correct expression, what would this belief produce? — and the transform is already
+written inside most predicates on their way to comparing. When distractors are built, rules
+should be defined as `transform(expr) -> Expr | None` with the predicate derived from it, so one
+definition serves both and a misconception can never diagnose one way and generate another.
+
 **Concepts are separate from skills.** Declarative knowledge — the statement of the chain rule,
 the definition of a limit — attaches to a skill but is retrieved differently. A student can know
 the theorem and be unable to apply it, or apply it mechanically without knowing what it says.
