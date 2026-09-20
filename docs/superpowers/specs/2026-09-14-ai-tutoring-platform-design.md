@@ -147,8 +147,9 @@ Skill(id, subject_id, name, can_do_statement,
       concept_ids, misconception_ids)
 PrereqEdge(from_skill, to_skill, strength)     # hard | soft
 
-Concept(id, skill_id, kind, prompt, answer)    # definition | claim | rule | procedure | fact
-Misconception(id, skill_id, name, description, signature)
+Concept(id, subject_id, kind, prompt, answer, introduced_by)
+                                               # definition | claim | rule | procedure | fact
+Misconception(id, subject_id, name, description, signature)
 
 Course(id, name, curriculum_tag, level, skill_sequence, exam_blueprint)
 ```
@@ -164,6 +165,18 @@ kinds: each adapter declares its own, and the engine resolves skill → verifier
 "1º Bachillerato Matemáticas" and "AP Calculus AB" are two courses sharing most of the same
 skills in different orders. This is how the system stays curriculum-agnostic at its core while
 still presenting a student with *their* course in *their* sequence.
+
+**Concepts and misconceptions are shared, not owned.** Both are subject-scoped, and
+`Skill.concept_ids` / `Skill.misconception_ids` carry the relationship many-to-many. Giving either
+a single owning skill would be arbitrary and, worse, would force duplication: the
+Nyquist–Shannon theorem serves sampling-rate calculation, aliasing identification, reconstruction
+and filter choice, and `(a+b)² → a²+b²` afflicts both expanding a square and completing it.
+Duplicating a concept duplicates its **memory state**, so a student would rehearse one theorem on
+four independent schedules and be told they had forgotten something they demonstrably know.
+Content loading enforces that every catalogue entry is referenced by at least one skill, so
+sharing never becomes orphaning, and a concept's position in the graph is simply the earliest
+referencing skill in topological order. `Concept.introduced_by` is an optional hint about where a
+Learn session should first teach it — an ordering note, not an ownership claim.
 
 **Misconceptions are first-class objects**, not prose inside a prompt. Each carries a signature
 describing how it manifests in written work. They earn their place three times: the CAS step diff
@@ -910,6 +923,7 @@ These are recorded deliberately, each with the trigger that will force a decisio
 | Curriculum | Dependency graph with course overlays | Curriculum-agnostic core, curriculum-specific presentation |
 | Verification kind | Opaque token plus a registry | Enumerating adapter kinds in the core would mean every new subject edits the engine, contradicting the seam it names |
 | Tuned parameters | Injected value object | Module constants cannot be varied per skill or A/B compared, which §7.2 and §7.8 both require |
+| Concepts and misconceptions | Subject-scoped, shared many-to-many | A single owning skill is arbitrary and forces duplication, and duplicating a concept duplicates its memory state |
 | Declining to answer | Scored at the guess baseline | Makes honesty and guessing cost the same in expectation; zero would pay students to guess, free would pay them to disengage |
 | Confidence mapping | Population-fitted, per item format | Per-student fitting makes everyone calibrated by construction; MCQ priors libel honest free-response guessers |
 | Form vocabulary | Opaque tokens, adapter-owned | An enum of math forms in the domain core would grow a union of every subject's vocabulary and break the `verification_kind` seam |

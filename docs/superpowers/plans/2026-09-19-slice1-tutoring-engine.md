@@ -91,7 +91,7 @@ Split by responsibility, not by layer. `mastery.py` holds the two update rules a
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: `SkillId`, `MisconceptionId`, `ConceptId`, `ItemId`, `StudentId`, `SessionId`, `TaskId` (all `NewType[str]`) plus the opaque token `VerificationKind`; `PrereqStrength`; `Skill`, `Concept`, `Misconception`, `PrereqEdge` (frozen dataclasses); `SkillGraph` with `hard_prereqs(SkillId) -> frozenset[SkillId]`, `soft_prereqs(SkillId) -> frozenset[SkillId]`, `dependents(SkillId) -> frozenset[SkillId]`, `frontier(learned: set[SkillId]) -> frozenset[SkillId]`, `topological_order() -> tuple[SkillId, ...]`, and classmethod `build(skills, edges) -> SkillGraph` which raises `CycleError` on a cycle in hard edges.
+- Produces: `SkillId`, `MisconceptionId`, `ConceptId`, `ItemId`, `StudentId`, `SessionId`, `TaskId` (all `NewType[str]`) plus the opaque token `VerificationKind`; `PrereqStrength`; `Skill`, `Concept`, `Misconception`, `PrereqEdge` (frozen dataclasses; concepts and misconceptions are subject-scoped and shared, linked many-to-many from the skill side); `SkillGraph` with `hard_prereqs(SkillId) -> frozenset[SkillId]`, `soft_prereqs(SkillId) -> frozenset[SkillId]`, `dependents(SkillId) -> frozenset[SkillId]`, `frontier(learned: set[SkillId]) -> frozenset[SkillId]`, `topological_order() -> tuple[SkillId, ...]`, and classmethod `build(skills, edges) -> SkillGraph` which raises `CycleError` on a cycle in hard edges.
 
 - [ ] **Step 1: Create the project scaffold**
 
@@ -312,17 +312,38 @@ from learnai.domain.ids import ConceptId, MisconceptionId, SkillId, Verification
 
 @dataclass(frozen=True, slots=True)
 class Concept:
+    """Declarative knowledge, shared by every skill that needs it.
+
+    Deliberately not owned by one skill. The Nyquist-Shannon theorem serves
+    sampling-rate calculation, aliasing identification, reconstruction and
+    filter choice; giving it a single owner would mean duplicating it per skill,
+    and duplicating a concept duplicates its *memory state* — the student would
+    rehearse one theorem on four independent schedules and be told they had
+    forgotten something they demonstrably know. `Skill.concept_ids` carries the
+    relationship, many-to-many.
+    """
+
     id: ConceptId
-    skill_id: SkillId
+    subject_id: str
     kind: ConceptKind
     prompt: str
     answer: str
+    introduced_by: SkillId | None = None
+    """Where a Learn session should first teach it. An ordering hint, not
+    ownership. Unused until Slice 3."""
 
 
 @dataclass(frozen=True, slots=True)
 class Misconception:
+    """A wrong belief, shared by every skill it afflicts.
+
+    Same reasoning as Concept: `(a+b)^2 -> a^2+b^2` shows up in expanding a
+    square and in completing the square. One belief, one catalogue entry, one
+    rule registration, and one entry in the student's active-misconception set.
+    """
+
     id: MisconceptionId
-    skill_id: SkillId
+    subject_id: str
     name: str
     description: str
     signature: str
@@ -503,7 +524,7 @@ git commit -m "feat: project scaffold and skill graph with purity enforcement"
 
 **Interfaces:**
 - Consumes: `Skill`, `Concept`, `Misconception`, `PrereqEdge`, `SkillGraph.build` from Task 1.
-- Produces: `load_cluster(path: Path) -> LoadedCluster` where `LoadedCluster` is a frozen dataclass with fields `graph: SkillGraph`, `concepts: dict[ConceptId, Concept]`, `misconceptions: dict[MisconceptionId, Misconception]`. Raises `ContentError` on a dangling reference or a skill with no misconceptions.
+- Produces: `load_cluster(path: Path) -> LoadedCluster` where `LoadedCluster` is a frozen dataclass with fields `graph: SkillGraph`, `concepts: dict[ConceptId, Concept]`, `misconceptions: dict[MisconceptionId, Misconception]`. Raises `ContentError` on a dangling reference, a duplicate id, a skill with no misconceptions, or a catalogue entry no skill references.
 
 - [ ] **Step 1: Create the test package and write the content file**
 
@@ -518,115 +539,120 @@ Twelve skills with genuine dependency structure. Every skill carries at least on
 ```yaml
 # content/quadratics/skills.yaml
 subject: math
+
+# One catalogue, referenced by id. A belief that afflicts several skills is
+# authored once — see mc.square.distributes below, which two skills share.
+misconceptions:
+  - id: mc.foil.drops.cross
+    name: Drops the cross terms
+    description: Multiplies first and last terms only, ignoring the inner and outer products.
+    signature: product_of_sums_drops_cross
+  - id: mc.square.distributes
+    name: Square distributes over a sum
+    description: Believes (a + b)^2 equals a^2 + b^2.
+    signature: square_distributes_over_sum
+  - id: mc.gcf.partial
+    name: Factors out only part of the common factor
+    description: Extracts a common factor but leaves a further common factor behind.
+    signature: incomplete_common_factor
+  - id: mc.factor.sign
+    name: Sign error in the factors
+    description: Chooses roots of the right magnitude but the wrong sign.
+    signature: factor_sign_flip
+  - id: mc.diffsquares.sum
+    name: Factors a sum of squares
+    description: Applies the difference-of-squares pattern to a^2 + b^2.
+    signature: sum_of_squares_factored
+  - id: mc.nonmonic.ignores.lead
+    name: Ignores the leading coefficient
+    description: Factors as though the leading coefficient were 1.
+    signature: ignores_leading_coefficient
+  - id: mc.zeroproduct.misapplied
+    name: Applies zero-product to a non-zero right side
+    description: Sets each factor equal to the right-hand side instead of first moving it to zero.
+    signature: zero_product_without_zero
+  - id: mc.complete.forgets.subtract
+    name: Adds the square without compensating
+    description: Adds (b/2)^2 without subtracting it again.
+    signature: completes_without_compensating
+  - id: mc.formula.sign.b
+    name: Drops the negation of b
+    description: Uses b instead of -b in the numerator.
+    signature: formula_b_not_negated
+  - id: mc.discriminant.sign
+    name: Reverses the discriminant cases
+    description: Reads a negative discriminant as two real roots.
+    signature: discriminant_cases_reversed
+  - id: mc.vertex.sign
+    name: Sign error reading the vertex
+    description: Reads (x - h)^2 + k as having vertex (-h, k).
+    signature: vertex_sign_flip
+  - id: mc.word.keeps.negative
+    name: Keeps a negative length
+    description: Reports a negative root as a valid physical dimension.
+    signature: negative_root_kept
+
 skills:
   - id: quad.expand.binomial
     name: Expand a product of two binomials
     can_do: Expand (x + a)(x + b) into standard form.
-    misconceptions:
-      - id: mc.foil.drops.cross
-        name: Drops the cross terms
-        description: Multiplies first and last terms only, ignoring the inner and outer products.
-        signature: product_of_sums_drops_cross
+    misconceptions: [mc.foil.drops.cross]
   - id: quad.expand.square
     name: Expand a squared binomial
     can_do: Expand (x + a)^2 into standard form.
     prereqs: [{skill: quad.expand.binomial, strength: hard}]
-    misconceptions:
-      - id: mc.square.distributes
-        name: Square distributes over a sum
-        description: Believes (a + b)^2 equals a^2 + b^2.
-        signature: square_distributes_over_sum
+    misconceptions: [mc.square.distributes]
   - id: quad.factor.common
     name: Factor out a common monomial
     can_do: Factor the greatest common monomial from a polynomial.
-    misconceptions:
-      - id: mc.gcf.partial
-        name: Factors out only part of the common factor
-        description: Extracts a common factor but leaves a further common factor behind.
-        signature: incomplete_common_factor
+    misconceptions: [mc.gcf.partial]
   - id: quad.factor.monic
     name: Factor a monic quadratic
     can_do: Factor x^2 + bx + c into two binomials.
     prereqs:
       - {skill: quad.expand.binomial, strength: hard}
       - {skill: quad.factor.common, strength: soft}
-    misconceptions:
-      - id: mc.factor.sign
-        name: Sign error in the factors
-        description: Chooses roots of the right magnitude but the wrong sign.
-        signature: factor_sign_flip
+    misconceptions: [mc.factor.sign]
   - id: quad.factor.diffsquares
     name: Factor a difference of squares
     can_do: Factor a^2 - b^2 as (a - b)(a + b).
     prereqs: [{skill: quad.expand.binomial, strength: hard}]
-    misconceptions:
-      - id: mc.diffsquares.sum
-        name: Factors a sum of squares
-        description: Applies the difference-of-squares pattern to a^2 + b^2.
-        signature: sum_of_squares_factored
+    misconceptions: [mc.diffsquares.sum]
   - id: quad.factor.nonmonic
     name: Factor a non-monic quadratic
     can_do: Factor ax^2 + bx + c where a is not 1.
     prereqs: [{skill: quad.factor.monic, strength: hard}]
-    misconceptions:
-      - id: mc.nonmonic.ignores.lead
-        name: Ignores the leading coefficient
-        description: Factors as though the leading coefficient were 1.
-        signature: ignores_leading_coefficient
+    misconceptions: [mc.nonmonic.ignores.lead]
   - id: quad.solve.factoring
     name: Solve a quadratic by factoring
     can_do: Solve a quadratic equation using the zero-product property.
     prereqs: [{skill: quad.factor.monic, strength: hard}]
-    misconceptions:
-      - id: mc.zeroproduct.misapplied
-        name: Applies zero-product to a non-zero right side
-        description: Sets each factor equal to the right-hand side instead of first moving it to zero.
-        signature: zero_product_without_zero
+    misconceptions: [mc.zeroproduct.misapplied]
   - id: quad.completesquare
     name: Complete the square
     can_do: Rewrite x^2 + bx + c in the form (x + p)^2 + q.
     prereqs: [{skill: quad.expand.square, strength: hard}]
-    misconceptions:
-      - id: mc.complete.forgets.subtract
-        name: Adds the square without compensating
-        description: Adds (b/2)^2 without subtracting it again.
-        signature: completes_without_compensating
+    misconceptions: [mc.complete.forgets.subtract, mc.square.distributes]
   - id: quad.formula.apply
     name: Apply the quadratic formula
     can_do: Solve any quadratic using the quadratic formula.
     prereqs: [{skill: quad.completesquare, strength: soft}, {skill: quad.solve.factoring, strength: hard}]
-    misconceptions:
-      - id: mc.formula.sign.b
-        name: Drops the negation of b
-        description: Uses b instead of -b in the numerator.
-        signature: formula_b_not_negated
+    misconceptions: [mc.formula.sign.b]
   - id: quad.discriminant
     name: Interpret the discriminant
     can_do: Determine the number and nature of roots from b^2 - 4ac.
     prereqs: [{skill: quad.formula.apply, strength: hard}]
-    misconceptions:
-      - id: mc.discriminant.sign
-        name: Reverses the discriminant cases
-        description: Reads a negative discriminant as two real roots.
-        signature: discriminant_cases_reversed
+    misconceptions: [mc.discriminant.sign]
   - id: quad.vertex
     name: Find the vertex of a parabola
     can_do: Find the vertex of a quadratic from its equation.
     prereqs: [{skill: quad.completesquare, strength: hard}]
-    misconceptions:
-      - id: mc.vertex.sign
-        name: Sign error reading the vertex
-        description: Reads (x - h)^2 + k as having vertex (-h, k).
-        signature: vertex_sign_flip
+    misconceptions: [mc.vertex.sign]
   - id: quad.word.area
     name: Solve an area word problem with a quadratic
     can_do: Model and solve an area problem that reduces to a quadratic.
     prereqs: [{skill: quad.solve.factoring, strength: hard}]
-    misconceptions:
-      - id: mc.word.keeps.negative
-        name: Keeps a negative length
-        description: Reports a negative root as a valid physical dimension.
-        signature: negative_root_kept
+    misconceptions: [mc.word.keeps.negative]
 ```
 
 - [ ] **Step 2: Write the failing loader test**
@@ -639,7 +665,7 @@ import pytest
 
 from learnai.adapters.content.loader import ContentError, load_cluster
 from learnai.domain.enums import PrereqStrength
-from learnai.domain.ids import SkillId
+from learnai.domain.ids import MisconceptionId, SkillId
 
 CLUSTER = pathlib.Path(__file__).parent.parent.parent / "content" / "quadratics" / "skills.yaml"
 
@@ -679,17 +705,57 @@ def test_every_misconception_id_resolves():
             assert mid in cluster.misconceptions
 
 
+def test_a_misconception_can_be_shared_by_several_skills():
+    """One belief, one catalogue entry, one memory — not one copy per skill."""
+    cluster = load_cluster(CLUSTER)
+    shared = MisconceptionId("mc.square.distributes")
+    owners = [s.id for s in cluster.graph.skills.values() if shared in s.misconception_ids]
+    assert set(owners) == {SkillId("quad.expand.square"), SkillId("quad.completesquare")}
+
+
+def test_misconceptions_are_subject_scoped_not_skill_owned():
+    cluster = load_cluster(CLUSTER)
+    assert all(m.subject_id == "math" for m in cluster.misconceptions.values())
+    assert not hasattr(next(iter(cluster.misconceptions.values())), "skill_id")
+
+
+def test_a_dangling_misconception_reference_is_rejected(tmp_path):
+    bad = tmp_path / "bad.yaml"
+    bad.write_text(
+        "subject: math\n"
+        "misconceptions: [{id: m1, name: M, description: d, signature: s}]\n"
+        "skills:\n"
+        "  - id: a\n    name: A\n    can_do: does a\n    misconceptions: [ghost]\n"
+    )
+    with pytest.raises(ContentError):
+        load_cluster(bad)
+
+
+def test_a_misconception_no_skill_references_is_rejected(tmp_path):
+    bad = tmp_path / "bad.yaml"
+    bad.write_text(
+        "subject: math\n"
+        "misconceptions:\n"
+        "  - {id: m1, name: M, description: d, signature: s}\n"
+        "  - {id: orphan, name: O, description: d, signature: s}\n"
+        "skills:\n"
+        "  - id: a\n    name: A\n    can_do: does a\n    misconceptions: [m1]\n"
+    )
+    with pytest.raises(ContentError):
+        load_cluster(bad)
+
+
 def test_dangling_prereq_is_rejected(tmp_path):
     bad = tmp_path / "bad.yaml"
     bad.write_text(
         "subject: math\n"
+        "misconceptions: [{id: m1, name: M, description: d, signature: s}]\n"
         "skills:\n"
         "  - id: a\n"
         "    name: A\n"
         "    can_do: does a\n"
         "    prereqs: [{skill: ghost, strength: hard}]\n"
-        "    misconceptions:\n"
-        "      - {id: m1, name: M, description: d, signature: s}\n"
+        "    misconceptions: [m1]\n"
     )
     with pytest.raises(ContentError):
         load_cluster(bad)
@@ -718,7 +784,7 @@ from typing import Any
 import yaml
 
 from learnai.adapters.cas.vocabulary import CAS_SYMBOLIC
-from learnai.domain.enums import PrereqStrength
+from learnai.domain.enums import ConceptKind, PrereqStrength
 from learnai.domain.graph import CycleError, SkillGraph
 from learnai.domain.ids import ConceptId, MisconceptionId, SkillId, VerificationKind
 from learnai.domain.skills import Concept, Misconception, PrereqEdge, Skill
@@ -743,28 +809,56 @@ def load_cluster(path: Path) -> LoadedCluster:
 
     skills: list[Skill] = []
     edges: list[PrereqEdge] = []
+
+    # Catalogues first: concepts and misconceptions are shared, so they are
+    # authored once at the top level and referenced by id from any number of
+    # skills. A single owner would force duplication, and duplicating a concept
+    # duplicates its memory state.
     misconceptions: dict[MisconceptionId, Misconception] = {}
+    for mc in raw.get("misconceptions", []):
+        mid = MisconceptionId(mc["id"])
+        if mid in misconceptions:
+            raise ContentError(f"duplicate misconception id: {mid}")
+        misconceptions[mid] = Misconception(
+            id=mid,
+            subject_id=subject,
+            name=mc["name"],
+            description=mc["description"],
+            signature=mc["signature"],
+        )
+
     concepts: dict[ConceptId, Concept] = {}
+    for c in raw.get("concepts", []):
+        cid = ConceptId(c["id"])
+        if cid in concepts:
+            raise ContentError(f"duplicate concept id: {cid}")
+        concepts[cid] = Concept(
+            id=cid,
+            subject_id=subject,
+            kind=ConceptKind(c["kind"]),
+            prompt=c["prompt"],
+            answer=c["answer"],
+            introduced_by=SkillId(c["introduced_by"]) if c.get("introduced_by") else None,
+        )
+
+    referenced_mcs: set[MisconceptionId] = set()
+    referenced_concepts: set[ConceptId] = set()
 
     for entry in raw.get("skills", []):
         sid = SkillId(entry["id"])
-        raw_mcs = entry.get("misconceptions", [])
-        if not raw_mcs:
+        mc_ids = tuple(MisconceptionId(m) for m in entry.get("misconceptions", []))
+        if not mc_ids:
             raise ContentError(f"{sid} declares no misconceptions")
+        for mid in mc_ids:
+            if mid not in misconceptions:
+                raise ContentError(f"{sid} references unknown misconception {mid}")
+        referenced_mcs.update(mc_ids)
 
-        mc_ids: list[MisconceptionId] = []
-        for mc in raw_mcs:
-            mid = MisconceptionId(mc["id"])
-            if mid in misconceptions:
-                raise ContentError(f"duplicate misconception id: {mid}")
-            misconceptions[mid] = Misconception(
-                id=mid,
-                skill_id=sid,
-                name=mc["name"],
-                description=mc["description"],
-                signature=mc["signature"],
-            )
-            mc_ids.append(mid)
+        concept_ids = tuple(ConceptId(c) for c in entry.get("concepts", []))
+        for cid in concept_ids:
+            if cid not in concepts:
+                raise ContentError(f"{sid} references unknown concept {cid}")
+        referenced_concepts.update(concept_ids)
 
         skills.append(
             Skill(
@@ -775,8 +869,8 @@ def load_cluster(path: Path) -> LoadedCluster:
                 verification_kind=VerificationKind(
                     entry.get("verification", CAS_SYMBOLIC)
                 ),
-                concept_ids=(),
-                misconception_ids=tuple(mc_ids),
+                concept_ids=concept_ids,
+                misconception_ids=mc_ids,
             )
         )
         for pre in entry.get("prereqs", []):
@@ -787,6 +881,13 @@ def load_cluster(path: Path) -> LoadedCluster:
                     strength=PrereqStrength(pre["strength"]),
                 )
             )
+
+    # Sharing must not become orphaning: content nothing points at is dead weight
+    # that would still be scheduled for review.
+    if orphans := set(misconceptions) - referenced_mcs:
+        raise ContentError(f"misconceptions referenced by no skill: {sorted(orphans)}")
+    if orphans := set(concepts) - referenced_concepts:
+        raise ContentError(f"concepts referenced by no skill: {sorted(orphans)}")
 
     try:
         graph = SkillGraph.build(skills, edges)
@@ -799,7 +900,7 @@ def load_cluster(path: Path) -> LoadedCluster:
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/adapters/test_content_loader.py -v`
-Expected: PASS — 7 tests.
+Expected: PASS — 11 tests.
 
 - [ ] **Step 6: Commit**
 
@@ -2263,7 +2364,7 @@ git commit -m "feat: twelve CAS-verified quadratics generators with contract tes
 
 ```python
 # tests/domain/test_diagnosis.py
-from learnai.domain.ids import MisconceptionId, SkillId
+from learnai.domain.ids import MisconceptionId
 from learnai.domain.items import StepDiff
 from learnai.domain.misconceptions import diagnose
 from learnai.domain.skills import Misconception
@@ -2282,7 +2383,7 @@ class StubMatcher:
 def mc(mid: str, signature: str) -> Misconception:
     return Misconception(
         id=MisconceptionId(mid),
-        skill_id=SkillId("s"),
+        subject_id="math",
         name=mid,
         description="",
         signature=signature,
