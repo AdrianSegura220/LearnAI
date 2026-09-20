@@ -1421,7 +1421,7 @@ git commit -m "feat: allowlisted math parser and CAS equivalence checking"
 
 **Interfaces:**
 - Consumes: `AnswerKind`, `AnswerSpec`, `FormConstraint`, `StepDiff`, `Verdict` (Tasks 1 and 3); `parse_math`, the three equivalence functions (Task 4).
-- Produces: `CheckResult(verdict: Verdict, failed_constraints: tuple[FormConstraint, ...], step_diff: StepDiff | None)`; the `Verifier` protocol with `check_answer(submitted: str, spec: AnswerSpec) -> CheckResult`, `diff_steps(steps: Sequence[str]) -> StepDiff | None`, `extract_candidate_expressions(text: str) -> tuple[str, ...]`, `matches_answer(expression: str, spec: AnswerSpec) -> bool`; `supported_constraints -> frozenset[FormConstraint]`; `SympyVerifier` implementing it. In `adapters/cas/constraints.py`: the tokens `FULLY_FACTORED`, `EXPANDED`, `SIMPLIFIED`, `EXACT_NOT_DECIMAL`, `COMPLETED_SQUARE`, the set `MATH_CONSTRAINTS`, and `UnknownConstraintError`, and the kind token `CAS_SYMBOLIC`. (`diff_steps` is stubbed to `None` in this task and implemented in Task 6.)
+- Produces: `CheckResult(verdict: Verdict, failed_constraints: tuple[FormConstraint, ...], step_diff: StepDiff | None)`; the `Verifier` protocol with `check_answer(submitted: str, spec: AnswerSpec) -> CheckResult`, `diff_steps(steps: Sequence[str]) -> StepDiff | None`, `extract_candidate_expressions(text: str) -> tuple[str, ...]`, `matches_answer(expression: str, spec: AnswerSpec) -> bool`; `supported_constraints -> frozenset[FormConstraint]`; `SympyVerifier` implementing it. In `adapters/cas/constraints.py`: the tokens `FULLY_FACTORED`, `EXPANDED`, `SIMPLIFIED`, `EXACT_NOT_DECIMAL`, `COMPLETED_SQUARE`, the set `MATH_CONSTRAINTS`, and `UnknownConstraintError`, `UnsupportedAnswerKindError`, and the kind token `CAS_SYMBOLIC`. (`diff_steps` is stubbed to `None` in this task and implemented in Task 6.)
 
 **Why the vocabulary lives here:** `_satisfies` is the only code in the system that ever interprets a form constraint, so the tokens belong beside it. A physics adapter will declare `correct_units` and `significant_figures` without touching the domain, which is the whole point of the `verification_kind` seam.
 
@@ -1431,14 +1431,15 @@ git commit -m "feat: allowlisted math parser and CAS equivalence checking"
 # tests/adapters/test_sympy_verifier.py
 import pytest
 
+from learnai.adapters.cas.sympy_verifier import SympyVerifier
 from learnai.adapters.cas.vocabulary import (
     COMPLETED_SQUARE,
     EXACT_NOT_DECIMAL,
     EXPANDED,
     FULLY_FACTORED,
     MATH_CONSTRAINTS,
+    UnsupportedAnswerKindError,
 )
-from learnai.adapters.cas.sympy_verifier import SympyVerifier
 from learnai.domain.enums import Verdict
 from learnai.domain.items import AnswerKind, AnswerSpec, FormConstraint
 
@@ -1514,6 +1515,18 @@ def test_solution_set_constraints_apply_to_every_root():
     )
     assert V.check_answer("1 - sqrt(2), 1 + sqrt(2)", spec).verdict is Verdict.CORRECT
     assert V.check_answer("2.414213, -0.414213", spec).verdict is Verdict.WRONG
+
+
+def test_an_unsupported_answer_kind_raises_rather_than_guessing():
+    """A kind this verifier cannot compare must never fall through to expressions.
+
+    Every member is handled today, so the guard is exercised by passing a value
+    the type system forbids — which is exactly the state a newly added member
+    is in before someone writes its branch.
+    """
+    spec = AnswerSpec("x + 1", kind="ordered_sequence")  # type: ignore[arg-type]
+    with pytest.raises(UnsupportedAnswerKindError):
+        V.check_answer("x + 1", spec)
 
 
 def test_the_verifier_declares_the_vocabulary_it_can_judge():
@@ -1619,6 +1632,15 @@ MATH_CONSTRAINTS: frozenset[FormConstraint] = frozenset(
 )
 
 
+class UnsupportedAnswerKindError(ValueError):
+    """This verifier has no comparison for that answer kind.
+
+    Raised rather than falling back to single-value comparison: a future
+    ORDERED_SEQUENCE reaching the expression branch would be compared as one
+    expression and quietly return wrong verdicts.
+    """
+
+
 class UnknownConstraintError(KeyError):
     """An item demands a form this verifier cannot judge.
 
@@ -1649,6 +1671,7 @@ from learnai.adapters.cas.vocabulary import (
     MATH_CONSTRAINTS,
     SIMPLIFIED,
     UnknownConstraintError,
+    UnsupportedAnswerKindError,
 )
 from learnai.adapters.cas.parse import ParseError, parse_math
 from learnai.domain.enums import Verdict
@@ -1688,6 +1711,9 @@ class SympyVerifier:
                     return CheckResult(Verdict.MALFORMED)
                 ok = equations_equivalent(got_eq, want_eq)
                 return CheckResult(Verdict.CORRECT if ok else Verdict.WRONG)
+
+            if spec.kind is not AnswerKind.SINGLE_VALUE:
+                raise UnsupportedAnswerKindError(spec.kind)
 
             got_expr = parse_math(submitted)
             want_expr = parse_math(spec.expression)
@@ -1754,7 +1780,7 @@ def _satisfies(expr: sp.Expr, constraint: FormConstraint) -> bool:
 - [ ] **Step 6: Run the verifier tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/adapters/test_sympy_verifier.py -v`
-Expected: PASS — 15 tests.
+Expected: PASS — 16 tests.
 
 - [ ] **Step 7: Run the whole suite, including the purity test**
 
