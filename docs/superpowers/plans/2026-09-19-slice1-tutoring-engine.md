@@ -524,7 +524,7 @@ git commit -m "feat: project scaffold and skill graph with purity enforcement"
 
 **Interfaces:**
 - Consumes: `Skill`, `Concept`, `Misconception`, `PrereqEdge`, `SkillGraph.build` from Task 1.
-- Produces: `load_cluster(path: Path) -> LoadedCluster` where `LoadedCluster` is a frozen dataclass with fields `graph: SkillGraph`, `concepts: dict[ConceptId, Concept]`, `misconceptions: dict[MisconceptionId, Misconception]`. Raises `ContentError` on a dangling reference, a duplicate id, a skill with no misconceptions, or a catalogue entry no skill references.
+- Produces: `parse_cluster(raw: Mapping[str, Any]) -> LoadedCluster`, which holds every content rule and touches no I/O, plus the thin file wrapper `load_cluster(path: Path) -> LoadedCluster`. `LoadedCluster` is a frozen dataclass with fields `graph: SkillGraph`, `concepts: dict[ConceptId, Concept]`, `misconceptions: dict[MisconceptionId, Misconception]`. Raises `ContentError` on a dangling reference, a duplicate id, a skill with no misconceptions, or a catalogue entry no skill references.
 
 - [ ] **Step 1: Create the test package and write the content file**
 
@@ -662,8 +662,9 @@ skills:
 import pathlib
 
 import pytest
+import yaml
 
-from learnai.adapters.content.loader import ContentError, load_cluster
+from learnai.adapters.content.loader import ContentError, load_cluster, parse_cluster
 from learnai.domain.enums import PrereqStrength
 from learnai.domain.ids import MisconceptionId, SkillId
 
@@ -719,53 +720,54 @@ def test_misconceptions_are_subject_scoped_not_skill_owned():
     assert not hasattr(next(iter(cluster.misconceptions.values())), "skill_id")
 
 
-def test_a_dangling_misconception_reference_is_rejected(tmp_path):
-    bad = tmp_path / "bad.yaml"
-    bad.write_text(
-        "subject: math\n"
-        "misconceptions: [{id: m1, name: M, description: d, signature: s}]\n"
-        "skills:\n"
-        "  - id: a\n    name: A\n    can_do: does a\n    misconceptions: [ghost]\n"
-    )
+# Content rules are exercised through parse_cluster: no temp files, no YAML
+# round-trip, and the failure cases read as data rather than as string escaping.
+
+MC = {"id": "m1", "name": "M", "description": "d", "signature": "s"}
+SKILL_A = {"id": "a", "name": "A", "can_do": "does a", "misconceptions": ["m1"]}
+
+
+def cluster(**overrides) -> dict:
+    return {"subject": "math", "misconceptions": [MC], "skills": [SKILL_A]} | overrides
+
+
+def test_the_baseline_cluster_is_valid():
+    assert parse_cluster(cluster()).graph.skills.keys() == {SkillId("a")}
+
+
+def test_a_cluster_without_a_subject_is_rejected():
     with pytest.raises(ContentError):
-        load_cluster(bad)
+        parse_cluster({"skills": []})
 
 
-def test_a_misconception_no_skill_references_is_rejected(tmp_path):
-    bad = tmp_path / "bad.yaml"
-    bad.write_text(
-        "subject: math\n"
-        "misconceptions:\n"
-        "  - {id: m1, name: M, description: d, signature: s}\n"
-        "  - {id: orphan, name: O, description: d, signature: s}\n"
-        "skills:\n"
-        "  - id: a\n    name: A\n    can_do: does a\n    misconceptions: [m1]\n"
-    )
+def test_a_dangling_prereq_is_rejected():
     with pytest.raises(ContentError):
-        load_cluster(bad)
+        parse_cluster(cluster(skills=[SKILL_A | {"prereqs": [{"skill": "ghost", "strength": "hard"}]}]))
 
 
-def test_dangling_prereq_is_rejected(tmp_path):
-    bad = tmp_path / "bad.yaml"
-    bad.write_text(
-        "subject: math\n"
-        "misconceptions: [{id: m1, name: M, description: d, signature: s}]\n"
-        "skills:\n"
-        "  - id: a\n"
-        "    name: A\n"
-        "    can_do: does a\n"
-        "    prereqs: [{skill: ghost, strength: hard}]\n"
-        "    misconceptions: [m1]\n"
-    )
+def test_a_skill_without_misconceptions_is_rejected():
     with pytest.raises(ContentError):
-        load_cluster(bad)
+        parse_cluster(cluster(skills=[{"id": "a", "name": "A", "can_do": "does a"}]))
 
 
-def test_skill_without_misconceptions_is_rejected(tmp_path):
-    bad = tmp_path / "bad.yaml"
-    bad.write_text("subject: math\nskills:\n  - id: a\n    name: A\n    can_do: does a\n")
+def test_a_dangling_misconception_reference_is_rejected():
     with pytest.raises(ContentError):
-        load_cluster(bad)
+        parse_cluster(cluster(skills=[SKILL_A | {"misconceptions": ["ghost"]}]))
+
+
+def test_a_misconception_no_skill_references_is_rejected():
+    orphan = {"id": "orphan", "name": "O", "description": "d", "signature": "s"}
+    with pytest.raises(ContentError):
+        parse_cluster(cluster(misconceptions=[MC, orphan]))
+
+
+def test_a_duplicate_misconception_id_is_rejected():
+    with pytest.raises(ContentError):
+        parse_cluster(cluster(misconceptions=[MC, dict(MC)]))
+
+
+def test_the_file_loader_adds_nothing_but_reading():
+    assert load_cluster(CLUSTER) == parse_cluster(yaml.safe_load(CLUSTER.read_text()))
 ```
 
 - [ ] **Step 3: Run the test to verify it fails**
@@ -773,10 +775,11 @@ def test_skill_without_misconceptions_is_rejected(tmp_path):
 Run: `.venv/bin/pytest tests/adapters/test_content_loader.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'learnai.adapters.content'`
 
-- [ ] **Step 4: Write the loader**
+- [ ] **Step 4: Write the parser and the file loader**
 
 ```python
 # src/learnai/adapters/content/loader.py
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -801,8 +804,14 @@ class LoadedCluster:
     misconceptions: dict[MisconceptionId, Misconception]
 
 
-def load_cluster(path: Path) -> LoadedCluster:
-    raw: dict[str, Any] = yaml.safe_load(path.read_text())
+def parse_cluster(raw: Mapping[str, Any]) -> LoadedCluster:
+    """Validate and build a cluster from already-decoded content.
+
+    Every content rule lives here, deliberately apart from any I/O, so that
+    each source runs the same checks. A source that admitted content this
+    rejects would be a quiet route to a broken graph — and a Postgres reader
+    that re-implemented the rules would drift from this one within a release.
+    """
     subject = raw.get("subject")
     if not subject:
         raise ContentError("cluster file has no subject")
@@ -895,12 +904,22 @@ def load_cluster(path: Path) -> LoadedCluster:
         raise ContentError(str(exc)) from exc
 
     return LoadedCluster(graph=graph, concepts=concepts, misconceptions=misconceptions)
+
+
+def load_cluster(path: Path) -> LoadedCluster:
+    """Read a YAML cluster file. A thin wrapper; the rules are in `parse_cluster`.
+
+    Other sources skip this entirely: an HTTP or S3 reader decodes bytes and
+    calls `parse_cluster`, and a database reader builds the domain objects from
+    rows without going near YAML.
+    """
+    return parse_cluster(yaml.safe_load(path.read_text()))
 ```
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/adapters/test_content_loader.py -v`
-Expected: PASS — 11 tests.
+Expected: PASS — 15 tests.
 
 - [ ] **Step 6: Commit**
 
