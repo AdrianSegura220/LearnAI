@@ -845,6 +845,16 @@ adapter requires live testing.
 **Cluster: quadratics** — 12–15 skills, rich in real misconceptions, strong prerequisite
 structure, entirely CAS-verifiable.
 
+**Execution.** Slice 1 is built as two plans, split at the hexagonal boundary so each produces
+working, testable software on its own.
+
+- `docs/superpowers/plans/2026-09-19-slice1-tutoring-engine.md` — deliverables 1–8 and 11 below:
+  the domain core plus the CAS and content adapters, driven by a fake tutor and a fake clock.
+  Runs with no API key, no database and no UI.
+- A second plan attaches the I/O: persistence, HTTP, the Anthropic tutor adapter with model
+  routing and caching, the graded eval set, and the web session UI — deliverables 9 and 10, plus
+  the durable half of 8.
+
 ### Deliverables
 
 1. Skill graph for the cluster: skills with can-do statements, prerequisite edges, misconception
