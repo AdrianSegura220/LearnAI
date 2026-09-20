@@ -936,6 +936,13 @@ content model are designed to accommodate all of them; none is built.
 
 These are recorded deliberately, each with the trigger that will force a decision.
 
+On answer kinds specifically: `AnswerKind` names a general *shape*, and each `Verifier` decides
+how to compare the elements of that shape — an ordered list of expressions by symbolic
+equivalence, an ordered list of historical causes by rubric. So a new subject never forces a new
+kind, and a new kind never forces every adapter to implement it: one that cannot judge a shape
+raises `UnsupportedAnswerKindError` rather than guessing. The trigger for adding a kind is an
+item that wants it, not a subject that arrives.
+
 | # | Decision | Status |
 |---|---|---|
 | D1 | **Math input library.** Needs a spike — step-by-step entry UX is load-bearing for Slice 1 and no library is obviously right. KaTeX handles rendering; input is the open part. | Spike before UI build |
@@ -944,7 +951,8 @@ These are recorded deliberately, each with the trigger that will force a decisio
 | D4 | **Orchestration adapter** — Tool Runner vs. manual loop. Domain is unaffected. | At `AnthropicTutor` implementation |
 | D5 | **Accounts, minors' data, and GDPR posture.** Minimal auth in Slice 1; a real compliance position is required before any public launch with minors. | Before launch, not before Slice 1 |
 | D6 | **UI language (Spanish/English).** Content is curriculum-agnostic; copy is not yet decided. | Before launch |
-| D8 | **Ordered-sequence and mapping answer kinds.** `SINGLE_VALUE`, `RELATION` and `VALUE_SET` cover numeric-with-units, vectors, balanced equations, unordered lists, code and prose, but not "put these in order" (reaction mechanisms, chronologies, algorithm steps) or "match these pairs". Both are additive: an enum member, one verifier branch, one input widget, no migration. Deliberately not added early — a member with no branch and no widget silently compares as a single expression, so the verifier raises `UnsupportedAnswerKindError` on anything it cannot judge. | When a subject needs one |
+| D8 | **`ORDERED_SEQUENCE` answer kind.** Reaction mechanisms, chronologies, algorithm steps — and, within mathematics, "list these steps in order". Cheap: the CAS comparison is `len(a) == len(b) and all(expressions_equivalent(x, y) for x, y in zip(a, b))`, reusing the element comparison and the comma parsing that `VALUE_SET` already has. Not added yet only because no item wants it and the input widget cannot be designed in the abstract. Adding the member without a branch would compare a list as one expression, which is why the verifier raises `UnsupportedAnswerKindError`. | First item that wants an ordered answer — plausibly in mathematics, not necessarily a new subject |
+| D8b | **`MAPPING` answer kind.** Matching terms to definitions. Genuinely more design than D8: delimiter and key normalisation, and whether a missing or extra pair is wrong or partially wrong — which drags in D9. Weak mathematics use case. | A subject built on matching items |
 | D9 | **Composite answers and partial credit — one change, not two.** Fill-three-blanks and tables need `AnswerSpec.parts: tuple[AnswerSpec, ...] = ()`, which is additive and migrates nothing. The real cost is that a composite answer is inherently partially correct, so `Verdict` stops being binary and `CheckResult` gains a score. The mastery half is already done: `update_strength` takes `outcome: float`. Until then, model each blank as its own item — usually fine, occasionally wrong. | When an item genuinely cannot be split |
 | D7 | **Bring-your-own-problem mode.** Agreed in principle with a practice tail — the tutor helps under the strictest contract, then the engine queues generated variants of the skills involved for later cold practice. Deferred to Slice 6; the skill-identification hook is designed for now. | Slice 6 |
 
