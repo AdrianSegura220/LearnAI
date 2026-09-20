@@ -174,9 +174,26 @@ and filter choice, and `(a+b)² → a²+b²` afflicts both expanding a square an
 Duplicating a concept duplicates its **memory state**, so a student would rehearse one theorem on
 four independent schedules and be told they had forgotten something they demonstrably know.
 Content loading enforces that every catalogue entry is referenced by at least one skill, so
-sharing never becomes orphaning, and a concept's position in the graph is simply the earliest
-referencing skill in topological order. `Concept.introduced_by` is an optional hint about where a
-Learn session should first teach it — an ordering note, not an ownership claim.
+sharing never becomes orphaning.
+
+`Concept.introduced_by` is an **override**, not the link: it names where a Learn session should
+first teach the concept, defaulting to the earliest referencing skill in topological order, and
+authors set it only when they want it taught somewhere else. Loading rejects an `introduced_by`
+that is not itself one of the referencing skills, which would otherwise be silently incoherent.
+
+Because the link is authored on the skill side, the reverse direction is a **derived index built
+at load time** — `skills_for_concept: dict[ConceptId, frozenset[SkillId]]` — in exactly the way
+`SkillGraph` precomputes incoming and outgoing prerequisite edges from a flat list. Review mode
+needs it twice: to place a concept in the graph, and to decide eligibility, which is true when
+*any* referencing skill has reached the frontier. `introduced_by` cannot serve either purpose, as
+a student may reach a skill needing the concept by a route that never passes through the skill
+that introduces it. The index arrives in Slice 2 with its first consumer.
+
+The relationship is many-to-many, and gets the representation that suits each layer: an id list
+on the skill in YAML (how an author thinks), an adjacency tuple plus derived reverse index in the
+domain (how traversal reads), and a junction table with a composite key in Postgres (how
+integrity is enforced). A link becomes a first-class entity only when it carries data of its own
+— which is exactly why `PrereqEdge` is one and `concept_ids` is not.
 
 **Misconceptions are first-class objects**, not prose inside a prompt. Each carries a signature
 describing how it manifests in written work. They earn their place three times: the CAS step diff
