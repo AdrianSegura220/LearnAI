@@ -91,7 +91,7 @@ Split by responsibility, not by layer. `mastery.py` holds the two update rules a
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: `SkillId`, `MisconceptionId`, `ConceptId`, `ItemId`, `StudentId`, `SessionId`, `TaskId` (all `NewType[str]`) plus the opaque token `VerificationKind`; `PrereqStrength`; `Skill`, `Concept`, `Misconception`, `PrereqEdge` (frozen dataclasses; concepts and misconceptions are subject-scoped and shared, linked many-to-many from the skill side); `SkillGraph` with `hard_prereqs(SkillId) -> frozenset[SkillId]`, `soft_prereqs(SkillId) -> frozenset[SkillId]`, `dependents(SkillId) -> frozenset[SkillId]`, `frontier(learned: set[SkillId]) -> frozenset[SkillId]`, `topological_order() -> tuple[SkillId, ...]`, and classmethod `build(skills, edges) -> SkillGraph` which raises `CycleError` on a cycle in hard edges.
+- Produces: `SkillId`, `MisconceptionId`, `ConceptId`, `ItemId`, `StudentId`, `SessionId`, `TaskId` (all `NewType[str]`) plus the opaque token `VerificationKind`; `PrereqStrength`; `Skill`, `Concept`, `Misconception`, `PrereqEdge` (frozen dataclasses; concepts and misconceptions are subject-scoped and shared, linked many-to-many from the skill side); `SkillGraph` with `hard_prereqs(SkillId) -> frozenset[SkillId]`, `soft_prereqs(SkillId) -> frozenset[SkillId]`, `dependents(SkillId) -> frozenset[SkillId]`, `frontier(learned: set[SkillId]) -> frozenset[SkillId]`, `topological_order() -> tuple[SkillId, ...]`, and classmethod `build(skills, edges) -> SkillGraph` which raises `CycleError` on a cycle in hard edges. `CycleError.cycle` holds one offending path, closed and in prerequisite-first order — `(a, b, c, a)` — so an author can see which edges to fix.
 
 - [ ] **Step 1: Create the project scaffold**
 
@@ -182,6 +182,15 @@ def test_soft_edges_do_not_gate_the_frontier():
 def test_cycle_in_hard_edges_is_rejected():
     with pytest.raises(CycleError):
         SkillGraph.build([skill("a"), skill("b")], [hard("a", "b"), hard("b", "a")])
+
+
+def test_a_cycle_error_names_the_path_and_nothing_downstream():
+    """d depends on the cycle but is not part of it, so it must not be blamed."""
+    edges = [hard("a", "b"), hard("b", "c"), hard("c", "a"), hard("c", "d")]
+    with pytest.raises(CycleError) as err:
+        SkillGraph.build([skill(s) for s in "abcd"], edges)
+    assert err.value.cycle == (SkillId("a"), SkillId("b"), SkillId("c"), SkillId("a"))
+    assert "a -> b -> c -> a" in str(err.value)
 
 
 def test_edge_referencing_unknown_skill_is_rejected():
@@ -382,7 +391,16 @@ from learnai.domain.skills import PrereqEdge, Skill
 
 
 class CycleError(ValueError):
-    """Raised when hard prerequisite edges contain a cycle."""
+    """Raised when hard prerequisite edges contain a cycle.
+
+    Carries one offending path. The graph never breaks a cycle itself: which
+    dependency is false — or whether a shared prerequisite is missing — is a
+    pedagogical judgement it has no information to make. See spec §6.1, D11.
+    """
+
+    def __init__(self, cycle: tuple[SkillId, ...]) -> None:
+        self.cycle = cycle
+        super().__init__("hard prerequisites form a cycle: " + " -> ".join(cycle))
 
 
 @dataclass(frozen=True, slots=True)
@@ -448,14 +466,32 @@ class SkillGraph:
                         ready.append(dep)
             ready.sort()
         if len(order) != len(self.skills):
-            raise CycleError("hard prerequisite edges contain a cycle")
+            raise CycleError(self._find_cycle(set(self.skills) - set(order)))
         return tuple(order)
+
+    def _find_cycle(self, stuck: set[SkillId]) -> tuple[SkillId, ...]:
+        """Walk backwards through hard prereqs, within the unordered skills, until one repeats.
+
+        Every stuck skill has at least one stuck hard prereq — otherwise it would
+        have been ordered — so the walk cannot dead-end and must close a loop.
+        Skills merely downstream of the cycle are stuck too, but the walk leaves
+        them behind. Smallest id at each choice, so the reported path is stable.
+        """
+        path: list[SkillId] = []
+        position: dict[SkillId, int] = {}
+        current = min(stuck)
+        while current not in position:
+            position[current] = len(path)
+            path.append(current)
+            current = min(self.hard_prereqs(current) & stuck)
+        loop = path[position[current]:] + [current]
+        return tuple(reversed(loop))  # prerequisite first, the way edges read
 ```
 
 - [ ] **Step 7: Run the graph tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/domain/test_graph.py -v`
-Expected: PASS — 6 tests.
+Expected: PASS — 7 tests.
 
 - [ ] **Step 8: Write the domain purity test**
 
@@ -504,7 +540,7 @@ def test_domain_never_imports_forbidden_packages():
 - [ ] **Step 9: Run the full suite**
 
 Run: `.venv/bin/pytest -v`
-Expected: PASS — 8 tests.
+Expected: PASS — 9 tests.
 
 - [ ] **Step 10: Commit**
 
@@ -524,7 +560,9 @@ git commit -m "feat: project scaffold and skill graph with purity enforcement"
 
 **Interfaces:**
 - Consumes: `Skill`, `Concept`, `Misconception`, `PrereqEdge`, `SkillGraph.build` from Task 1.
-- Produces: `parse_cluster(raw: Mapping[str, Any]) -> LoadedCluster`, which holds every content rule and touches no I/O, plus the thin file wrapper `load_cluster(path: Path) -> LoadedCluster`. `LoadedCluster` is a frozen dataclass with fields `graph: SkillGraph`, `concepts: dict[ConceptId, Concept]`, `misconceptions: dict[MisconceptionId, Misconception]`. Raises `ContentError` on a dangling reference, a duplicate id, a skill with no misconceptions, or a catalogue entry no skill references.
+- Produces: `parse_cluster(raw: Mapping[str, Any]) -> LoadedCluster`, which holds every content rule and touches no I/O, plus the thin file wrapper `load_cluster(path: Path) -> LoadedCluster`. `LoadedCluster` is a frozen dataclass with fields `graph: SkillGraph`, `concepts: dict[ConceptId, Concept]`, `misconceptions: dict[MisconceptionId, Misconception]`. Raises `ContentError` on a missing `subject` or `verification`, a dangling reference, a duplicate id, a catalogue entry no skill references, a concept whose `introduced_by` is not one of the skills that use it, or a hard-prerequisite cycle (message names the path).
+
+**What the loader deliberately does not do.** It has no default verification kind and imports nothing from any verifier adapter: the cluster declares the kind, and only the engine's registry can say whether a verifier exists for it (Task 17). It does not require a skill to list misconceptions: an unmatched error is diagnosed as novel (Task 8), and a mandatory entry would invite invented ones.
 
 - [ ] **Step 1: Create the test package and write the content file**
 
@@ -534,11 +572,14 @@ touch tests/adapters/__init__.py src/learnai/adapters/content/__init__.py
 ```
 
 
-Twelve skills with genuine dependency structure. Every skill carries at least one misconception, because Task 8's diagnosis has nothing to match against otherwise.
+Twelve skills with genuine dependency structure. Each happens to carry at least one misconception, which gives Task 8's diagnosis something to match in every skill; that is a property of this content, not a loader rule.
 
 ```yaml
 # content/quadratics/skills.yaml
 subject: math
+# Which Verifier grades these skills. Required, with no fallback in code; a
+# skill may override it with its own `verification:` key.
+verification: cas_symbolic
 
 # One catalogue, referenced by id. A belief that afflicts several skills is
 # authored once — see mc.square.distributes below, which two skills share.
@@ -665,8 +706,7 @@ import pytest
 import yaml
 
 from learnai.adapters.content.loader import ContentError, load_cluster, parse_cluster
-from learnai.domain.enums import PrereqStrength
-from learnai.domain.ids import MisconceptionId, SkillId
+from learnai.domain.ids import ConceptId, MisconceptionId, SkillId
 
 CLUSTER = pathlib.Path(__file__).parent.parent.parent / "content" / "quadratics" / "skills.yaml"
 
@@ -691,12 +731,6 @@ def test_roots_are_the_initial_frontier():
     assert cluster.graph.frontier(learned=set()) == frozenset(
         {SkillId("quad.expand.binomial"), SkillId("quad.factor.common")}
     )
-
-
-def test_every_skill_has_at_least_one_misconception():
-    cluster = load_cluster(CLUSTER)
-    for skill in cluster.graph.skills.values():
-        assert skill.misconception_ids, f"{skill.id} has no misconceptions"
 
 
 def test_every_misconception_id_resolves():
@@ -724,11 +758,15 @@ def test_misconceptions_are_subject_scoped_not_skill_owned():
 # round-trip, and the failure cases read as data rather than as string escaping.
 
 MC = {"id": "m1", "name": "M", "description": "d", "signature": "s"}
+CONCEPT = {"id": "c1", "kind": "definition", "prompt": "p", "answer": "a"}
 SKILL_A = {"id": "a", "name": "A", "can_do": "does a", "misconceptions": ["m1"]}
+SKILL_B = {"id": "b", "name": "B", "can_do": "does b", "misconceptions": ["m1"]}
 
 
 def cluster(**overrides) -> dict:
-    return {"subject": "math", "misconceptions": [MC], "skills": [SKILL_A]} | overrides
+    # "any_checker", not "cas_symbolic": the loader treats the kind as opaque.
+    base = {"subject": "math", "verification": "any_checker", "misconceptions": [MC], "skills": [SKILL_A]}
+    return base | overrides
 
 
 def test_the_baseline_cluster_is_valid():
@@ -740,14 +778,40 @@ def test_a_cluster_without_a_subject_is_rejected():
         parse_cluster({"skills": []})
 
 
+def test_a_cluster_without_a_verification_kind_is_rejected():
+    """No fallback: a history cluster that forgot the key must not be graded by SymPy."""
+    without = {k: v for k, v in cluster().items() if k != "verification"}
+    with pytest.raises(ContentError):
+        parse_cluster(without)
+
+
+def test_skills_inherit_the_cluster_verification_kind():
+    skill = parse_cluster(cluster()).graph.skills[SkillId("a")]
+    assert skill.verification_kind == "any_checker"
+
+
+def test_a_skill_can_override_the_verification_kind():
+    loaded = parse_cluster(cluster(skills=[SKILL_A | {"verification": "other_checker"}]))
+    assert loaded.graph.skills[SkillId("a")].verification_kind == "other_checker"
+
+
 def test_a_dangling_prereq_is_rejected():
     with pytest.raises(ContentError):
         parse_cluster(cluster(skills=[SKILL_A | {"prereqs": [{"skill": "ghost", "strength": "hard"}]}]))
 
 
-def test_a_skill_without_misconceptions_is_rejected():
-    with pytest.raises(ContentError):
-        parse_cluster(cluster(skills=[{"id": "a", "name": "A", "can_do": "does a"}]))
+def test_a_prereq_cycle_is_rejected_with_its_path():
+    a = SKILL_A | {"prereqs": [{"skill": "b", "strength": "hard"}]}
+    b = SKILL_B | {"prereqs": [{"skill": "a", "strength": "hard"}]}
+    with pytest.raises(ContentError, match="a -> b -> a"):
+        parse_cluster(cluster(skills=[a, b]))
+
+
+def test_a_skill_without_misconceptions_is_accepted():
+    """Diagnosis treats an unmatched error as novel; requiring an entry would invite invented ones."""
+    bare = {"id": "a", "name": "A", "can_do": "does a"}
+    loaded = parse_cluster(cluster(misconceptions=[], skills=[bare]))
+    assert loaded.graph.skills[SkillId("a")].misconception_ids == ()
 
 
 def test_a_dangling_misconception_reference_is_rejected():
@@ -766,6 +830,37 @@ def test_a_duplicate_misconception_id_is_rejected():
         parse_cluster(cluster(misconceptions=[MC, dict(MC)]))
 
 
+def test_introduced_by_may_name_any_skill_that_uses_the_concept():
+    """An override, not "the first user": b may introduce it even though a also uses it."""
+    loaded = parse_cluster(
+        cluster(
+            concepts=[CONCEPT | {"introduced_by": "b"}],
+            skills=[SKILL_A | {"concepts": ["c1"]}, SKILL_B | {"concepts": ["c1"]}],
+        )
+    )
+    assert loaded.concepts[ConceptId("c1")].introduced_by == SkillId("b")
+
+
+def test_introduced_by_must_be_a_skill_that_uses_the_concept():
+    with pytest.raises(ContentError):
+        parse_cluster(
+            cluster(
+                concepts=[CONCEPT | {"introduced_by": "b"}],
+                skills=[SKILL_A | {"concepts": ["c1"]}, SKILL_B],
+            )
+        )
+
+
+def test_introduced_by_naming_an_unknown_skill_is_rejected():
+    with pytest.raises(ContentError):
+        parse_cluster(
+            cluster(
+                concepts=[CONCEPT | {"introduced_by": "ghost"}],
+                skills=[SKILL_A | {"concepts": ["c1"]}],
+            )
+        )
+
+
 def test_the_file_loader_adds_nothing_but_reading():
     assert load_cluster(CLUSTER) == parse_cluster(yaml.safe_load(CLUSTER.read_text()))
 ```
@@ -779,6 +874,7 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'learnai.adapters.conte
 
 ```python
 # src/learnai/adapters/content/loader.py
+from collections import defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -786,7 +882,6 @@ from typing import Any
 
 import yaml
 
-from learnai.adapters.cas.vocabulary import CAS_SYMBOLIC
 from learnai.domain.enums import ConceptKind, PrereqStrength
 from learnai.domain.graph import CycleError, SkillGraph
 from learnai.domain.ids import ConceptId, MisconceptionId, SkillId, VerificationKind
@@ -815,6 +910,14 @@ def parse_cluster(raw: Mapping[str, Any]) -> LoadedCluster:
     subject = raw.get("subject")
     if not subject:
         raise ContentError("cluster file has no subject")
+
+    # Which checker grades a skill is a fact about the content, so the content
+    # states it. A fallback here would send any cluster that forgot the key to
+    # SymPy — a history cluster graded as algebra, silently. The token stays
+    # opaque: whether a verifier exists for it is the engine's check (Task 17).
+    default_verification = raw.get("verification")
+    if not default_verification:
+        raise ContentError("cluster file has no verification kind")
 
     skills: list[Skill] = []
     edges: list[PrereqEdge] = []
@@ -851,13 +954,15 @@ def parse_cluster(raw: Mapping[str, Any]) -> LoadedCluster:
         )
 
     referenced_mcs: set[MisconceptionId] = set()
-    referenced_concepts: set[ConceptId] = set()
+    # The skills_for_concept index Slice 2 will expose; here it only validates.
+    concept_users: dict[ConceptId, set[SkillId]] = defaultdict(set)
 
     for entry in raw.get("skills", []):
         sid = SkillId(entry["id"])
+        # May be empty: a new skill has no catalogued errors yet, and a recall
+        # skill's wrong answer is not knowing rather than a false belief.
+        # Diagnosis reports an unmatched error as novel (Task 8).
         mc_ids = tuple(MisconceptionId(m) for m in entry.get("misconceptions", []))
-        if not mc_ids:
-            raise ContentError(f"{sid} declares no misconceptions")
         for mid in mc_ids:
             if mid not in misconceptions:
                 raise ContentError(f"{sid} references unknown misconception {mid}")
@@ -867,7 +972,7 @@ def parse_cluster(raw: Mapping[str, Any]) -> LoadedCluster:
         for cid in concept_ids:
             if cid not in concepts:
                 raise ContentError(f"{sid} references unknown concept {cid}")
-        referenced_concepts.update(concept_ids)
+            concept_users[cid].add(sid)
 
         skills.append(
             Skill(
@@ -876,7 +981,7 @@ def parse_cluster(raw: Mapping[str, Any]) -> LoadedCluster:
                 name=entry["name"],
                 can_do_statement=entry["can_do"],
                 verification_kind=VerificationKind(
-                    entry.get("verification", CAS_SYMBOLIC)
+                    entry.get("verification", default_verification)
                 ),
                 concept_ids=concept_ids,
                 misconception_ids=mc_ids,
@@ -895,8 +1000,19 @@ def parse_cluster(raw: Mapping[str, Any]) -> LoadedCluster:
     # that would still be scheduled for review.
     if orphans := set(misconceptions) - referenced_mcs:
         raise ContentError(f"misconceptions referenced by no skill: {sorted(orphans)}")
-    if orphans := set(concepts) - referenced_concepts:
+    if orphans := set(concepts) - concept_users.keys():
         raise ContentError(f"concepts referenced by no skill: {sorted(orphans)}")
+
+    # introduced_by overrides where a Learn session first teaches a concept, so
+    # it must name a skill that actually uses it. This also catches a typo'd id,
+    # which would otherwise sit unnoticed until Slice 3 reads the field.
+    for concept in concepts.values():
+        users = concept_users[concept.id]
+        if concept.introduced_by is not None and concept.introduced_by not in users:
+            raise ContentError(
+                f"{concept.id} is introduced_by {concept.introduced_by}, which does not "
+                f"use it; choose one of {sorted(users)}"
+            )
 
     try:
         graph = SkillGraph.build(skills, edges)
@@ -919,7 +1035,7 @@ def load_cluster(path: Path) -> LoadedCluster:
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/adapters/test_content_loader.py -v`
-Expected: PASS — 15 tests.
+Expected: PASS — 21 tests.
 
 - [ ] **Step 6: Commit**
 
@@ -5097,12 +5213,15 @@ git commit -m "feat: append-only evidence log with replayable projection"
 
 **Interfaces:**
 - Consumes: everything from Tasks 1–16.
-- Produces: `SubmitOutcome(verdict, step_diff, diagnosis, evidence_class, tutor_turn, task_completed)`; `PracticeEngine(graph, misconceptions, item_source, verifiers, tutor, matcher, evidence_log, clock, contract, parameters, parameter_overrides)` — `verifiers` is a `Mapping[VerificationKind, Verifier]` resolved per skill, and `parameter_overrides` a `Mapping[SkillId, MasteryParameters]` with `start_session(...) -> Session`, `submit(session, states, steps, final_answer, confidence) -> tuple[Session, states, SubmitOutcome]`, `request_help(session, states) -> tuple[Session, TutorTurn | None]`.
+- Produces: `SubmitOutcome(verdict, step_diff, diagnosis, evidence_class, tutor_turn, task_completed)`; `PracticeEngine(graph, misconceptions, item_source, verifiers, tutor, matcher, evidence_log, clock, contract, parameters, parameter_overrides)` — `verifiers` is a `Mapping[VerificationKind, Verifier]` resolved per skill — construction raises `UnregisteredVerifierError` if any skill's kind is missing from it — and `parameter_overrides` a `Mapping[SkillId, MasteryParameters]` with `start_session(...) -> Session`, `submit(session, states, steps, final_answer, confidence) -> tuple[Session, states, SubmitOutcome]`, `request_help(session, states) -> tuple[Session, TutorTurn | None]`.
 
 **Two seams made real here.** The engine resolves a verifier per skill through
 `verifiers[skill.verification_kind]`, so `verification_kind` is a live lookup rather than a
 notional one — Slice 1 registers a single entry and physics adds a second without touching this
-class. Likewise `_params_for(skill_id)` consults `parameter_overrides`, which is what spec §7.8
+class. Construction checks every skill's kind against the registry and raises
+`UnregisteredVerifierError` for any it cannot serve. The content loader cannot make that check,
+since it treats the kind as opaque (Task 2), and without it a typo in `verification:` would
+surface as a crash on some student's first attempt at that skill rather than at startup. Likewise `_params_for(skill_id)` consults `parameter_overrides`, which is what spec §7.8
 step 3 needs when parameters start being fitted per skill.
 
 **The cost shape to preserve:** a correct first attempt must invoke the tutor **zero** times. The generator serves the item, the CAS checks it, the engine records evidence. That is the property that makes Opus-tier tutoring affordable, and there is a test for it.
@@ -5112,6 +5231,8 @@ step 3 needs when parameters start being fitted per skill.
 ```python
 # tests/domain/test_engine.py
 import pathlib
+
+import pytest
 
 from learnai.adapters.cas.misconception_rules import SympyMisconceptionRules
 from learnai.adapters.cas.sympy_verifier import SympyVerifier
@@ -5123,7 +5244,7 @@ from learnai.adapters.cas.vocabulary import CAS_SYMBOLIC
 from learnai.adapters.persistence.in_memory import InMemoryEvidenceLog
 from learnai.adapters.tutor.fake_tutor import FakeTutor
 from learnai.domain.contracts import PRACTICE
-from learnai.domain.engine import PracticeEngine
+from learnai.domain.engine import PracticeEngine, UnregisteredVerifierError
 from learnai.domain.enums import Confidence, EvidenceClass, HelpRung, Verdict
 from learnai.domain.ids import CourseId, SessionId, StudentId
 from learnai.domain.mastery import is_learned
@@ -5164,6 +5285,22 @@ def test_a_session_starts_with_a_plan_of_the_requested_size():
     _, session, _ = build()
     assert len(session.plan) == 4
     assert session.current_task is not None
+
+
+def test_an_unregistered_verification_kind_is_refused_at_construction():
+    """Fail at startup, not on some student's first attempt at the skill."""
+    with pytest.raises(UnregisteredVerifierError, match="cas_symbolic"):
+        PracticeEngine(
+            graph=CLUSTER.graph,
+            misconceptions=CLUSTER.misconceptions,
+            item_source=GeneratorRegistry(QUADRATICS_TEMPLATES),
+            verifiers={},
+            tutor=FakeTutor(),
+            matcher=SympyMisconceptionRules(),
+            evidence_log=InMemoryEvidenceLog(),
+            clock=FakeClock(),
+            contract=PRACTICE,
+        )
 
 
 def test_a_correct_first_attempt_costs_no_tutor_turn():
@@ -5360,6 +5497,10 @@ from learnai.domain.turn import (
 MAX_TUTOR_RETRIES = 2
 
 
+class UnregisteredVerifierError(LookupError):
+    """A skill names a verification kind that no registered Verifier serves."""
+
+
 @dataclass(frozen=True, slots=True)
 class SubmitOutcome:
     verdict: Verdict
@@ -5392,6 +5533,11 @@ class PracticeEngine:
         self.misconceptions = misconceptions
         self.item_source = item_source
         self.verifiers = dict(verifiers)
+        needed = {skill.verification_kind for skill in graph.skills.values()}
+        if missing := needed - self.verifiers.keys():
+            raise UnregisteredVerifierError(
+                f"no verifier registered for verification kinds {sorted(missing)}"
+            )
         self._tutor = tutor
         self.matcher = matcher
         self.evidence_log = evidence_log
@@ -5558,11 +5704,8 @@ class PracticeEngine:
     # -- internals -----------------------------------------------------------
 
     def _verifier_for(self, skill_id: SkillId) -> Verifier:
-        kind = self.graph.skills[skill_id].verification_kind
-        try:
-            return self.verifiers[kind]
-        except KeyError as exc:
-            raise KeyError(f"no verifier registered for verification kind {kind!r}") from exc
+        # Construction guarantees every skill's kind is registered.
+        return self.verifiers[self.graph.skills[skill_id].verification_kind]
 
     def _params_for(self, skill_id: SkillId) -> MasteryParameters:
         return self.parameter_overrides.get(skill_id, self.parameters)
@@ -5635,7 +5778,7 @@ class PracticeEngine:
 - [ ] **Step 4: Run the engine tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/domain/test_engine.py -v`
-Expected: PASS — 13 tests.
+Expected: PASS — 14 tests.
 
 - [ ] **Step 5: Run the whole suite**
 

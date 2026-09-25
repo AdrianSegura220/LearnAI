@@ -140,6 +140,14 @@ tutoring, targeted diagnosis, and honest mastery accounting possible.
 Prerequisite edges encode genuine dependency, not curricular convention. The graph knows nothing
 about any national curriculum.
 
+**A cycle in hard edges is rejected, never repaired.** If A needs B and B needs A, neither can
+reach the frontier, so the cycle is a contradiction in the content rather than noise to smooth
+over. Breaking it automatically would mean deciding which dependency is false — or missing that
+the real fix is a shared prerequisite nobody has authored — and the graph has no information to
+make that call: edges carry no weights, and every hard edge is equally hard. So loading fails and
+names the path (`a → b → c → a`), leaving the judgement to the author; an assistant that proposes
+fixes is deferred (D11). Soft edges may form cycles, since they gate nothing.
+
 ```python
 Subject(id, name, default_verification)        # an opaque VerificationKind token
 Skill(id, subject_id, name, can_do_statement,
@@ -161,6 +169,14 @@ kinds: each adapter declares its own, and the engine resolves skill → verifier
 `ConceptKind` and `AnswerKind` stay closed enumerations because they name subject-neutral shapes
 (a claim, an unordered set of values), not subject-specific ones.
 
+**The default is declared by content, never by code.** Which checker grades a skill is a fact
+about the content, so the content states it: until subjects have a file of their own, a cluster
+declares `verification:` beside `subject:`, and a skill may override it. A fallback in the loader
+would quietly send any cluster that forgot the key to SymPy — a history cluster graded as algebra
+— and would couple the content adapter to one verifier adapter. The loader never interprets the
+token. Whether a verifier exists for it is the engine's check, made at construction so that a
+typo fails at startup rather than on some student's first attempt at the skill.
+
 **`Course` is a thin curricular overlay** — an ordered path through the graph plus metadata.
 "1º Bachillerato Matemáticas" and "AP Calculus AB" are two courses sharing most of the same
 skills in different orders. This is how the system stays curriculum-agnostic at its core while
@@ -179,7 +195,8 @@ sharing never becomes orphaning.
 `Concept.introduced_by` is an **override**, not the link: it names where a Learn session should
 first teach the concept, defaulting to the earliest referencing skill in topological order, and
 authors set it only when they want it taught somewhere else. Loading rejects an `introduced_by`
-that is not itself one of the referencing skills, which would otherwise be silently incoherent.
+that is not itself one of the referencing skills, which would otherwise be silently incoherent —
+and which also catches a mistyped skill id, since nothing reads the field until Slice 3.
 
 Because the link is authored on the skill side, the reverse direction is a **derived index built
 at load time** — `skills_for_concept: dict[ConceptId, frozenset[SkillId]]` — in exactly the way
@@ -201,6 +218,13 @@ plus a misconception match tells the tutor *what the student believes* rather th
 they are wrong*; feedback can address the belief; and generators can produce distractors by
 deliberately applying the misconception, turning multiple choice from guessing into diagnosis
 (an available item format, not one Slice 1 uses).
+
+**A skill need not list any.** Many honestly have none catalogued: a new skill before any
+student has made its errors, a recall skill where a wrong answer means not knowing rather than
+believing something false, a skill whose errors are slips rather than beliefs. Diagnosis already
+reports an unmatched error as novel and the tutor works from the step diff, so nothing depends on
+the list being non-empty — and requiring an entry would push authors to invent one to get past the
+loader. A coverage report can flag thin skills later; it is not a load error.
 
 **A misconception's `signature` keys its rule, and that rule should be a transform.** The
 signature is an opaque token — like `verification_kind` and form constraints — that the subject's
@@ -972,6 +996,7 @@ item that wants it, not a subject that arrives.
 | D8b | **`MAPPING` answer kind.** Matching terms to definitions. Genuinely more design than D8: delimiter and key normalisation, and whether a missing or extra pair is wrong or partially wrong — which drags in D9. Weak mathematics use case. | A subject built on matching items |
 | D9 | **Composite answers and partial credit — one change, not two.** Fill-three-blanks and tables need `AnswerSpec.parts: tuple[AnswerSpec, ...] = ()`, which is additive and migrates nothing. The real cost is that a composite answer is inherently partially correct, so `Verdict` stops being binary and `CheckResult` gains a score. The mastery half is already done: `update_strength` takes `outcome: float`. Until then, model each blank as its own item — usually fine, occasionally wrong. | When an item genuinely cannot be split |
 | D10 | **A sibling defect shape for non-transformational work.** `StepDiff` assumes each step transforms the previous one and that validity is local to consecutive pairs — true of algebra, stoichiometry and derivations, false of a geometry or induction proof (each line *adds* a justified statement) and of an essay (the defect is an unsupported claim, not a broken transition). See §9. `TurnContext` should gain a sibling field carrying that verifier's defect shape rather than `StepDiff` being generalised from a single example. Nothing breaks meanwhile: a verifier with no notion of steps returns `None` and diagnosis degrades to a novel error. | First proof-based or rubric-judged skill |
+| D11 | **Assisted cycle resolution.** When loading rejects a hard-prerequisite cycle (§6.1), an authoring-time step — plausibly LLM-assisted — could propose how to break it: soften one edge, merge two skills that are really one, or add the shared prerequisite whose absence created the loop. It proposes and the author decides; the result goes back through the same loader. Never an automatic repair at load time, for the reason §6.1 gives. Until then the error names the path and the author fixes it by hand. | When content is generated at volume (LLM batch generation of the long tail) or authoring tools are built |
 
 ---
 
@@ -991,6 +1016,9 @@ item that wants it, not a subject that arrives.
 | Verification kind | Opaque token plus a registry | Enumerating adapter kinds in the core would mean every new subject edits the engine, contradicting the seam it names |
 | Tuned parameters | Injected value object | Module constants cannot be varied per skill or A/B compared, which §7.2 and §7.8 both require |
 | Concepts and misconceptions | Subject-scoped, shared many-to-many | A single owning skill is arbitrary and forces duplication, and duplicating a concept duplicates its memory state |
+| Default verification kind | Declared by content; no fallback in code | Which checker grades a skill is a fact about the content; a code default grades any cluster that forgets the key with SymPy, silently |
+| Misconceptions per skill | Optional | Diagnosis already handles no match as a novel error; a mandatory entry invites invented ones |
+| Hard-prerequisite cycles | Rejected with the path named, never auto-repaired | Breaking a cycle means deciding which dependency is false, a judgement the graph has no information to make |
 | Declining to answer | Scored at the guess baseline | Makes honesty and guessing cost the same in expectation; zero would pay students to guess, free would pay them to disengage |
 | Confidence mapping | Population-fitted, per item format | Per-student fitting makes everyone calibrated by construction; MCQ priors libel honest free-response guessers |
 | Form vocabulary | Opaque tokens, adapter-owned | An enum of math forms in the domain core would grow a union of every subject's vocabulary and break the `verification_kind` seam |
