@@ -101,7 +101,9 @@ Split by responsibility, not by layer. `mastery.py` holds the two update rules a
 name = "learnai"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["sympy>=1.13", "pyyaml>=6.0"]
+# SymPy is pinned: grading depends on its evaluation rules, which change between
+# releases. Upgrade deliberately, and let the generator contract tests catch drift.
+dependencies = ["sympy~=1.14.0", "pyyaml>=6.0"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "hypothesis>=6.100", "pytest-cov>=5.0"]
@@ -1243,6 +1245,8 @@ git commit -m "feat: item, answer spec, and provenance value objects"
 
 **Holes and domains — the equivalence policy (spec §9).** Expressions are equivalent when they agree wherever both are defined, so an isolated hole is ignored — simplifying `(x^2-1)/(x-1)` to `x+1` is the exercise — while a region of disagreement is not: `log(x^2)` and `2log(x)` differ for every negative x. Equations are equivalent when they have the same real solutions, holes respected, which is what catches the classic solving errors: dividing by something that can be zero loses a root, multiplying through by it or squaring both sides admits one. Where solutions cannot be listed, proportionality is the fallback (spec D12).
 
+**Decimals are exact; ambiguous spacing is refused.** A typed `0.1` is one tenth, not the nearest binary fraction — otherwise `0.1 + 0.2` would not equal `0.3` and correct decimal work would be marked wrong. Parsing still keeps it as a decimal, so form constraints can see that one was typed; only equivalence reads it exactly. A space between two numbers (`2 3`, `1 1/2`) raises `ParseError` rather than multiplying: a structured maths editor will remove the ambiguity (spec D1), and until then refusing is kinder than a verdict on an answer the student did not mean.
+
 - [ ] **Step 1: Write the failing parser test**
 
 ```python
@@ -1341,6 +1345,22 @@ def test_ordinary_powers_of_powers_are_accepted():
     assert parse_math("(x^2)^3") == x**6
 
 
+@pytest.mark.parametrize("ambiguous", ["2 3", "1 1/2", "0.5 2"])
+def test_a_space_between_numbers_is_refused_not_guessed(ambiguous):
+    """23 or 2*3? A mixed number, or 1 times 1/2? Guessing marks someone wrong."""
+    with pytest.raises(ParseError):
+        parse_math(ambiguous)
+
+
+def test_a_space_before_a_letter_is_still_multiplication():
+    assert parse_math("2 x") == 2 * x
+
+
+def test_typed_decimals_stay_visible_to_form_checks():
+    """Equivalence reads 0.5 exactly; a form constraint must still see a decimal was typed."""
+    assert parse_math("0.5").atoms(sp.Float)
+
+
 def test_overlong_input_is_rejected():
     with pytest.raises(ParseError):
         parse_math("x+" * 2000 + "1")
@@ -1387,6 +1407,7 @@ five characters, evaluates for longer than any request may take.
 
 _ALLOWED = re.compile(r"[0-9A-Za-z\s.+\-*/^()=]*")
 _DOT_NOT_BEFORE_DIGIT = re.compile(r"\.(?!\d)")
+_NUMBER_SPACE_NUMBER = re.compile(r"[\d.]\s+[\d.]")
 _LETTER_RUN = re.compile(r"[A-Za-z]+")
 
 _FUNCTIONS = {
@@ -1431,6 +1452,11 @@ def parse_math(text: str, *, allow_equation: bool = False, as_written: bool = Fa
         raise ParseError("input contains a character outside the maths alphabet")
     if _DOT_NOT_BEFORE_DIGIT.search(stripped):
         raise ParseError("a dot may only appear inside a decimal number")
+    # Refuse rather than guess: "2 3" may be 23 or 2*3, and "1 1/2" is a mixed
+    # number that implicit multiplication would read as 1/2. A structured maths
+    # editor removes the ambiguity at the source (spec D1).
+    if _NUMBER_SPACE_NUMBER.search(stripped):
+        raise ParseError("a space between two numbers is ambiguous")
 
     if "=" in stripped:
         if not allow_equation:
@@ -1449,17 +1475,29 @@ def parse_math(text: str, *, allow_equation: bool = False, as_written: bool = Fa
         raise ParseError(f"could not evaluate {text!r}") from exc
 
 
-def evaluated(expr: sp.Basic) -> sp.Basic:
+def evaluated(expr: sp.Basic, *, exact_decimals: bool = False) -> sp.Basic:
     """The evaluated form of a written expression, rebuilt bottom-up.
 
     Evaluation normalises, and in doing so forgets: it distributes 4(x+2) into
     4x + 8, and cancels (x-1)^2/(x-1) to x - 1, erasing the hole at 1.
+
+    `exact_decimals` reads each typed decimal as the exact number it denotes —
+    0.1 is one tenth, not the nearest binary fraction — before any arithmetic,
+    so 0.1 + 0.2 is exactly 0.3. Parsing keeps decimals as SymPy Floats so that
+    form checks can still see that a decimal was typed; equivalence asks for
+    exact values.
     """
+    if isinstance(expr, sp.Float):
+        return sp.Rational(str(expr)) if exact_decimals else expr
     if isinstance(expr, sp.Eq):
-        return sp.Eq(evaluated(expr.lhs), evaluated(expr.rhs), evaluate=False)
+        return sp.Eq(
+            evaluated(expr.lhs, exact_decimals=exact_decimals),
+            evaluated(expr.rhs, exact_decimals=exact_decimals),
+            evaluate=False,
+        )
     if not expr.args:
         return expr
-    return expr.func(*(evaluated(arg) for arg in expr.args))
+    return expr.func(*(evaluated(arg, exact_decimals=exact_decimals) for arg in expr.args))
 
 
 def _parse_side(text: str) -> sp.Expr:
@@ -1530,7 +1568,7 @@ def _exponent_load(expr: sp.Basic) -> float:
 - [ ] **Step 4: Run the parser tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/adapters/test_parse.py -v`
-Expected: PASS — 31 tests (the parametrised cases count individually).
+Expected: PASS — 36 tests (the parametrised cases count individually).
 
 - [ ] **Step 5: Write the failing equivalence test**
 
@@ -1564,6 +1602,8 @@ def eq(text: str):
         ("sqrt(8)", "2sqrt(2)"),
         ("x + x", "2x"),
         ("(x^2 - 1)/(x - 1)", "x + 1"),  # an isolated hole is not a difference
+        ("0.1 + 0.2", "0.3"),  # decimals are exact, not binary approximations
+        ("0.3", "3/10"),
     ],
 )
 def test_equivalent_expressions_are_accepted(a, b):
@@ -1593,6 +1633,7 @@ def test_inequivalent_expressions_are_rejected(a, b):
         ("(x^2 - 1)/(x - 1) = 0", "x + 1 = 0"),  # the hole at 1 is not a solution anyway
         ("x^2 + 9 = 0", "x^2 = -9"),  # no real solutions: falls back to proportionality
         ("y = 2x + 1", "2y = 4x + 2"),  # two variables: falls back to proportionality
+        ("0.5x = 1", "x = 2"),
     ],
 )
 def test_equations_with_the_same_solutions_are_equivalent(a, b):
@@ -1614,6 +1655,11 @@ def test_equations_with_the_same_solutions_are_equivalent(a, b):
 )
 def test_equations_with_different_solutions_are_not_equivalent(a, b):
     assert not equations_equivalent(eq(a), eq(b))
+
+
+def test_decimals_are_exact_before_any_arithmetic():
+    """In binary, 0.1*3 - 0.3 is 5.6e-17. Read as typed, it is exactly zero."""
+    assert expressions_equivalent(parse_math("0.1*3 - 0.3", as_written=True), expr("0"))
 
 
 def test_solution_sets_ignore_order_and_representation():
@@ -1638,7 +1684,7 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'learnai.adapters.cas.e
 Expressions are equivalent when they agree wherever both are defined. Isolated
 holes are ignored — that (x^2-1)/(x-1) simplifies to x+1 is the exercise, not
 an error — but disagreement over a region is not: log(x^2) and 2log(x) differ
-for every negative x.
+for every negative x. Typed decimals are exact: 0.1 means one tenth.
 
 Equations are equivalent when they have the same real solutions, with holes
 respected. Evaluation cancels holes, so equation checks need the *written*
@@ -1654,6 +1700,11 @@ from learnai.adapters.cas.parse import evaluated
 
 _NUMERIC_TRIALS = 12
 _TOLERANCE = 1e-9
+
+
+def _exact(expr: sp.Basic) -> sp.Basic:
+    """Evaluated, with typed decimals read as exact: 0.1 + 0.2 is exactly 0.3."""
+    return evaluated(expr, exact_decimals=True)
 
 
 def _numeric_disagrees(a: sp.Expr, b: sp.Expr) -> bool:
@@ -1681,7 +1732,7 @@ def _numeric_disagrees(a: sp.Expr, b: sp.Expr) -> bool:
 
 
 def expressions_equivalent(a: sp.Expr, b: sp.Expr) -> bool:
-    a, b = evaluated(a), evaluated(b)
+    a, b = _exact(a), _exact(b)
     if a == b:
         return True
     if _numeric_disagrees(a, b):
@@ -1703,7 +1754,7 @@ def real_solutions(eq: sp.Eq, var: sp.Symbol) -> frozenset[sp.Expr] | None:
     what stops (x-1)^2/(x-1) = 0 claiming the solution 1 — SymPy's solver only
     ever sees x - 1 = 0, because evaluation has already cancelled the hole.
     """
-    found = sp.solveset(evaluated(eq.lhs) - evaluated(eq.rhs), var, domain=sp.S.Reals)
+    found = sp.solveset(_exact(eq.lhs) - _exact(eq.rhs), var, domain=sp.S.Reals)
     if found is sp.S.EmptySet:
         return frozenset()
     if not isinstance(found, sp.FiniteSet):
@@ -1728,6 +1779,8 @@ def _value_at(expr: sp.Basic, var: sp.Symbol, point: sp.Expr) -> sp.Basic:
     """
     if expr == var:
         return point
+    if isinstance(expr, sp.Float):
+        return _exact(expr)
     if not expr.args:
         return expr
     return expr.func(*(_value_at(arg, var, point) for arg in expr.args))
@@ -1754,8 +1807,8 @@ def equations_equivalent(a: sp.Eq, b: sp.Eq) -> bool:
 
 
 def _proportional(a: sp.Eq, b: sp.Eq) -> bool:
-    da = sp.simplify(evaluated(a.lhs) - evaluated(a.rhs))
-    db = sp.simplify(evaluated(b.lhs) - evaluated(b.rhs))
+    da = sp.simplify(_exact(a.lhs) - _exact(a.rhs))
+    db = sp.simplify(_exact(b.lhs) - _exact(b.rhs))
     if db == 0:
         return bool(da == 0)
     ratio = sp.simplify(da / db)
@@ -1777,7 +1830,7 @@ def solution_sets_equivalent(a: Sequence[sp.Expr], b: Sequence[sp.Expr]) -> bool
 - [ ] **Step 8: Run the equivalence tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/adapters/test_equivalence.py -v`
-Expected: PASS — 28 tests.
+Expected: PASS — 32 tests.
 
 - [ ] **Step 9: Commit**
 
@@ -2711,6 +2764,20 @@ def test_the_problem_is_never_already_in_its_answer_form(spec):
 
 
 @pytest.mark.parametrize("spec", QUADRATICS_TEMPLATES, ids=ids)
+def test_typing_the_question_back_is_never_accepted(spec):
+    """Equivalence alone accepts a restatement — (x+1)(x+2) is equal to its own
+    expansion — so an item whose prompt is an expression must carry a form
+    constraint that rejects the prompt itself."""
+    for seed in range(DEEP_SEEDS):
+        problem = REGISTRY.instantiate_raw(spec.id, seed)
+        if problem.prompt_expression is None:
+            continue
+        item = REGISTRY.instantiate(spec.id, seed)
+        result = VERIFIER.check_answer(problem.prompt_expression, item.answer_spec)
+        assert result.verdict is not Verdict.CORRECT, (spec.id, seed, problem.prompt_expression)
+
+
+@pytest.mark.parametrize("spec", QUADRATICS_TEMPLATES, ids=ids)
 def test_no_degenerate_coefficients(spec):
     for seed in range(DEEP_SEEDS):
         problem = REGISTRY.instantiate_raw(spec.id, seed)
@@ -2759,7 +2826,7 @@ def test_every_skill_in_the_cluster_has_a_template():
 - [ ] **Step 5: Run the contract tests**
 
 Run: `.venv/bin/pytest tests/content/test_generator_contracts.py -v`
-Expected: PASS — 75 tests (six parametrised suites over twelve templates, plus three standalone). This is the slowest suite in the project; if it exceeds about 90 seconds, lower `DEEP_SEEDS` to 30 rather than weakening an assertion.
+Expected: PASS — 87 tests (seven parametrised suites over twelve templates, plus three standalone). This is the slowest suite in the project; if it exceeds about 90 seconds, lower `DEEP_SEEDS` to 30 rather than weakening an assertion.
 
 - [ ] **Step 6: Commit**
 
