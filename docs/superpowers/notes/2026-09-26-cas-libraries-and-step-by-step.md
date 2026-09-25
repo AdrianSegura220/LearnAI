@@ -129,6 +129,11 @@ whose steps fail the check is either downgraded to "final answer checked" or dro
   §1). If Wolfram steps are sold, they fit as "harder topics and your own problems, taught
   properly": still behind the attempt and effort gates, and followed by generated variants to
   practise cold (D7).
+- **Constrained moments (open question).** Steps offered only at chosen moments — after documented
+  effort, inside a Learn worked example, in a post-session review of an item the student missed —
+  teach; steps available on demand are a solver whatever the plan. Decide which moments first,
+  then whether a paid tier widens them. The engine already owns every such gate (P1), so this is
+  a policy in the mode contracts, not a feature of the step source.
 - **Who pays and whose data:** usually a parent or a school; a minor's problem sent to a third
   party needs D5's compliance position first.
 
