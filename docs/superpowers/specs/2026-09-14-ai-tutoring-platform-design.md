@@ -1015,6 +1015,7 @@ item that wants it, not a subject that arrives.
 | D15 | **Calculus answer checking.** Grade by verification, not comparison: an antiderivative is right when its derivative equals the integrand, whatever constant it carries; an ODE solution is right when it satisfies the equation. Generators build problems backwards — choose F, differentiate it for the question — so the limits of symbolic *integration* never limit grading. | First calculus skill |
 | D16 | **Inequalities and interval answers.** Sign flips on multiplying by a negative, and answers such as `x > 2` or `(2, ∞)`. The parser rejects `<` today, and interval answers need an answer kind of their own. | First item that wants an inequality or interval answer |
 | D17 | **A time budget for CAS work.** `simplify`, `factor` and `solveset` are heuristic searches with no upper bound on time; the parser's power bound removes the pathological inputs, not the merely slow ones. The API must run each check under a time limit and treat a timeout as an incident to log, never as a wrong answer. | Plan 2, before real students |
+| D18 | **Step-by-step solutions for problems no generator wrote.** Generator items get exact steps from the generator itself, which built the problem backwards — though today's quadratics generators emit thin ones. Bring-your-own problems (D7) and LLM-written long-tail items need another source: an LLM whose every step the CAS verifies, or the Wolfram\|Alpha API, possibly as a paid tier. Whatever the source, steps pass the `Verifier` before a student sees them (P3), and a step-by-step solution is a full reveal, gated like one. Options, costs, billing and open questions for Wolfram: `docs/superpowers/notes/2026-09-26-cas-libraries-and-step-by-step.md`. | Learn mode (Slice 3) or bring-your-own problems (D7), whichever first needs steps for a problem no generator wrote |
 
 ---
 
@@ -1059,3 +1060,6 @@ tutor explanation; Sweller and Renkl on worked examples, fading, and expertise r
 productive failure; Bjork on desirable difficulties and the performance/learning distinction;
 Koedinger & Aleven on the assistance dilemma; and the Cognitive Tutor literature on gaming
 hint systems.
+
+Tooling notes — what SymPy covers by level, other CAS engines, and where step-by-step solutions
+can come from — are in `docs/superpowers/notes/2026-09-26-cas-libraries-and-step-by-step.md`.
