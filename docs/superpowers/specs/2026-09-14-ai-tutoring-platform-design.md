@@ -772,6 +772,17 @@ for a proof, a rubric finding for an essay — rather than `StepDiff` being gene
 example is too few to design an abstraction from; the second will say what it should be. See §14
 D10.
 
+**What "equivalent" means to the CAS verifier.** Two expressions are equivalent when they agree
+wherever both are defined. An isolated hole is ignored — simplifying `(x²−1)/(x−1)` to `x+1` is
+the exercise, not an error — but disagreement over a region is not: `log(x²)` and `2 log x`
+differ for every negative x. Two equations are equivalent when they have the same real
+solutions, holes respected, which is what flags the classic solving errors: dividing by
+something that can be zero loses a root, and multiplying through by it or squaring both sides
+admits one. Holes must be read from the student's *written* form, because SymPy's evaluation
+cancels them — `(x−1)²/(x−1)` is already `x−1` by the time any solver sees it — so the parser
+can return either form, and form constraints use the written one too. Where real solutions
+cannot be listed, the verifier falls back to proportionality (D12).
+
 ### 9.1 Proposals
 
 The model may request: drop to a prerequisite, serve an easier item, switch to a worked example,
@@ -997,6 +1008,7 @@ item that wants it, not a subject that arrives.
 | D9 | **Composite answers and partial credit — one change, not two.** Fill-three-blanks and tables need `AnswerSpec.parts: tuple[AnswerSpec, ...] = ()`, which is additive and migrates nothing. The real cost is that a composite answer is inherently partially correct, so `Verdict` stops being binary and `CheckResult` gains a score. The mastery half is already done: `update_strength` takes `outcome: float`. Until then, model each blank as its own item — usually fine, occasionally wrong. | When an item genuinely cannot be split |
 | D10 | **A sibling defect shape for non-transformational work.** `StepDiff` assumes each step transforms the previous one and that validity is local to consecutive pairs — true of algebra, stoichiometry and derivations, false of a geometry or induction proof (each line *adds* a justified statement) and of an essay (the defect is an unsupported claim, not a broken transition). See §9. `TurnContext` should gain a sibling field carrying that verifier's defect shape rather than `StepDiff` being generalised from a single example. Nothing breaks meanwhile: a verifier with no notion of steps returns `None` and diagnosis degrades to a novel error. | First proof-based or rubric-judged skill |
 | D11 | **Assisted cycle resolution.** When loading rejects a hard-prerequisite cycle (§6.1), an authoring-time step — plausibly LLM-assisted — could propose how to break it: soften one edge, merge two skills that are really one, or add the shared prerequisite whose absence created the loop. It proposes and the author decides; the result goes back through the same loader. Never an automatic repair at load time, for the reason §6.1 gives. Until then the error names the path and the author fixes it by hand. | When content is generated at volume (LLM batch generation of the long tail) or authoring tools are built |
+| D12 | **Equation equivalence where solutions cannot be listed.** "Same real solutions" (§9) is computed only for one-variable equations whose solutions form a finite list. Otherwise — several variables (`y = 2x + 1`), infinitely many solutions (`sin x = 0`), no closed form (`x = cos x`), or no real solutions on either side, where two empty sets would accept any slip between `x² + 1 = 0` and `x² + 4 = 0` — the verifier falls back to proportionality: one side a nonzero constant multiple of the other. Proportional equations share their solutions, holes aside, but the fallback rejects genuine rewrites such as `(x−1)² = 0 → x − 1 = 0` and cannot see holes. Quadratics reach it only on steps with no real solutions. | First skill whose worked steps are trigonometric, transcendental or multi-variable equations |
 
 ---
 
@@ -1019,6 +1031,8 @@ item that wants it, not a subject that arrives.
 | Default verification kind | Declared by content; no fallback in code | Which checker grades a skill is a fact about the content; a code default grades any cluster that forgets the key with SymPy, silently |
 | Misconceptions per skill | Optional | Diagnosis already handles no match as a novel error; a mandatory entry invites invented ones |
 | Hard-prerequisite cycles | Rejected with the path named, never auto-repaired | Breaking a cycle means deciding which dependency is false, a judgement the graph has no information to make |
+| Mathematical equivalence | Expressions agree wherever both are defined; equations share their real solutions, holes respected | Accepts the simplifications school teaches while catching lost and extraneous roots, the errors that matter most in solving |
+| Parsing untrusted maths | Safety by construction (alphabet, resolved names, bounded powers), no blocklist | `eval` inserts every builtin into the namespace it is given, so a blocklist is the only barrier and blocklists leak |
 | Declining to answer | Scored at the guess baseline | Makes honesty and guessing cost the same in expectation; zero would pay students to guess, free would pay them to disengage |
 | Confidence mapping | Population-fitted, per item format | Per-student fitting makes everyone calibrated by construction; MCQ priors libel honest free-response guessers |
 | Form vocabulary | Opaque tokens, adapter-owned | An enum of math forms in the domain core would grow a union of every subject's vocabulary and break the `verification_kind` seam |

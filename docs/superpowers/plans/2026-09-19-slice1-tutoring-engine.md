@@ -1233,26 +1233,44 @@ git commit -m "feat: item, answer spec, and provenance value objects"
 
 **Interfaces:**
 - Consumes: nothing from earlier tasks.
-- Produces: `ParseError`; `parse_math(text: str, *, allow_equation: bool = False) -> sympy.Basic`; `expressions_equivalent(a: sympy.Expr, b: sympy.Expr) -> bool`; `equations_equivalent(a: sympy.Eq, b: sympy.Eq) -> bool`; `solution_sets_equivalent(a: Sequence[sympy.Expr], b: Sequence[sympy.Expr]) -> bool`.
+- Produces: `ParseError`; `parse_math(text: str, *, allow_equation: bool = False, as_written: bool = False) -> sympy.Basic`; `evaluated(expr: sympy.Basic) -> sympy.Basic`; `expressions_equivalent(a: sympy.Expr, b: sympy.Expr) -> bool`; `equations_equivalent(a: sympy.Eq, b: sympy.Eq) -> bool`, which expects written forms; `real_solutions(eq: sympy.Eq, var: sympy.Symbol) -> frozenset[sympy.Expr] | None`; `solution_sets_equivalent(a: Sequence[sympy.Expr], b: Sequence[sympy.Expr]) -> bool`.
 
-**Why the parser is its own module:** `sympy.parse_expr` evaluates its input. Student-submitted text reaching an evaluator unguarded is a remote code execution path, so parsing is isolated, allowlisted, and tested adversarially in one place.
+**Why the parser is its own module, and why it has no blocklist:** `sympy.parse_expr` ends in Python's `eval`, so student text reaching it unguarded is a remote-code-execution path. Safety is by construction: a small alphabet (no quotes, underscores, brackets or semicolons, and a dot only inside a decimal), every name resolved before SymPy sees it, and an explicit empty `__builtins__`. A list of forbidden words cannot do this job — `eval` silently inserts every builtin into the namespace it is given, which leaves the list as the only barrier.
+
+**Why powers are bounded before evaluation:** `9^9^9` is five characters and evaluates for minutes. The length limit cannot catch it; a bound on the combined power along any chain of nested powers can, checked on the unevaluated tree.
+
+**Written versus evaluated forms.** Evaluation normalises and forgets: `4(x+2)` becomes `4x + 8`, and `(x-1)^2/(x-1)` becomes `x - 1`, erasing the hole at 1. Expression equivalence wants the evaluated form. Two things need the written one: form constraints (Task 5 must see `4(x+2)` as factored) and equations, whose solutions must exclude points where the student's own expression is undefined.
+
+**Holes and domains — the equivalence policy (spec §9).** Expressions are equivalent when they agree wherever both are defined, so an isolated hole is ignored — simplifying `(x^2-1)/(x-1)` to `x+1` is the exercise — while a region of disagreement is not: `log(x^2)` and `2log(x)` differ for every negative x. Equations are equivalent when they have the same real solutions, holes respected, which is what catches the classic solving errors: dividing by something that can be zero loses a root, multiplying through by it or squaring both sides admits one. Where solutions cannot be listed, proportionality is the fallback (spec D12).
 
 - [ ] **Step 1: Write the failing parser test**
 
 ```python
 # tests/adapters/test_parse.py
+import time
+
 import pytest
 import sympy as sp
 
-from learnai.adapters.cas.parse import ParseError, parse_math
+from learnai.adapters.cas.parse import ParseError, evaluated, parse_math
+
+x, y = sp.symbols("x y")
 
 
 def test_implicit_multiplication_is_accepted():
-    assert parse_math("2x") == 2 * sp.Symbol("x")
+    assert parse_math("2x") == 2 * x
+
+
+def test_adjacent_letters_are_separate_variables():
+    assert parse_math("2xy") == 2 * x * y
+
+
+def test_a_known_name_is_found_inside_a_letter_run():
+    assert parse_math("xsin(x)") == x * sp.sin(x)
 
 
 def test_caret_means_exponentiation():
-    assert parse_math("x^2") == sp.Symbol("x") ** 2
+    assert parse_math("x^2") == x**2
 
 
 def test_allowed_function_resolves():
@@ -1262,12 +1280,25 @@ def test_allowed_function_resolves():
 def test_equation_is_parsed_when_permitted():
     parsed = parse_math("2x = 10", allow_equation=True)
     assert isinstance(parsed, sp.Eq)
-    assert parsed.lhs == 2 * sp.Symbol("x") and parsed.rhs == 10
+    assert parsed.lhs == 2 * x and parsed.rhs == 10
+
+
+def test_a_trivially_true_equation_stays_an_equation():
+    """Eq(x, x) would otherwise collapse to True and break every caller expecting an Eq."""
+    assert isinstance(parse_math("x = x", allow_equation=True), sp.Eq)
 
 
 def test_equation_is_rejected_when_not_permitted():
     with pytest.raises(ParseError):
         parse_math("2x = 10")
+
+
+def test_the_written_form_is_kept_on_request():
+    """Form constraints judge what the student wrote, not what SymPy normalises it to."""
+    written = parse_math("4(x+2)", as_written=True)
+    assert written != 4 * x + 8
+    assert evaluated(written) == 4 * x + 8
+    assert parse_math("4(x+2)") == 4 * x + 8
 
 
 @pytest.mark.parametrize(
@@ -1278,11 +1309,36 @@ def test_equation_is_rejected_when_not_permitted():
         "lambda: 1",
         "eval('1+1')",
         "open('/etc/passwd')",
+        "pi.func",
+        "x[0]",
+        "x; y",
+        "x()",
+        "2(())",
     ],
 )
 def test_hostile_input_is_rejected(hostile):
     with pytest.raises(ParseError):
         parse_math(hostile)
+
+
+@pytest.mark.parametrize("name", ["print(x)", "vars(x)", "exit(x)", "Symbol(x)", "lambda(x)"])
+def test_names_never_reach_python(name):
+    """Letters outside the known names become variables, so no builtin is ever called."""
+    parsed = parse_math(name)
+    assert isinstance(parsed, sp.Expr)
+    assert parsed.free_symbols <= set(sp.symbols("a b c d e i l m n o p r s t v x y S"))
+
+
+@pytest.mark.parametrize("tower", ["9^9^9", "2^(10^10)", "((x+1)^100)^100", "x^(99*99*99)"])
+def test_power_towers_are_refused_before_evaluation(tower):
+    started = time.monotonic()
+    with pytest.raises(ParseError):
+        parse_math(tower)
+    assert time.monotonic() - started < 1.0
+
+
+def test_ordinary_powers_of_powers_are_accepted():
+    assert parse_math("(x^2)^3") == x**6
 
 
 def test_overlong_input_is_rejected():
@@ -1304,6 +1360,14 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'learnai.adapters.cas'`
 
 ```python
 # src/learnai/adapters/cas/parse.py
+"""The one entry point for untrusted mathematical text.
+
+SymPy's parser ends in Python's `eval`, so safety here is by construction, not
+by blocklist: only a small alphabet is admitted, every name is resolved before
+SymPy sees it, and powers are bounded before anything is evaluated.
+"""
+import re
+
 import sympy as sp
 from sympy.parsing.sympy_parser import (
     convert_xor,
@@ -1314,55 +1378,59 @@ from sympy.parsing.sympy_parser import (
 
 MAX_INPUT_LENGTH = 512
 
+MAX_EXPONENT_LOAD = 1000
+"""Largest combined power along any chain of nested powers: (x^2)^3 carries 6.
+
+Bounds the size of anything later evaluated or expanded. Without it "9^9^9",
+five characters, evaluates for longer than any request may take.
+"""
+
+_ALLOWED = re.compile(r"[0-9A-Za-z\s.+\-*/^()=]*")
+_DOT_NOT_BEFORE_DIGIT = re.compile(r"\.(?!\d)")
+_LETTER_RUN = re.compile(r"[A-Za-z]+")
+
+_FUNCTIONS = {
+    "sqrt": sp.sqrt, "abs": sp.Abs, "exp": sp.exp, "log": sp.log, "ln": sp.log,
+    "sin": sp.sin, "cos": sp.cos, "tan": sp.tan,
+    "asin": sp.asin, "acos": sp.acos, "atan": sp.atan,
+}
+_CONSTANTS = {"pi": sp.pi}
+_KNOWN = sorted(_FUNCTIONS.keys() | _CONSTANTS.keys(), key=len, reverse=True)
+
 _TRANSFORMATIONS = standard_transformations + (
     implicit_multiplication_application,
     convert_xor,
 )
 
-_ALLOWED_NAMES = {
-    name: getattr(sp, name)
-    for name in (
-        "sqrt", "Abs", "sin", "cos", "tan", "asin", "acos", "atan",
-        "log", "exp", "pi", "E", "Rational", "Integer", "Float", "oo",
-    )
+# What SymPy's generated code may reference besides the per-call names. The
+# explicit empty __builtins__ stops eval from inserting the real ones.
+_GLOBALS = {
+    "__builtins__": {},
+    "Integer": sp.Integer, "Float": sp.Float, "Rational": sp.Rational,
+    "Add": sp.Add, "Mul": sp.Mul, "Pow": sp.Pow,
 }
-
-_FORBIDDEN_SUBSTRINGS = (
-    "__", "import", "lambda", "exec", "eval", "open", "def ", "class ",
-    "getattr", "globals", "locals", "compile", "\\", ";",
-)
 
 
 class ParseError(ValueError):
     """Raised when input is unsafe, malformed, or not permitted in this position."""
 
 
-def _parse_side(text: str) -> sp.Expr:
-    try:
-        expr = parse_expr(
-            text,
-            global_dict=_ALLOWED_NAMES,
-            transformations=_TRANSFORMATIONS,
-            evaluate=True,
-        )
-    except Exception as exc:  # sympy raises a wide variety here
-        raise ParseError(f"could not parse {text!r}") from exc
-    if not isinstance(expr, sp.Basic):
-        raise ParseError(f"{text!r} did not parse to a mathematical expression")
-    return expr
+def parse_math(text: str, *, allow_equation: bool = False, as_written: bool = False) -> sp.Basic:
+    """Parse untrusted mathematical text. Never call SymPy's parser directly elsewhere.
 
-
-def parse_math(text: str, *, allow_equation: bool = False) -> sp.Basic:
-    """Parse untrusted mathematical text. Never call sympy's parser directly elsewhere."""
+    Returns the evaluated form by default, which is what equivalence needs.
+    `as_written=True` returns the tree exactly as typed, which is what form
+    constraints and hole-respecting equation checks need.
+    """
     stripped = text.strip()
     if not stripped:
         raise ParseError("empty input")
     if len(stripped) > MAX_INPUT_LENGTH:
         raise ParseError("input too long")
-    lowered = stripped.lower()
-    for bad in _FORBIDDEN_SUBSTRINGS:
-        if bad in lowered:
-            raise ParseError(f"input contains a forbidden token: {bad!r}")
+    if not _ALLOWED.fullmatch(stripped):
+        raise ParseError("input contains a character outside the maths alphabet")
+    if _DOT_NOT_BEFORE_DIGIT.search(stripped):
+        raise ParseError("a dot may only appear inside a decimal number")
 
     if "=" in stripped:
         if not allow_equation:
@@ -1370,14 +1438,99 @@ def parse_math(text: str, *, allow_equation: bool = False) -> sp.Basic:
         lhs, _, rhs = stripped.partition("=")
         if "=" in rhs:
             raise ParseError("more than one equals sign")
-        return sp.Eq(_parse_side(lhs), _parse_side(rhs))
-    return _parse_side(stripped)
+        written: sp.Basic = sp.Eq(_parse_side(lhs), _parse_side(rhs), evaluate=False)
+    else:
+        written = _parse_side(stripped)
+    if as_written:
+        return written
+    try:
+        return evaluated(written)
+    except Exception as exc:  # anything SymPy raises here is still bad input
+        raise ParseError(f"could not evaluate {text!r}") from exc
+
+
+def evaluated(expr: sp.Basic) -> sp.Basic:
+    """The evaluated form of a written expression, rebuilt bottom-up.
+
+    Evaluation normalises, and in doing so forgets: it distributes 4(x+2) into
+    4x + 8, and cancels (x-1)^2/(x-1) to x - 1, erasing the hole at 1.
+    """
+    if isinstance(expr, sp.Eq):
+        return sp.Eq(evaluated(expr.lhs), evaluated(expr.rhs), evaluate=False)
+    if not expr.args:
+        return expr
+    return expr.func(*(evaluated(arg) for arg in expr.args))
+
+
+def _parse_side(text: str) -> sp.Expr:
+    rewritten, names = _resolve_names(text)
+    try:
+        expr = parse_expr(
+            rewritten,
+            local_dict=names,
+            global_dict=dict(_GLOBALS),
+            transformations=_TRANSFORMATIONS,
+            evaluate=False,
+        )
+    except Exception as exc:  # SymPy raises a wide variety here
+        raise ParseError(f"could not parse {text!r}") from exc
+    # Every node, not just the root: "x()" parses to x times an empty Tuple.
+    if not all(isinstance(node, sp.Expr) for node in sp.preorder_traversal(expr)):
+        raise ParseError(f"{text!r} is not a mathematical expression")
+    _exponent_load(expr)
+    return expr
+
+
+def _resolve_names(text: str) -> tuple[str, dict[str, object]]:
+    """Rewrite each run of letters into names, and say what every name means.
+
+    Known names match longest-first; any other letter is its own variable, so
+    "xy" is x*y and "xsin(x)" is x*sin(x). Every name in the rewritten text is
+    in the returned table, so SymPy never resolves one itself: a student's
+    "print" is the product p*r*i*n*t, never Python's print.
+    """
+    table: dict[str, object] = {}
+
+    def rewrite(match: re.Match[str]) -> str:
+        run, names, i = match.group(), [], 0
+        while i < len(run):
+            name = next((k for k in _KNOWN if run.startswith(k, i)), run[i])
+            names.append(name)
+            i += len(name)
+        for name in names:
+            if name in _FUNCTIONS:
+                table[name] = _FUNCTIONS[name]
+            elif name in _CONSTANTS:
+                table[name] = _CONSTANTS[name]
+            else:
+                table[name] = sp.Symbol(name)
+        return " ".join(names)
+
+    return _LETTER_RUN.sub(rewrite, text), table
+
+
+def _exponent_load(expr: sp.Basic) -> float:
+    """The combined power carried by `expr`, refusing anything over the limit.
+
+    Children are checked before their parent, so a symbol-free exponent is
+    only evaluated once every power inside it is known to be small.
+    """
+    loads = [_exponent_load(arg) for arg in expr.args]
+    load = max(loads, default=1.0)
+    if isinstance(expr, sp.Pow) and not expr.exp.free_symbols:
+        magnitude = abs(evaluated(expr.exp))
+        if not magnitude.is_finite or magnitude > MAX_EXPONENT_LOAD:
+            raise ParseError("exponent too large")
+        load = max(1.0, float(magnitude)) * loads[0]
+    if load > MAX_EXPONENT_LOAD:
+        raise ParseError("powers nested too deeply")
+    return load
 ```
 
 - [ ] **Step 4: Run the parser tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/adapters/test_parse.py -v`
-Expected: PASS — 12 tests (the hostile-input case is parametrised five ways).
+Expected: PASS — 31 tests (the parametrised cases count individually).
 
 - [ ] **Step 5: Write the failing equivalence test**
 
@@ -1398,7 +1551,7 @@ def expr(text: str):
 
 
 def eq(text: str):
-    return parse_math(text, allow_equation=True)
+    return parse_math(text, allow_equation=True, as_written=True)
 
 
 @pytest.mark.parametrize(
@@ -1410,6 +1563,7 @@ def eq(text: str):
         ("2sin(x)cos(x)", "sin(2x)"),
         ("sqrt(8)", "2sqrt(2)"),
         ("x + x", "2x"),
+        ("(x^2 - 1)/(x - 1)", "x + 1"),  # an isolated hole is not a difference
     ],
 )
 def test_equivalent_expressions_are_accepted(a, b):
@@ -1422,23 +1576,44 @@ def test_equivalent_expressions_are_accepted(a, b):
         ("x + 1", "x + 2"),
         ("(x+1)(x+2)", "x^2 + 3x + 3"),
         ("x^2", "x^3"),
+        ("log(x^2)", "2log(x)"),  # differ for every negative x
+        ("sqrt(x^2)", "x"),
     ],
 )
 def test_inequivalent_expressions_are_rejected(a, b):
     assert not expressions_equivalent(expr(a), expr(b))
 
 
-def test_equations_with_the_same_solution_set_are_equivalent():
-    assert equations_equivalent(eq("2x = 10"), eq("x = 5"))
-    assert equations_equivalent(eq("x + 3 = 7"), eq("2x + 6 = 14"))
+@pytest.mark.parametrize(
+    "a,b",
+    [
+        ("2x = 10", "x = 5"),
+        ("x + 3 = 7", "2x + 6 = 14"),
+        ("(x-1)^2 = 0", "x - 1 = 0"),  # a repeated root is still one solution
+        ("(x^2 - 1)/(x - 1) = 0", "x + 1 = 0"),  # the hole at 1 is not a solution anyway
+        ("x^2 + 9 = 0", "x^2 = -9"),  # no real solutions: falls back to proportionality
+        ("y = 2x + 1", "2y = 4x + 2"),  # two variables: falls back to proportionality
+    ],
+)
+def test_equations_with_the_same_solutions_are_equivalent(a, b):
+    assert equations_equivalent(eq(a), eq(b))
 
 
-def test_equations_with_different_solutions_are_not_equivalent():
-    assert not equations_equivalent(eq("2x = 10"), eq("x = 8"))
-
-
-def test_squaring_changes_the_solution_set():
-    assert not equations_equivalent(eq("x^2 = 4"), eq("x = 2"))
+@pytest.mark.parametrize(
+    "a,b",
+    [
+        ("2x = 10", "x = 8"),
+        ("x^2 = 4", "x = 2"),  # a square root taken without the negative branch
+        ("x^2 = 2x", "x = 2"),  # dividing by x loses the root 0
+        ("x/(x-2) = 2/(x-2)", "x = 2"),  # multiplying through admits a root the original excludes
+        ("(x-1)^2/(x-1) = 0", "x - 1 = 0"),  # the only candidate root is the hole
+        ("sqrt(x) = -2", "x = 4"),  # squaring admits a root
+        ("x^2 + 1 = 0", "x^2 + 4 = 0"),  # both empty, still not the same equation
+        ("x = 2", "y = 2"),
+    ],
+)
+def test_equations_with_different_solutions_are_not_equivalent(a, b):
+    assert not equations_equivalent(eq(a), eq(b))
 
 
 def test_solution_sets_ignore_order_and_representation():
@@ -1458,11 +1633,24 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'learnai.adapters.cas.e
 
 ```python
 # src/learnai/adapters/cas/equivalence.py
+"""When do two pieces of mathematics mean the same thing?
+
+Expressions are equivalent when they agree wherever both are defined. Isolated
+holes are ignored — that (x^2-1)/(x-1) simplifies to x+1 is the exercise, not
+an error — but disagreement over a region is not: log(x^2) and 2log(x) differ
+for every negative x.
+
+Equations are equivalent when they have the same real solutions, with holes
+respected. Evaluation cancels holes, so equation checks need the *written*
+form: `parse_math(text, allow_equation=True, as_written=True)`.
+"""
 import math
 import random
 from collections.abc import Sequence
 
 import sympy as sp
+
+from learnai.adapters.cas.parse import evaluated
 
 _NUMERIC_TRIALS = 12
 _TOLERANCE = 1e-9
@@ -1473,6 +1661,8 @@ def _numeric_disagrees(a: sp.Expr, b: sp.Expr) -> bool:
 
     Sampling only ever produces a confident NO. A clean sweep is not proof of
     equality, so a negative result here falls through to the symbolic check.
+    A point where either side is undefined is skipped, which is why isolated
+    holes never cause a rejection.
     """
     symbols = sorted(a.free_symbols | b.free_symbols, key=str)
     rng = random.Random(20260919)
@@ -1481,9 +1671,9 @@ def _numeric_disagrees(a: sp.Expr, b: sp.Expr) -> bool:
         try:
             va = complex(sp.N(a.subs(point)))
             vb = complex(sp.N(b.subs(point)))
-        except (TypeError, ValueError, ZeroDivisionError):
+        except (TypeError, ValueError, ArithmeticError):
             continue
-        if not (math.isfinite(va.real) and math.isfinite(vb.real)):
+        if not all(math.isfinite(part) for v in (va, vb) for part in (v.real, v.imag)):
             continue
         if abs(va - vb) > _TOLERANCE * max(1.0, abs(va), abs(vb)):
             return True
@@ -1491,6 +1681,7 @@ def _numeric_disagrees(a: sp.Expr, b: sp.Expr) -> bool:
 
 
 def expressions_equivalent(a: sp.Expr, b: sp.Expr) -> bool:
+    a, b = evaluated(a), evaluated(b)
     if a == b:
         return True
     if _numeric_disagrees(a, b):
@@ -1504,10 +1695,67 @@ def expressions_equivalent(a: sp.Expr, b: sp.Expr) -> bool:
     return bool(decided)
 
 
+def real_solutions(eq: sp.Eq, var: sp.Symbol) -> frozenset[sp.Expr] | None:
+    """The real solutions of a written equation, or None when they cannot be listed.
+
+    Solved on the evaluated form, then filtered against the written one: a root
+    survives only where both written sides are defined and real. The filter is
+    what stops (x-1)^2/(x-1) = 0 claiming the solution 1 — SymPy's solver only
+    ever sees x - 1 = 0, because evaluation has already cancelled the hole.
+    """
+    found = sp.solveset(evaluated(eq.lhs) - evaluated(eq.rhs), var, domain=sp.S.Reals)
+    if found is sp.S.EmptySet:
+        return frozenset()
+    if not isinstance(found, sp.FiniteSet):
+        return None  # infinitely many (sin x = 0), or not in closed form
+    return frozenset(root for root in found if _defined_at(eq, var, root))
+
+
+def _defined_at(eq: sp.Eq, var: sp.Symbol, point: sp.Expr) -> bool:
+    for side in (eq.lhs, eq.rhs):
+        value = _value_at(side, var, point)
+        if not (value.is_finite and value.is_real):
+            return False
+    return True
+
+
+def _value_at(expr: sp.Basic, var: sp.Symbol, point: sp.Expr) -> sp.Basic:
+    """Substitute and evaluate bottom-up, so every child is a number before its parent is built.
+
+    Plain `subs` rebuilds the parent first, and SymPy then merges
+    (x-1)^-1 * (x-1)^2 into x-1 before x-1 has become 0 — cancelling the very
+    hole this is meant to find.
+    """
+    if expr == var:
+        return point
+    if not expr.args:
+        return expr
+    return expr.func(*(_value_at(arg, var, point) for arg in expr.args))
+
+
 def equations_equivalent(a: sp.Eq, b: sp.Eq) -> bool:
-    """Two equations are equivalent when one is a nonzero constant multiple of the other."""
-    da = sp.simplify(a.lhs - a.rhs)
-    db = sp.simplify(b.lhs - b.rhs)
+    """Same real solutions, holes respected. Pass written forms (see module docstring).
+
+    Falls back to proportionality — one side a nonzero constant multiple of the
+    other — when the solutions cannot be compared: several variables, solutions
+    that cannot be listed, or no real solutions on either side (where comparing
+    two empty sets would accept any slip between x^2 + 1 = 0 and x^2 + 4 = 0).
+    Proportional equations do share their solutions, but the fallback rejects
+    genuine rewrites such as (x-1)^2 = 0 to x - 1 = 0 and is blind to holes.
+    See spec D12.
+    """
+    variables = a.free_symbols | b.free_symbols
+    if len(variables) == 1:
+        (var,) = variables
+        sa, sb = real_solutions(a, var), real_solutions(b, var)
+        if sa is not None and sb is not None and (sa or sb):
+            return solution_sets_equivalent(list(sa), list(sb))
+    return _proportional(a, b)
+
+
+def _proportional(a: sp.Eq, b: sp.Eq) -> bool:
+    da = sp.simplify(evaluated(a.lhs) - evaluated(a.rhs))
+    db = sp.simplify(evaluated(b.lhs) - evaluated(b.rhs))
     if db == 0:
         return bool(da == 0)
     ratio = sp.simplify(da / db)
@@ -1529,7 +1777,7 @@ def solution_sets_equivalent(a: Sequence[sp.Expr], b: Sequence[sp.Expr]) -> bool
 - [ ] **Step 8: Run the equivalence tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/adapters/test_equivalence.py -v`
-Expected: PASS — 13 tests.
+Expected: PASS — 28 tests.
 
 - [ ] **Step 9: Commit**
 
@@ -1833,8 +2081,9 @@ class SympyVerifier:
                 return CheckResult(Verdict.CORRECT)
 
             if spec.kind is AnswerKind.RELATION:
-                got_eq = parse_math(submitted, allow_equation=True)
-                want_eq = parse_math(spec.expression, allow_equation=True)
+                # Written forms: equation checks must see the holes (Task 4).
+                got_eq = parse_math(submitted, allow_equation=True, as_written=True)
+                want_eq = parse_math(spec.expression, allow_equation=True, as_written=True)
                 if not isinstance(got_eq, sp.Eq) or not isinstance(want_eq, sp.Eq):
                     return CheckResult(Verdict.MALFORMED)
                 ok = equations_equivalent(got_eq, want_eq)
@@ -2001,7 +2250,8 @@ Expected: FAIL — six tests fail with `assert None is not None`, because the st
         parsed: list[sp.Basic | None] = []
         for raw in steps:
             try:
-                parsed.append(parse_math(raw, allow_equation=True))
+                # Written form: an equation step must keep its holes (Task 4).
+                parsed.append(parse_math(raw, allow_equation=True, as_written=True))
             except ParseError:
                 parsed.append(None)
 
