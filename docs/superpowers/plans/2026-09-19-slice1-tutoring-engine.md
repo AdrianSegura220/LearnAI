@@ -254,6 +254,19 @@ class ConceptKind(Enum):
     FACT = "fact"
 
 
+class AnswerKind(Enum):
+    """How an answer is compared. Subject-neutral by construction.
+
+    RELATION covers a maths equation and a balanced chemical equation alike:
+    both are judged by what they assert, not by their surface form.
+    """
+
+    SINGLE_VALUE = "single_value"
+    RELATION = "relation"
+    VALUE_SET = "value_set"
+    """An unordered collection, compared as a set."""
+
+
 class HelpRung(IntEnum):
     """Ordered: comparison operators express the ladder."""
 
@@ -286,6 +299,20 @@ class VettingLevel(IntEnum):
     HUMAN_REVIEWED = 1
     MACHINE_VERIFIED = 2
     """The answer key is derived by code, not written by a human or a model."""
+
+
+class ProvenanceKind(Enum):
+    """Where an item came from.
+
+    Closed on purpose: each new source changes how far an answer key can be
+    trusted, so adding one should be a decision rather than a new string. The
+    spec anticipates an LLM_BATCH member; it arrives with batch generation.
+    """
+
+    GENERATED = "generated"
+    """From a template and a seed; the pair reproduces the item exactly."""
+
+    AUTHORED = "authored"
 
 
 class InterventionTiming(Enum):
@@ -1053,27 +1080,27 @@ git commit -m "feat: quadratics skill cluster and validating content loader"
 - Test: `tests/domain/test_items.py`
 
 **Interfaces:**
-- Consumes: ids and enums from Task 1.
-- Produces: `FormConstraint = NewType("FormConstraint", str)` — **opaque to the domain**, which never interprets one; each `Verifier` adapter owns its own vocabulary (see Task 5). `AnswerKind` (enum: `EXPRESSION`, `EQUATION`, `SOLUTION_SET`); `AnswerSpec(expression: str, form_constraints: tuple[FormConstraint, ...], kind: AnswerKind)`; `Provenance(template_id: TemplateId | None, seed: int | None, kind: str)` with constructors `Provenance.generated(template_id, seed)` and `Provenance.authored()`; `Item(id, skill_id, provenance, statement, answer_spec, worked_steps, difficulty, vetting_level)`; `StepDiff(index: int, previous: str, current: str)`.
+- Consumes: ids and enums from Task 1, including `AnswerKind` (`SINGLE_VALUE` / `RELATION` / `VALUE_SET`) and `ProvenanceKind`.
+- Produces: `FormConstraint = NewType("FormConstraint", str)` — **opaque to the domain**, which never interprets one; each `Verifier` adapter owns its own vocabulary (see Task 5). `AnswerSpec(expression: str, form_constraints: tuple[FormConstraint, ...], kind: AnswerKind)`; `Provenance(kind: ProvenanceKind, template_id: TemplateId | None, seed: int | None)` with constructors `Provenance.generated(template_id, seed)` and `Provenance.authored()`; `Item(id, skill_id, provenance, statement, answer_spec, worked_steps, difficulty, vetting_level)`; `StepDiff(index: int, previous: str, current: str)`.
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
 # tests/domain/test_items.py
-from learnai.domain.enums import VettingLevel
+from learnai.domain.enums import AnswerKind, ProvenanceKind, VettingLevel
 from learnai.domain.ids import ItemId, SkillId, TemplateId
-from learnai.domain.items import AnswerKind, AnswerSpec, FormConstraint, Item, Provenance, StepDiff
+from learnai.domain.items import AnswerSpec, FormConstraint, Item, Provenance, StepDiff
 
 
 def test_generated_provenance_is_reproducible_from_template_and_seed():
     p = Provenance.generated(TemplateId("quad.factor.monic.v1"), seed=4242)
-    assert p.kind == "generated"
+    assert p.kind is ProvenanceKind.GENERATED
     assert (p.template_id, p.seed) == (TemplateId("quad.factor.monic.v1"), 4242)
 
 
 def test_authored_provenance_has_no_seed():
     p = Provenance.authored()
-    assert p.kind == "authored"
+    assert p.kind is ProvenanceKind.AUTHORED
     assert p.template_id is None and p.seed is None
 
 
@@ -1103,7 +1130,7 @@ def test_a_form_constraint_is_just_an_opaque_token():
     assert AnswerSpec("x", (token,)).form_constraints == (token,)
 
 
-def test_answer_kind_defaults_to_expression():
+def test_answer_kind_defaults_to_single_value():
     spec = AnswerSpec("x + 1")
     assert spec.kind is AnswerKind.SINGLE_VALUE
     assert spec.form_constraints == ()
@@ -1124,10 +1151,9 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'learnai.domain.items'`
 ```python
 # src/learnai/domain/items.py
 from dataclasses import dataclass
-from enum import Enum
 from typing import NewType
 
-from learnai.domain.enums import VettingLevel
+from learnai.domain.enums import AnswerKind, ProvenanceKind, VettingLevel
 from learnai.domain.ids import ItemId, SkillId, TemplateId
 
 FormConstraint = NewType("FormConstraint", str)
@@ -1142,40 +1168,26 @@ the core. See spec §6.2.
 
 
 @dataclass(frozen=True, slots=True)
-class AnswerKind(Enum):
-    """How an answer is compared. Subject-neutral by construction.
-
-    RELATION covers a maths equation and a balanced chemical equation alike:
-    both are judged by what they assert, not by their surface form.
-    """
-
-    SINGLE_VALUE = "single_value"
-    RELATION = "relation"
-    VALUE_SET = "value_set"
-    """An unordered collection, compared as a set."""
-
-
-@dataclass(frozen=True, slots=True)
 class AnswerSpec:
     expression: str
     form_constraints: tuple[FormConstraint, ...] = ()
     kind: AnswerKind = AnswerKind.SINGLE_VALUE
-    """SOLUTION_SET answers are comma-separated roots, compared as a set."""
+    """How the verifier compares a submission with `expression`; see AnswerKind."""
 
 
 @dataclass(frozen=True, slots=True)
 class Provenance:
-    kind: str
+    kind: ProvenanceKind
     template_id: TemplateId | None = None
     seed: int | None = None
 
     @classmethod
     def generated(cls, template_id: TemplateId, seed: int) -> "Provenance":
-        return cls(kind="generated", template_id=template_id, seed=seed)
+        return cls(kind=ProvenanceKind.GENERATED, template_id=template_id, seed=seed)
 
     @classmethod
     def authored(cls) -> "Provenance":
-        return cls(kind="authored")
+        return cls(kind=ProvenanceKind.AUTHORED)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1536,7 +1548,7 @@ git commit -m "feat: allowlisted math parser and CAS equivalence checking"
 - Test: `tests/adapters/test_sympy_verifier.py`
 
 **Interfaces:**
-- Consumes: `AnswerKind`, `AnswerSpec`, `FormConstraint`, `StepDiff`, `Verdict` (Tasks 1 and 3); `parse_math`, the three equivalence functions (Task 4).
+- Consumes: `AnswerKind`, `Verdict` (Task 1); `AnswerSpec`, `FormConstraint`, `StepDiff` (Task 3); `parse_math`, the three equivalence functions (Task 4).
 - Produces: `CheckResult(verdict: Verdict, failed_constraints: tuple[FormConstraint, ...], step_diff: StepDiff | None)`; the `Verifier` protocol with `check_answer(submitted: str, spec: AnswerSpec) -> CheckResult`, `diff_steps(steps: Sequence[str]) -> StepDiff | None`, `extract_candidate_expressions(text: str) -> tuple[str, ...]`, `matches_answer(expression: str, spec: AnswerSpec) -> bool`; `supported_constraints -> frozenset[FormConstraint]`; `SympyVerifier` implementing it. In `adapters/cas/constraints.py`: the tokens `FULLY_FACTORED`, `EXPANDED`, `SIMPLIFIED`, `EXACT_NOT_DECIMAL`, `COMPLETED_SQUARE`, the set `MATH_CONSTRAINTS`, and `UnknownConstraintError`, `UnsupportedAnswerKindError`, and the kind token `CAS_SYMBOLIC`. (`diff_steps` is stubbed to `None` in this task and implemented in Task 6.)
 
 **Why the vocabulary lives here:** `_satisfies` is the only code in the system that ever interprets a form constraint, so the tokens belong beside it. A physics adapter will declare `correct_units` and `significant_figures` without touching the domain, which is the whole point of the `verification_kind` seam.
@@ -1556,8 +1568,8 @@ from learnai.adapters.cas.vocabulary import (
     MATH_CONSTRAINTS,
     UnsupportedAnswerKindError,
 )
-from learnai.domain.enums import Verdict
-from learnai.domain.items import AnswerKind, AnswerSpec, FormConstraint
+from learnai.domain.enums import AnswerKind, Verdict
+from learnai.domain.items import AnswerSpec, FormConstraint
 
 V = SympyVerifier()
 
@@ -1790,8 +1802,8 @@ from learnai.adapters.cas.vocabulary import (
     UnsupportedAnswerKindError,
 )
 from learnai.adapters.cas.parse import ParseError, parse_math
-from learnai.domain.enums import Verdict
-from learnai.domain.items import AnswerKind, AnswerSpec, FormConstraint, StepDiff
+from learnai.domain.enums import AnswerKind, Verdict
+from learnai.domain.items import AnswerSpec, FormConstraint, StepDiff
 from learnai.domain.verification import CheckResult
 
 _CANDIDATE_PATTERN = re.compile(r"[0-9A-Za-z_^+\-*/(). ]{3,}")
@@ -2036,7 +2048,7 @@ git commit -m "feat: localise the first broken step in student work"
 - Test: `tests/content/__init__.py`, `tests/content/test_generator_contracts.py`
 
 **Interfaces:**
-- Consumes: `Item`, `AnswerSpec`, `AnswerKind`, `FormConstraint`, `Provenance` (Task 3); `SympyVerifier` (Tasks 5–6).
+- Consumes: `AnswerKind` (Task 1); `Item`, `AnswerSpec`, `FormConstraint`, `Provenance` (Task 3); `SympyVerifier` (Tasks 5–6).
 - Produces: `GeneratedProblem(statement, prompt_expression, answer, form_constraints, kind, worked_steps)`; `TemplateSpec(id, skill_id, difficulty, generate)`; `QUADRATICS_TEMPLATES: tuple[TemplateSpec, ...]` (twelve, one per skill); `GeneratorRegistry` with `all_templates()`, `templates_for(skill_id)`, `instantiate(template_id, seed) -> Item`, `instantiate_raw(template_id, seed) -> GeneratedProblem`, and `next_item(skill_id, target_difficulty, seed) -> Item`; `ItemSource` protocol in `domain/ports.py`.
 
 **Determinism contract:** `instantiate(template_id, seed)` must return an identical `Item` for identical arguments, forever. Item ids are `f"{template_id}#{seed}"`, so an item a student saw is reproducible from two values rather than stored.
@@ -2049,8 +2061,9 @@ import random
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from learnai.domain.enums import AnswerKind
 from learnai.domain.ids import SkillId, TemplateId
-from learnai.domain.items import AnswerKind, FormConstraint
+from learnai.domain.items import FormConstraint
 
 
 @dataclass(frozen=True, slots=True)
@@ -2101,8 +2114,8 @@ from learnai.adapters.cas.vocabulary import (
     FULLY_FACTORED,
 )
 from learnai.adapters.content.types import GeneratedProblem, TemplateSpec
+from learnai.domain.enums import AnswerKind
 from learnai.domain.ids import SkillId, TemplateId
-from learnai.domain.items import AnswerKind
 
 X = sp.Symbol("x")
 
@@ -2397,8 +2410,7 @@ from learnai.adapters.cas.parse import parse_math
 from learnai.adapters.cas.sympy_verifier import SympyVerifier
 from learnai.adapters.content.generators.quadratics import QUADRATICS_TEMPLATES
 from learnai.adapters.content.registry import GeneratorRegistry
-from learnai.domain.enums import Verdict
-from learnai.domain.items import AnswerKind
+from learnai.domain.enums import AnswerKind, Verdict
 
 REGISTRY = GeneratorRegistry(QUADRATICS_TEMPLATES)
 VERIFIER = SympyVerifier()
@@ -2880,8 +2892,7 @@ impossible too. Defaults live on the dataclass so no call site is noisier for it
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
-from learnai.domain.enums import Confidence
-from learnai.domain.items import AnswerKind
+from learnai.domain.enums import AnswerKind, Confidence
 
 
 @dataclass(frozen=True, slots=True)
@@ -2964,8 +2975,8 @@ import math
 from hypothesis import given
 from hypothesis import strategies as st
 
+from learnai.domain.enums import AnswerKind
 from learnai.domain.ids import SkillId, StudentId
-from learnai.domain.items import AnswerKind
 from learnai.domain.mastery import SkillState, k_factor, p_expected, update_strength
 from learnai.domain.parameters import DEFAULT_PARAMETERS
 
