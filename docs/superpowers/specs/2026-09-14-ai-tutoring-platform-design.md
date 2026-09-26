@@ -271,7 +271,7 @@ field. The domain owns the shape — a single value or a relation takes one fiel
 values takes any number, or an explicit claim that there are none — and never what a field
 contains, exactly as with form constraints: the CAS adapter parses a field as maths, a rubric
 adapter would judge it as prose. The input widget follows the kind: one field labelled with what
-is asked for ("x ="), or one field per value with "add another" and a "none" option. A value
+is asked for ("x =", from the display-only `AnswerSpec.label` the generator sets), or one field per value with "add another" and a "none" option. A value
 list starts with a single field, since showing two would tell the student how many roots there
 are. Leaving every field blank is a decline; claiming there are no values is an answer. Answers
 are never extracted from chat: grading reads the fields with code (P1, P3).

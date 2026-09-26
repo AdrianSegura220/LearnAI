@@ -1083,7 +1083,7 @@ git commit -m "feat: quadratics skill cluster and validating content loader"
 
 **Interfaces:**
 - Consumes: ids and enums from Task 1, including `AnswerKind` (`SINGLE_VALUE` / `RELATION` / `VALUE_SET`) and `ProvenanceKind`.
-- Produces: `FormConstraint = NewType("FormConstraint", str)` — **opaque to the domain**, which never interprets one; each `Verifier` adapter owns its own vocabulary (see Task 5). `AnswerSpec(expression: str, form_constraints: tuple[FormConstraint, ...], kind: AnswerKind)`; `Provenance(kind: ProvenanceKind, template_id: TemplateId | None, seed: int | None)` with constructors `Provenance.generated(template_id, seed)` and `Provenance.authored()`; `Item(id, skill_id, provenance, statement, answer_spec, worked_steps, difficulty, vetting_level)`; `StepDiff(index: int, previous: str, current: str)`; `Submission(fields: tuple[str, ...], claims_none: bool = False)` with `Submission.of(*fields)`, `Submission.none()`, `is_blank`, `entries` and `check_shape(kind)`, which raises `SubmissionShapeError`; `MULTI_FIELD_KINDS`.
+- Produces: `FormConstraint = NewType("FormConstraint", str)` — **opaque to the domain**, which never interprets one; each `Verifier` adapter owns its own vocabulary (see Task 5). `AnswerSpec(expression: str, form_constraints: tuple[FormConstraint, ...], kind: AnswerKind)`; `Provenance(kind: ProvenanceKind, template_id: TemplateId | None, seed: int | None)` with constructors `Provenance.generated(template_id, seed)` and `Provenance.authored()`; `Item(id, skill_id, provenance, statement, answer_spec, worked_steps, difficulty, vetting_level)`; `StepDiff(index: int, previous: str, current: str)`; `AnswerSpec` gains an optional, display-only `label`; `Submission(fields: tuple[str, ...], claims_none: bool = False)` with `Submission.of(*fields)`, `Submission.none()`, `is_blank`, `entries` and `check_shape(kind)`, which raises `SubmissionShapeError`; `MULTI_FIELD_KINDS`.
 
 **Why answers arrive as fields:** the input widget follows the answer kind — one field, or one field per value with "add another" and a "none" option — so the student's answer reaches the engine already shaped, and nothing ever splits a string on commas or guesses at separators. The domain owns the shape and never what a field contains: the CAS adapter parses a field as maths, and a rubric adapter would judge it as prose, exactly as with form constraints.
 
@@ -1155,6 +1155,11 @@ def test_step_diff_records_the_first_broken_transition():
     assert d.index == 2
 
 
+def test_a_label_is_optional_and_display_only():
+    assert AnswerSpec("x + 1").label is None
+    assert AnswerSpec("3", label="x =").label == "x ="
+
+
 def test_a_single_value_answer_takes_exactly_one_field():
     Submission.of("x + 1").check_shape(AnswerKind.SINGLE_VALUE)
     with pytest.raises(SubmissionShapeError):
@@ -1211,6 +1216,11 @@ class AnswerSpec:
     form_constraints: tuple[FormConstraint, ...] = ()
     kind: AnswerKind = AnswerKind.SINGLE_VALUE
     """How the verifier compares a submission with `expression`; see AnswerKind."""
+
+    label: str | None = None
+    """What the answer field is labelled with — "x =", "Width (cm):". Display
+    only: grading never reads it. Written in the item's language, like its
+    statement. None when the field holds the transformed expression itself."""
 
 
 MULTI_FIELD_KINDS = frozenset({AnswerKind.VALUE_SET})
@@ -1306,7 +1316,7 @@ class StepDiff:
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/domain/test_items.py -v`
-Expected: PASS — 9 tests.
+Expected: PASS — 10 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -2783,6 +2793,8 @@ class GeneratedProblem:
     form_constraints: tuple[FormConstraint, ...]
     kind: AnswerKind
     worked_steps: tuple[str, ...]
+    label: str | None = None
+    """The answer field's label when the student computes a value; see AnswerSpec.label."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -2935,6 +2947,7 @@ def solve_by_factoring(rng: random.Random) -> GeneratedProblem:
         form_constraints=(),
         kind=AnswerKind.VALUE_SET,
         worked_steps=(f"{sp.sstr(lhs)} = 0", f"{sp.sstr(sp.factor(lhs))} = 0"),
+        label="x =",
     )
 
 
@@ -2971,6 +2984,7 @@ def apply_quadratic_formula(rng: random.Random) -> GeneratedProblem:
         form_constraints=(EXACT_NOT_DECIMAL,),
         kind=AnswerKind.VALUE_SET,
         worked_steps=(),
+        label="x =",
     )
 
 
@@ -2990,6 +3004,7 @@ def count_real_roots(rng: random.Random) -> GeneratedProblem:
         form_constraints=(),
         kind=AnswerKind.SINGLE_VALUE,
         worked_steps=(),
+        label="Number of real roots:",
     )
 
 
@@ -3007,6 +3022,7 @@ def vertex_x_coordinate(rng: random.Random) -> GeneratedProblem:
         form_constraints=(EXACT_NOT_DECIMAL,),
         kind=AnswerKind.SINGLE_VALUE,
         worked_steps=(),
+        label="x =",
     )
 
 
@@ -3024,6 +3040,7 @@ def rectangle_area_word_problem(rng: random.Random) -> GeneratedProblem:
         form_constraints=(),
         kind=AnswerKind.SINGLE_VALUE,
         worked_steps=(),
+        label="Width (cm):",
     )
 
 
@@ -3087,6 +3104,7 @@ class GeneratorRegistry:
                 expression=problem.answer,
                 form_constraints=problem.form_constraints,
                 kind=problem.kind,
+                label=problem.label,
             ),
             worked_steps=problem.worked_steps,
             difficulty=spec.difficulty,
@@ -3170,6 +3188,17 @@ def test_typing_the_question_back_is_never_accepted(spec):
 
 
 @pytest.mark.parametrize("spec", QUADRATICS_TEMPLATES, ids=ids)
+def test_an_item_that_asks_for_a_value_labels_its_field(spec):
+    """With no expression to transform, the student computes a value, and the
+    field must say which ("x =", "Width (cm):"). A transformation item's field
+    holds the expression itself and needs no label."""
+    for seed in range(DEEP_SEEDS):
+        problem = REGISTRY.instantiate_raw(spec.id, seed)
+        item = REGISTRY.instantiate(spec.id, seed)
+        assert (item.answer_spec.label is not None) == (problem.prompt_expression is None), (spec.id, seed)
+
+
+@pytest.mark.parametrize("spec", QUADRATICS_TEMPLATES, ids=ids)
 def test_no_degenerate_coefficients(spec):
     for seed in range(DEEP_SEEDS):
         problem = REGISTRY.instantiate_raw(spec.id, seed)
@@ -3218,7 +3247,7 @@ def test_every_skill_in_the_cluster_has_a_template():
 - [ ] **Step 5: Run the contract tests**
 
 Run: `.venv/bin/pytest tests/content/test_generator_contracts.py -v`
-Expected: PASS — 75 tests (six parametrised suites over twelve templates, plus three standalone). This is the slowest suite in the project; if it exceeds about 90 seconds, lower `DEEP_SEEDS` to 30 rather than weakening an assertion.
+Expected: PASS — 87 tests (seven parametrised suites over twelve templates, plus three standalone). This is the slowest suite in the project; if it exceeds about 90 seconds, lower `DEEP_SEEDS` to 30 rather than weakening an assertion.
 
 - [ ] **Step 6: Commit**
 
