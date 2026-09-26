@@ -266,6 +266,16 @@ no adapter understands fails loudly rather than silently passing a wrongly-forme
 this the form vocabulary would accumulate every subject's terms inside the shared domain, which
 is precisely the coupling `verification_kind` exists to prevent.
 
+**Answers arrive in fields shaped by their kind.** A `Submission` is one string per answer
+field. The domain owns the shape — a single value or a relation takes one field; a list of
+values takes any number, or an explicit claim that there are none — and never what a field
+contains, exactly as with form constraints: the CAS adapter parses a field as maths, a rubric
+adapter would judge it as prose. The input widget follows the kind: one field labelled with what
+is asked for ("x ="), or one field per value with "add another" and a "none" option. A value
+list starts with a single field, since showing two would tell the student how many roots there
+are. Leaving every field blank is a decline; claiming there are no values is an answer. Answers
+are never extracted from chat: grading reads the fields with code (P1, P3).
+
 A **generator** is code written once per skill, not a problem written once per problem. For
 "solve a quadratic by factoring" it samples integer roots in a constrained range, expands, and
 returns both the problem and the exact answer. The answer key is correct by construction, there
@@ -809,7 +819,9 @@ Every turn, before a character reaches the student:
 
 1. **Rung check** — `rung_used <= permitted_rung`.
 2. **LeakGuard** — extract mathematical expressions from the draft message and ask the CAS whether
-   any is equivalent to the item's answer. A leak above the permitted rung fails the turn. This
+   any would be marked correct if the student entered it — equivalent *and* in the required form — or
+   gives away one of several values. Plain equivalence would flag the tutor quoting the question,
+   which for a factoring item equals its answer. A leak above the permitted rung fails the turn. This
    also catches a "nudge" that quietly contains the next line of algebra.
 3. **Proposal validation** — is the proposed prerequisite actually a prerequisite, and is the
    student permitted there?
@@ -1002,9 +1014,9 @@ item that wants it, not a subject that arrives.
 | D3 | **Session UI and layout.** Deliberately unspecified here; to be settled with mockups. | Next, before Slice 1 build |
 | D4 | **Orchestration adapter** — Tool Runner vs. manual loop. Domain is unaffected. | At `AnthropicTutor` implementation |
 | D5 | **Accounts, minors' data, and GDPR posture.** Minimal auth in Slice 1; a real compliance position is required before any public launch with minors. | Before launch, not before Slice 1 |
-| D6 | **UI language (Spanish/English).** Content is curriculum-agnostic; copy is not yet decided. Locale reaches the parser too: a Spanish student writes `0,5` for a half, which answer-list parsing currently splits into the values 0 and 5. | Before launch |
+| D6 | **UI language (Spanish/English).** Content is curriculum-agnostic; copy is not yet decided. Locale reaches the parser too: a Spanish student writes `0,5` for a half, which the parser currently refuses as malformed. | Before launch |
 | D7 | **Bring-your-own-problem mode.** Agreed in principle with a practice tail — the tutor helps under the strictest contract, then the engine queues generated variants of the skills involved for later cold practice. Deferred to Slice 6; the skill-identification hook is designed for now. | Slice 6 |
-| D8 | **`ORDERED_SEQUENCE` answer kind.** Reaction mechanisms, chronologies, algorithm steps — and, within mathematics, "list these steps in order". Cheap: the CAS comparison is `len(a) == len(b) and all(expressions_equivalent(x, y) for x, y in zip(a, b))`, reusing the element comparison and the comma parsing that `VALUE_SET` already has. Not added yet only because no item wants it and the input widget cannot be designed in the abstract. Adding the member without a branch would compare a list as one expression, which is why the verifier raises `UnsupportedAnswerKindError`. | First item that wants an ordered answer — plausibly in mathematics, not necessarily a new subject |
+| D8 | **`ORDERED_SEQUENCE` answer kind.** Reaction mechanisms, chronologies, algorithm steps — and, within mathematics, "list these steps in order". Cheap: the CAS comparison is `len(a) == len(b) and all(expressions_equivalent(x, y) for x, y in zip(a, b))`, reusing the element comparison, and taking one field per element as `VALUE_SET` does. Not added yet only because no item wants it and the input widget cannot be designed in the abstract. Adding the member without a branch would compare a list as one expression, which is why the verifier raises `UnsupportedAnswerKindError`. | First item that wants an ordered answer — plausibly in mathematics, not necessarily a new subject |
 | D8b | **`MAPPING` answer kind.** Matching terms to definitions. Genuinely more design than D8: delimiter and key normalisation, and whether a missing or extra pair is wrong or partially wrong — which drags in D9. Weak mathematics use case. | A subject built on matching items |
 | D9 | **Composite answers and partial credit — one change, not two.** Fill-three-blanks and tables need `AnswerSpec.parts: tuple[AnswerSpec, ...] = ()`, which is additive and migrates nothing. The real cost is that a composite answer is inherently partially correct, so `Verdict` stops being binary and `CheckResult` gains a score. The mastery half is already done: `update_strength` takes `outcome: float`. Until then, model each blank as its own item — usually fine, occasionally wrong. | When an item genuinely cannot be split |
 | D10 | **A sibling defect shape for non-transformational work.** `StepDiff` assumes each step transforms the previous one and that validity is local to consecutive pairs — true of algebra, stoichiometry and derivations, false of a geometry or induction proof (each line *adds* a justified statement) and of an essay (the defect is an unsupported claim, not a broken transition). See §9. `TurnContext` should gain a sibling field carrying that verifier's defect shape rather than `StepDiff` being generalised from a single example. Nothing breaks meanwhile: a verifier with no notion of steps returns `None` and diagnosis degrades to a novel error. | First proof-based or rubric-judged skill |
@@ -1039,6 +1051,8 @@ item that wants it, not a subject that arrives.
 | Misconceptions per skill | Optional | Diagnosis already handles no match as a novel error; a mandatory entry invites invented ones |
 | Hard-prerequisite cycles | Rejected with the path named, never auto-repaired | Breaking a cycle means deciding which dependency is false, a judgement the graph has no information to make |
 | Mathematical equivalence | Expressions agree wherever both are defined; equations share their real solutions, holes respected | Accepts the simplifications school teaches while catching lost and extraneous roots, the errors that matter most in solving |
+| Answer input | Structured fields shaped by the answer kind; the domain owns the shape, adapters the meaning | Removes separator and notation guessing at the source, gives "no solutions" a representation, and keeps grading out of the model's hands |
+| What counts as a leak | Text that would be marked correct if entered, or one of several values | Plain equivalence flags the tutor quoting a problem whose question and answer are equal in value |
 | Typed decimals | Exact: `0.1` is one tenth | Binary floats make `0.1 + 0.2 ≠ 0.3` and mark correct decimal work wrong |
 | Ambiguous notation | Refused, not guessed | A guessed reading grades an answer the student did not mean, silently |
 | SymPy version | Pinned | Grading depends on its evaluation rules, which change between releases |

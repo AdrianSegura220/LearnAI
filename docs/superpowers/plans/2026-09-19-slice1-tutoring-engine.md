@@ -1083,15 +1083,27 @@ git commit -m "feat: quadratics skill cluster and validating content loader"
 
 **Interfaces:**
 - Consumes: ids and enums from Task 1, including `AnswerKind` (`SINGLE_VALUE` / `RELATION` / `VALUE_SET`) and `ProvenanceKind`.
-- Produces: `FormConstraint = NewType("FormConstraint", str)` — **opaque to the domain**, which never interprets one; each `Verifier` adapter owns its own vocabulary (see Task 5). `AnswerSpec(expression: str, form_constraints: tuple[FormConstraint, ...], kind: AnswerKind)`; `Provenance(kind: ProvenanceKind, template_id: TemplateId | None, seed: int | None)` with constructors `Provenance.generated(template_id, seed)` and `Provenance.authored()`; `Item(id, skill_id, provenance, statement, answer_spec, worked_steps, difficulty, vetting_level)`; `StepDiff(index: int, previous: str, current: str)`.
+- Produces: `FormConstraint = NewType("FormConstraint", str)` — **opaque to the domain**, which never interprets one; each `Verifier` adapter owns its own vocabulary (see Task 5). `AnswerSpec(expression: str, form_constraints: tuple[FormConstraint, ...], kind: AnswerKind)`; `Provenance(kind: ProvenanceKind, template_id: TemplateId | None, seed: int | None)` with constructors `Provenance.generated(template_id, seed)` and `Provenance.authored()`; `Item(id, skill_id, provenance, statement, answer_spec, worked_steps, difficulty, vetting_level)`; `StepDiff(index: int, previous: str, current: str)`; `Submission(fields: tuple[str, ...], claims_none: bool = False)` with `Submission.of(*fields)`, `Submission.none()`, `is_blank`, `entries` and `check_shape(kind)`, which raises `SubmissionShapeError`; `MULTI_FIELD_KINDS`.
+
+**Why answers arrive as fields:** the input widget follows the answer kind — one field, or one field per value with "add another" and a "none" option — so the student's answer reaches the engine already shaped, and nothing ever splits a string on commas or guesses at separators. The domain owns the shape and never what a field contains: the CAS adapter parses a field as maths, and a rubric adapter would judge it as prose, exactly as with form constraints.
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
 # tests/domain/test_items.py
+import pytest
+
 from learnai.domain.enums import AnswerKind, ProvenanceKind, VettingLevel
 from learnai.domain.ids import ItemId, SkillId, TemplateId
-from learnai.domain.items import AnswerSpec, FormConstraint, Item, Provenance, StepDiff
+from learnai.domain.items import (
+    AnswerSpec,
+    FormConstraint,
+    Item,
+    Provenance,
+    StepDiff,
+    Submission,
+    SubmissionShapeError,
+)
 
 
 def test_generated_provenance_is_reproducible_from_template_and_seed():
@@ -1141,6 +1153,28 @@ def test_answer_kind_defaults_to_single_value():
 def test_step_diff_records_the_first_broken_transition():
     d = StepDiff(index=2, previous="2*x = 10", current="x = 8")
     assert d.index == 2
+
+
+def test_a_single_value_answer_takes_exactly_one_field():
+    Submission.of("x + 1").check_shape(AnswerKind.SINGLE_VALUE)
+    with pytest.raises(SubmissionShapeError):
+        Submission.of("1", "2").check_shape(AnswerKind.SINGLE_VALUE)
+    with pytest.raises(SubmissionShapeError):
+        Submission.none().check_shape(AnswerKind.RELATION)
+
+
+def test_a_value_list_may_hold_any_number_of_values_or_claim_there_are_none():
+    Submission.of("2", "-3").check_shape(AnswerKind.VALUE_SET)
+    Submission.none().check_shape(AnswerKind.VALUE_SET)
+    with pytest.raises(SubmissionShapeError):
+        Submission(("2",), claims_none=True).check_shape(AnswerKind.VALUE_SET)
+
+
+def test_blank_fields_are_a_decline_but_claiming_none_is_an_answer():
+    assert Submission.of("  ").is_blank
+    assert Submission.of("", "").is_blank
+    assert not Submission.none().is_blank
+    assert Submission.of("2", " ").entries == ("2",)
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
@@ -1172,9 +1206,65 @@ the core. See spec §6.2.
 @dataclass(frozen=True, slots=True)
 class AnswerSpec:
     expression: str
+    """The answer key, in the Verifier adapter's own format."""
+
     form_constraints: tuple[FormConstraint, ...] = ()
     kind: AnswerKind = AnswerKind.SINGLE_VALUE
     """How the verifier compares a submission with `expression`; see AnswerKind."""
+
+
+MULTI_FIELD_KINDS = frozenset({AnswerKind.VALUE_SET})
+"""Kinds answered with any number of fields. Every other kind takes exactly one."""
+
+
+class SubmissionShapeError(ValueError):
+    """A submission cannot be an answer of the item's kind.
+
+    Always a client bug — the input widget follows the kind — never a student
+    error, so it is raised rather than graded.
+    """
+
+
+@dataclass(frozen=True, slots=True)
+class Submission:
+    """What the student entered: one string per answer field.
+
+    The domain owns the shape, which the item's AnswerKind decides — one field,
+    or a list of values that may be empty. It never interprets a field: whether
+    one holds "(x+1)(x+2)" or "the Treaty of Versailles" is the Verifier
+    adapter's to judge, exactly as with form constraints.
+    """
+
+    fields: tuple[str, ...]
+    claims_none: bool = False
+    """The student asserts there are no values — "no real solutions", "none of
+    these". That is an answer; leaving every field blank is a decline."""
+
+    @classmethod
+    def of(cls, *fields: str) -> "Submission":
+        return cls(fields)
+
+    @classmethod
+    def none(cls) -> "Submission":
+        return cls((), claims_none=True)
+
+    @property
+    def is_blank(self) -> bool:
+        """A decline: nothing entered and nothing claimed."""
+        return not self.claims_none and all(not f.strip() for f in self.fields)
+
+    @property
+    def entries(self) -> tuple[str, ...]:
+        """The fields that hold something. A value list's spare blank field is not an answer."""
+        return tuple(f for f in self.fields if f.strip())
+
+    def check_shape(self, kind: AnswerKind) -> None:
+        if kind in MULTI_FIELD_KINDS:
+            if self.claims_none and self.entries:
+                raise SubmissionShapeError("claims there are no values, but lists some")
+            return
+        if self.claims_none or len(self.fields) != 1:
+            raise SubmissionShapeError(f"a {kind.value} answer takes exactly one field")
 
 
 @dataclass(frozen=True, slots=True)
@@ -1216,7 +1306,7 @@ class StepDiff:
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/domain/test_items.py -v`
-Expected: PASS — 6 tests.
+Expected: PASS — 9 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -1387,6 +1477,7 @@ by blocklist: only a small alphabet is admitted, every name is resolved before
 SymPy sees it, and powers are bounded before anything is evaluated.
 """
 import re
+import warnings
 
 import sympy as sp
 from sympy.parsing.sympy_parser import (
@@ -1417,6 +1508,9 @@ _FUNCTIONS = {
 }
 _CONSTANTS = {"pi": sp.pi}
 _KNOWN = sorted(_FUNCTIONS.keys() | _CONSTANTS.keys(), key=len, reverse=True)
+
+KNOWN_NAMES: frozenset[str] = frozenset(_KNOWN)
+"""Every multi-letter name the parser reads as maths rather than as single-letter variables."""
 
 _TRANSFORMATIONS = standard_transformations + (
     implicit_multiplication_application,
@@ -1503,13 +1597,18 @@ def evaluated(expr: sp.Basic, *, exact_decimals: bool = False) -> sp.Basic:
 def _parse_side(text: str) -> sp.Expr:
     rewritten, names = _resolve_names(text)
     try:
-        expr = parse_expr(
-            rewritten,
-            local_dict=names,
-            global_dict=dict(_GLOBALS),
-            transformations=_TRANSFORMATIONS,
-            evaluate=False,
-        )
+        with warnings.catch_warnings():
+            # A deprecation raised while parsing means the input built something
+            # odd — "x()" is x times an empty Tuple — so treat it as unparseable
+            # rather than rely on a path SymPy has scheduled for removal.
+            warnings.simplefilter("error", DeprecationWarning)
+            expr = parse_expr(
+                rewritten,
+                local_dict=names,
+                global_dict=dict(_GLOBALS),
+                transformations=_TRANSFORMATIONS,
+                evaluate=False,
+            )
     except Exception as exc:  # SymPy raises a wide variety here
         raise ParseError(f"could not parse {text!r}") from exc
     # Every node, not just the root: "x()" parses to x times an empty Tuple.
@@ -1850,9 +1949,15 @@ git commit -m "feat: allowlisted math parser and CAS equivalence checking"
 
 **Interfaces:**
 - Consumes: `AnswerKind`, `Verdict` (Task 1); `AnswerSpec`, `FormConstraint`, `StepDiff` (Task 3); `parse_math`, the three equivalence functions (Task 4).
-- Produces: `CheckResult(verdict: Verdict, failed_constraints: tuple[FormConstraint, ...], step_diff: StepDiff | None)`; the `Verifier` protocol with `check_answer(submitted: str, spec: AnswerSpec) -> CheckResult`, `diff_steps(steps: Sequence[str]) -> StepDiff | None`, `extract_candidate_expressions(text: str) -> tuple[str, ...]`, `matches_answer(expression: str, spec: AnswerSpec) -> bool`; `supported_constraints -> frozenset[FormConstraint]`; `SympyVerifier` implementing it. In `adapters/cas/constraints.py`: the tokens `FULLY_FACTORED`, `EXPANDED`, `SIMPLIFIED`, `EXACT_NOT_DECIMAL`, `COMPLETED_SQUARE`, the set `MATH_CONSTRAINTS`, and `UnknownConstraintError`, `UnsupportedAnswerKindError`, and the kind token `CAS_SYMBOLIC`. (`diff_steps` is stubbed to `None` in this task and implemented in Task 6.)
+- Produces: `CheckResult(verdict: Verdict, failed_constraints: tuple[FormConstraint, ...], step_diff: StepDiff | None)`; the `Verifier` protocol with `check_answer(submission: Submission, spec: AnswerSpec) -> CheckResult`, `key_submission(spec: AnswerSpec) -> Submission`, `diff_steps(steps: Sequence[str]) -> StepDiff | None`, `extract_candidate_expressions(text: str) -> tuple[str, ...]`, `matches_answer(expression: str, spec: AnswerSpec) -> bool`; `supported_constraints -> frozenset[FormConstraint]`; `SympyVerifier` implementing it. In `adapters/cas/vocabulary.py`: the tokens `FULLY_FACTORED`, `EXPANDED`, `EXACT_NOT_DECIMAL`, `COMPLETED_SQUARE`, the set `MATH_CONSTRAINTS`, the errors `UnknownConstraintError`, `UnsupportedAnswerKindError` and `InvalidAnswerKeyError`, and the kind token `CAS_SYMBOLIC`. `parse.py` also exports `KNOWN_NAMES`. (`diff_steps` is stubbed to `None` in this task and implemented in Task 6.)
 
 **Why the vocabulary lives here:** `_satisfies` is the only code in the system that ever interprets a form constraint, so the tokens belong beside it. A physics adapter will declare `correct_units` and `significant_figures` without touching the domain, which is the whole point of the `verification_kind` seam.
+
+**Form constraints judge what the student wrote.** Evaluation distributes `4(x+2)` into `4x + 8`, so a check on the evaluated form marks a correct factorisation as unfactored and accepts `2(x+1)` typed back as an expansion. Every check therefore reads the written form (Task 4's `as_written=True`), and each has a stated definition in its docstring. There is no `simplified`: it names several different school rules, each of which becomes its own constraint when an item needs it.
+
+**Content errors raise; only the student's own input is graded.** An unknown constraint or an answer key that does not parse raises before the submission is looked at. Reporting either as `MALFORMED` would tell the student their input was the problem.
+
+**What counts as a leak** (for Task 13): text a student could copy into the answer field and be marked correct — or, for a list of values, any one of them. Plain equivalence would be too broad: the question `x^2 + 3x + 2` equals its answer `(x+1)(x+2)`, and quoting the problem is not a leak.
 
 - [ ] **Step 1: Write the failing verifier test**
 
@@ -1867,83 +1972,141 @@ from learnai.adapters.cas.vocabulary import (
     EXPANDED,
     FULLY_FACTORED,
     MATH_CONSTRAINTS,
+    InvalidAnswerKeyError,
+    UnknownConstraintError,
     UnsupportedAnswerKindError,
 )
 from learnai.domain.enums import AnswerKind, Verdict
-from learnai.domain.items import AnswerSpec, FormConstraint
+from learnai.domain.items import AnswerSpec, FormConstraint, Submission, SubmissionShapeError
 
 V = SympyVerifier()
+
+
+def verdict(answer: str | Submission, spec: AnswerSpec) -> Verdict:
+    submission = answer if isinstance(answer, Submission) else Submission.of(answer)
+    return V.check_answer(submission, spec).verdict
 
 
 def test_equivalent_answer_in_any_representation_is_correct():
     spec = AnswerSpec("1/2")
     for submitted in ("1/2", "0.5", "2/4"):
-        assert V.check_answer(submitted, spec).verdict is Verdict.CORRECT
+        assert verdict(submitted, spec) is Verdict.CORRECT
 
 
 def test_wrong_answer_is_wrong():
-    assert V.check_answer("x + 3", AnswerSpec("x + 1")).verdict is Verdict.WRONG
+    assert verdict("x + 3", AnswerSpec("x + 1")) is Verdict.WRONG
 
 
 def test_unparseable_answer_is_malformed_not_wrong():
-    assert V.check_answer("x +* 2", AnswerSpec("x + 1")).verdict is Verdict.MALFORMED
+    assert verdict("x +* 2", AnswerSpec("x + 1")) is Verdict.MALFORMED
 
 
-def test_factored_form_is_required_when_the_constraint_says_so():
-    spec = AnswerSpec("(x + 1)*(x + 2)", (FULLY_FACTORED,))
-    assert V.check_answer("(x+1)(x+2)", spec).verdict is Verdict.CORRECT
+def test_a_blank_submission_is_no_answer():
+    assert verdict("  ", AnswerSpec("x + 1")) is Verdict.NO_ANSWER
 
-    result = V.check_answer("x^2 + 3x + 2", spec)
+
+def test_naming_the_value_found_is_accepted():
+    """A student asked for the vertex's x-coordinate writes "x = -3"."""
+    assert verdict("x = -3", AnswerSpec("-3")) is Verdict.CORRECT
+
+
+def test_an_equation_in_a_value_field_is_not_mistaken_for_a_named_value():
+    assert verdict("x = x + 1", AnswerSpec("1")) is Verdict.MALFORMED
+
+
+# -- form constraints judge what was written, not what SymPy normalises it to --
+
+
+@pytest.mark.parametrize("written", ["(x+1)(x+2)", "4(x+2)", "2(x+1)(x+2)", "x^2 + 1", "-(x-1)(x+3)"])
+def test_fully_factored_accepts_complete_factorisations(written):
+    from learnai.adapters.cas.parse import parse_math
+
+    key = AnswerSpec(str(parse_math(written)), (FULLY_FACTORED,))
+    assert verdict(written, key) is Verdict.CORRECT
+
+
+@pytest.mark.parametrize("written", ["x^2 + 3x + 2", "(2x+2)(x+2)", "(x^2 - 1)(x + 3)", "4x + 8"])
+def test_fully_factored_rejects_what_can_still_be_factored(written):
+    from learnai.adapters.cas.parse import parse_math
+
+    key = AnswerSpec(str(parse_math(written)), (FULLY_FACTORED,))
+    result = V.check_answer(Submission.of(written), key)
     assert result.verdict is Verdict.WRONG
     assert result.failed_constraints == (FULLY_FACTORED,)
 
 
-def test_an_irreducible_expression_satisfies_fully_factored():
-    spec = AnswerSpec("x^2 + 1", (FULLY_FACTORED,))
-    assert V.check_answer("x^2 + 1", spec).verdict is Verdict.CORRECT
-
-
 def test_expanded_form_is_required_when_the_constraint_says_so():
     spec = AnswerSpec("x^2 + 3*x + 2", (EXPANDED,))
-    assert V.check_answer("x^2 + 3x + 2", spec).verdict is Verdict.CORRECT
-    assert V.check_answer("(x+1)(x+2)", spec).verdict is Verdict.WRONG
+    assert verdict("x^2 + 3x + 2", spec) is Verdict.CORRECT
+    assert verdict("(x+1)(x+2)", spec) is Verdict.WRONG
+    assert verdict("x^2 + 2x + x + 2", spec) is Verdict.WRONG, "like terms must be combined"
 
 
-def test_exact_form_rejects_a_decimal_approximation():
-    spec = AnswerSpec("sqrt(2)", (EXACT_NOT_DECIMAL,))
-    assert V.check_answer("sqrt(2)", spec).verdict is Verdict.CORRECT
-    assert V.check_answer("1.41421356", spec).verdict is Verdict.WRONG
-
-
-def test_solution_set_answers_ignore_order():
-    spec = AnswerSpec("-1, 2", kind=AnswerKind.VALUE_SET)
-    assert V.check_answer("2, -1", spec).verdict is Verdict.CORRECT
-    assert V.check_answer("-1", spec).verdict is Verdict.WRONG
-
-
-def test_equation_answers_compare_solution_sets():
-    spec = AnswerSpec("x = 5", kind=AnswerKind.RELATION)
-    assert V.check_answer("2x = 10", spec).verdict is Verdict.CORRECT
-    assert V.check_answer("x = 8", spec).verdict is Verdict.WRONG
+def test_the_question_typed_back_is_not_expanded():
+    """Evaluation would distribute 2(x+1) into 2x + 2; the student wrote no expansion."""
+    assert verdict("2(x+1)", AnswerSpec("2*x + 2", (EXPANDED,))) is Verdict.WRONG
 
 
 def test_completed_square_form_is_required_when_the_constraint_says_so():
     spec = AnswerSpec("(x + 3)**2 - 4", (COMPLETED_SQUARE,))
-    assert V.check_answer("(x+3)^2 - 4", spec).verdict is Verdict.CORRECT
+    assert verdict("(x+3)^2 - 4", spec) is Verdict.CORRECT
 
-    result = V.check_answer("x^2 + 6x + 5", spec)
+    result = V.check_answer(Submission.of("x^2 + 6x + 5"), spec)
     assert result.verdict is Verdict.WRONG
     assert result.failed_constraints == (COMPLETED_SQUARE,)
 
 
-def test_solution_set_constraints_apply_to_every_root():
-    spec = AnswerSpec(
-        "1 + sqrt(2), 1 - sqrt(2)",
-        (EXACT_NOT_DECIMAL,),
-        kind=AnswerKind.VALUE_SET,
-    )
-    assert V.check_answer("1 - sqrt(2), 1 + sqrt(2)", spec).verdict is Verdict.CORRECT
-    assert V.check_answer("2.414213, -0.414213", spec).verdict is Verdict.WRONG
+def test_a_product_of_two_brackets_is_not_a_completed_square():
+    spec = AnswerSpec("(x + 3)**2 - 4", (COMPLETED_SQUARE,))
+    assert verdict("(x+3)(x+3) - 4", spec) is Verdict.WRONG
+
+
+def test_exact_form_rejects_a_decimal_for_an_exact_value():
+    result = V.check_answer(Submission.of("0.5"), AnswerSpec("1/2", (EXACT_NOT_DECIMAL,)))
+    assert result.verdict is Verdict.WRONG
+    assert result.failed_constraints == (EXACT_NOT_DECIMAL,)
+
+
+# -- answer kinds ---------------------------------------------------------------
+
+
+def test_value_list_answers_ignore_order():
+    spec = AnswerSpec("-1, 2", kind=AnswerKind.VALUE_SET)
+    assert verdict(Submission.of("2", "-1"), spec) is Verdict.CORRECT
+    assert verdict(Submission.of("-1"), spec) is Verdict.WRONG
+
+
+def test_value_list_fields_may_name_their_values_and_leave_a_spare_blank():
+    spec = AnswerSpec("2, -3", kind=AnswerKind.VALUE_SET)
+    assert verdict(Submission.of("x = 2", "x = -3", ""), spec) is Verdict.CORRECT
+
+
+def test_a_repeated_root_counts_once():
+    spec = AnswerSpec("3", kind=AnswerKind.VALUE_SET)
+    assert verdict(Submission.of("3", "3"), spec) is Verdict.CORRECT
+
+
+def test_claiming_there_are_no_values_is_an_answer():
+    assert verdict(Submission.none(), AnswerSpec("", kind=AnswerKind.VALUE_SET)) is Verdict.CORRECT
+    assert verdict(Submission.none(), AnswerSpec("2", kind=AnswerKind.VALUE_SET)) is Verdict.WRONG
+
+
+def test_value_list_constraints_apply_to_every_value():
+    spec = AnswerSpec("1 + sqrt(2), 1 - sqrt(2)", (EXACT_NOT_DECIMAL,), kind=AnswerKind.VALUE_SET)
+    assert verdict(Submission.of("1 - sqrt(2)", "1 + sqrt(2)"), spec) is Verdict.CORRECT
+    assert verdict(Submission.of("2.414213", "-0.414213"), spec) is Verdict.WRONG
+
+
+def test_equation_answers_compare_solution_sets():
+    spec = AnswerSpec("x = 5", kind=AnswerKind.RELATION)
+    assert verdict("2x = 10", spec) is Verdict.CORRECT
+    assert verdict("x = 8", spec) is Verdict.WRONG
+    assert verdict("5", spec) is Verdict.MALFORMED
+
+
+def test_a_submission_of_the_wrong_shape_is_a_client_bug():
+    with pytest.raises(SubmissionShapeError):
+        V.check_answer(Submission.of("1", "2"), AnswerSpec("x + 1"))
 
 
 def test_an_unsupported_answer_kind_raises_rather_than_guessing():
@@ -1955,30 +2118,74 @@ def test_an_unsupported_answer_kind_raises_rather_than_guessing():
     """
     spec = AnswerSpec("x + 1", kind="ordered_sequence")  # type: ignore[arg-type]
     with pytest.raises(UnsupportedAnswerKindError):
-        V.check_answer("x + 1", spec)
+        V.check_answer(Submission.of("x + 1"), spec)
+
+
+# -- content errors are raised, never graded as the student's mistake -----------
 
 
 def test_the_verifier_declares_the_vocabulary_it_can_judge():
     assert V.supported_constraints == MATH_CONSTRAINTS
 
 
-def test_an_unknown_constraint_fails_loudly_rather_than_silently_passing():
-    from learnai.adapters.cas.vocabulary import UnknownConstraintError
-
+def test_an_unknown_constraint_fails_loudly_even_when_the_answer_is_wrong():
     spec = AnswerSpec("x + 1", (FormConstraint("balanced_equation"),))
     with pytest.raises(UnknownConstraintError):
-        V.check_answer("x + 1", spec)
+        V.check_answer(Submission.of("x + 9"), spec)
 
 
-def test_extracts_candidate_expressions_from_prose():
-    found = V.extract_candidate_expressions("Try rewriting it as (x+1)(x+2) and see.")
-    assert "(x+1)(x+2)" in found
+def test_an_answer_key_that_does_not_parse_is_a_content_error():
+    with pytest.raises(InvalidAnswerKeyError):
+        V.check_answer(Submission.of("x + 1"), AnswerSpec("x +* 1"))
 
 
-def test_matches_answer_detects_an_equivalent_expression():
-    spec = AnswerSpec("(x + 1)*(x + 2)")
-    assert V.matches_answer("x^2+3x+2", spec)
+def test_the_key_submission_is_what_a_student_would_enter():
+    assert V.key_submission(AnswerSpec("-1, 2", kind=AnswerKind.VALUE_SET)) == Submission.of("-1", "2")
+    assert V.key_submission(AnswerSpec("", kind=AnswerKind.VALUE_SET)) == Submission.none()
+    assert V.key_submission(AnswerSpec("x + 1")) == Submission.of("x + 1")
+
+
+# -- what the leak guard sees ----------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "prose,expected",
+    [
+        ("Try rewriting it as (x+1)(x+2) and see.", "(x+1)(x+2)"),
+        ("So the roots are x = 2 and x = 3.", "3"),
+        ("It factors as x² + 3x + 2 = (x + 1)(x + 2).", "(x + 1)(x + 2)"),
+        ("It factors as x² + 3x + 2 = (x + 1)(x + 2).", "x^2 + 3x + 2"),
+        ("The roots are 2, 3.", "2"),
+        ("Inline maths like $(x+1)(x+2)$ is read too.", "(x+1)(x+2)"),
+        ("Take √2 as given.", "sqrt(2)"),
+    ],
+)
+def test_extracts_candidate_expressions_from_prose(prose, expected):
+    assert expected in V.extract_candidate_expressions(prose)
+
+
+def test_prose_words_are_never_candidates():
+    assert V.extract_candidate_expressions("Take your time and read the question.") == ()
+
+
+def test_a_leak_is_what_would_be_marked_correct():
+    spec = AnswerSpec("(x + 1)*(x + 2)", (FULLY_FACTORED,))
+    assert V.matches_answer("(x+2)(x+1)", spec)
+    assert not V.matches_answer("x^2 + 3x + 2", spec), "quoting the question is not a leak"
     assert not V.matches_answer("x + 7", spec)
+
+
+def test_revealing_any_one_root_is_a_leak():
+    spec = AnswerSpec("2, 3", kind=AnswerKind.VALUE_SET)
+    assert V.matches_answer("2", spec)
+    assert V.matches_answer("x = 3", spec)
+    assert not V.matches_answer("6", spec)
+
+
+def test_an_equivalent_equation_leaks_a_relation():
+    spec = AnswerSpec("x = 5", kind=AnswerKind.RELATION)
+    assert V.matches_answer("2x = 10", spec)
+    assert not V.matches_answer("x = 6", spec)
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
@@ -2009,7 +2216,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Protocol
 
-from learnai.domain.items import AnswerSpec, FormConstraint, StepDiff
+from learnai.domain.items import AnswerSpec, FormConstraint, StepDiff, Submission
 from learnai.domain.verification import CheckResult
 
 
@@ -2021,13 +2228,31 @@ class Verifier(Protocol):
         """The form vocabulary this adapter can judge. Content is validated against it."""
         ...
 
-    def check_answer(self, submitted: str, spec: AnswerSpec) -> CheckResult: ...
+    def check_answer(self, submission: Submission, spec: AnswerSpec) -> CheckResult:
+        """Grade a submission. A blank one is NO_ANSWER; an answer key or form
+        constraint the adapter cannot use raises, because a content error must
+        never be reported to the student as their mistake."""
+        ...
+
+    def key_submission(self, spec: AnswerSpec) -> Submission:
+        """The submission that enters this item's answer key.
+
+        Only the adapter can build it, because the key's format is the
+        adapter's. It is what a reveal shows and what a test submits as right.
+        """
+        ...
 
     def diff_steps(self, steps: Sequence[str]) -> StepDiff | None: ...
 
     def extract_candidate_expressions(self, text: str) -> tuple[str, ...]: ...
 
-    def matches_answer(self, expression: str, spec: AnswerSpec) -> bool: ...
+    def matches_answer(self, expression: str, spec: AnswerSpec) -> bool:
+        """Would this text, entered as the answer, give it away?
+
+        The leak guard's definition of a leak: text a student could copy into the
+        answer field and be marked correct — or, for a list of values, one of them.
+        """
+        ...
 
 
 class Clock(Protocol):
@@ -2044,6 +2269,10 @@ The core knows a skill has a verification kind and that an answer may carry
 form requirements; it never knows what "cas_symbolic" or "fully_factored"
 mean. This module is the only place the mathematical vocabulary is named, and
 `sympy_verifier._satisfies` is the only place it is interpreted.
+
+Answer keys use this adapter's format: a value in the parser's syntax, an
+equation for a RELATION, and for a VALUE_SET the values separated by commas,
+with an empty key meaning there are none.
 """
 from learnai.domain.ids import VerificationKind
 from learnai.domain.items import FormConstraint
@@ -2052,12 +2281,14 @@ CAS_SYMBOLIC = VerificationKind("cas_symbolic")
 
 FULLY_FACTORED = FormConstraint("fully_factored")
 EXPANDED = FormConstraint("expanded")
-SIMPLIFIED = FormConstraint("simplified")
 EXACT_NOT_DECIMAL = FormConstraint("exact_not_decimal")
 COMPLETED_SQUARE = FormConstraint("completed_square")
 
+# No "simplified": it has no single meaning — lowest terms, rationalised
+# denominators and collected terms are separate school rules, each of which
+# becomes its own constraint when an item needs it.
 MATH_CONSTRAINTS: frozenset[FormConstraint] = frozenset(
-    {FULLY_FACTORED, EXPANDED, SIMPLIFIED, EXACT_NOT_DECIMAL, COMPLETED_SQUARE}
+    {FULLY_FACTORED, EXPANDED, EXACT_NOT_DECIMAL, COMPLETED_SQUARE}
 )
 
 
@@ -2076,6 +2307,14 @@ class UnknownConstraintError(KeyError):
     Raised rather than ignored: silently skipping an unknown constraint would
     mark a wrongly-formed answer correct, which is worse than a loud failure.
     """
+
+
+class InvalidAnswerKeyError(ValueError):
+    """An item's answer key does not parse, or asks for something it cannot.
+
+    A content error, raised so it is fixed, never graded as the student's
+    MALFORMED. The generator contract tests catch it before an item ships.
+    """
 ```
 
 - [ ] **Step 5: Write the SymPy verifier**
@@ -2083,7 +2322,7 @@ class UnknownConstraintError(KeyError):
 ```python
 # src/learnai/adapters/cas/sympy_verifier.py
 import re
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 
 import sympy as sp
 
@@ -2092,22 +2331,33 @@ from learnai.adapters.cas.equivalence import (
     expressions_equivalent,
     solution_sets_equivalent,
 )
+from learnai.adapters.cas.parse import KNOWN_NAMES, ParseError, evaluated, parse_math
 from learnai.adapters.cas.vocabulary import (
     COMPLETED_SQUARE,
     EXACT_NOT_DECIMAL,
     EXPANDED,
     FULLY_FACTORED,
     MATH_CONSTRAINTS,
-    SIMPLIFIED,
+    InvalidAnswerKeyError,
     UnknownConstraintError,
     UnsupportedAnswerKindError,
 )
-from learnai.adapters.cas.parse import ParseError, parse_math
 from learnai.domain.enums import AnswerKind, Verdict
-from learnai.domain.items import AnswerSpec, FormConstraint, StepDiff
+from learnai.domain.items import AnswerSpec, FormConstraint, StepDiff, Submission
 from learnai.domain.verification import CheckResult
 
-_CANDIDATE_PATTERN = re.compile(r"[0-9A-Za-z_^+\-*/(). ]{3,}")
+_SUPPORTED_KINDS = frozenset({AnswerKind.SINGLE_VALUE, AnswerKind.RELATION, AnswerKind.VALUE_SET})
+
+# "x = -3" names the value found. Only a single letter, and only when it does
+# not appear on the right: "x = x + 1" is an equation and stays one.
+_NAMED_VALUE = re.compile(r"\s*([A-Za-z])\s*=(?!=)(.*)", re.S)
+
+# Tutor prose arrives with typographic maths; the parser only reads ASCII.
+_UNICODE_MATHS = str.maketrans(
+    {"−": "-", "–": "-", "×": "*", "·": "*", "⋅": "*", "÷": "/", "²": "^2", "³": "^3"}
+)
+_ROOT_SIGN = re.compile(r"√\s*(\(|[0-9]+|[A-Za-z])")
+_EDGE = ".,;:!?\"'`$"  # sentence punctuation, and the dollars of inline maths
 
 
 class SympyVerifier:
@@ -2117,100 +2367,251 @@ class SympyVerifier:
     def supported_constraints(self) -> frozenset[FormConstraint]:
         return MATH_CONSTRAINTS
 
-    def check_answer(self, submitted: str, spec: AnswerSpec) -> CheckResult:
+    def check_answer(self, submission: Submission, spec: AnswerSpec) -> CheckResult:
+        key = _parse_key(spec)  # content errors raise before the student is judged
+        submission.check_shape(spec.kind)
+        if submission.is_blank:
+            return CheckResult(Verdict.NO_ANSWER)
         try:
             if spec.kind is AnswerKind.VALUE_SET:
-                got = [parse_math(p) for p in submitted.split(",")]
-                want = [parse_math(p) for p in spec.expression.split(",")]
-                if not solution_sets_equivalent(got, want):
-                    return CheckResult(Verdict.WRONG)
-                failed_roots = tuple(
-                    c
-                    for c in spec.form_constraints
-                    if not all(_satisfies(root, c) for root in got)
-                )
-                if failed_roots:
-                    return CheckResult(Verdict.WRONG, failed_constraints=failed_roots)
-                return CheckResult(Verdict.CORRECT)
-
+                return _check_values(submission, key, spec.form_constraints)
             if spec.kind is AnswerKind.RELATION:
-                # Written forms: equation checks must see the holes (Task 4).
-                got_eq = parse_math(submitted, allow_equation=True, as_written=True)
-                want_eq = parse_math(spec.expression, allow_equation=True, as_written=True)
-                if not isinstance(got_eq, sp.Eq) or not isinstance(want_eq, sp.Eq):
-                    return CheckResult(Verdict.MALFORMED)
-                ok = equations_equivalent(got_eq, want_eq)
-                return CheckResult(Verdict.CORRECT if ok else Verdict.WRONG)
-
-            if spec.kind is not AnswerKind.SINGLE_VALUE:
-                raise UnsupportedAnswerKindError(spec.kind)
-
-            got_expr = parse_math(submitted)
-            want_expr = parse_math(spec.expression)
+                return _check_relation(submission.fields[0], key)
+            return _check_single(submission.fields[0], key, spec.form_constraints)
         except ParseError:
             return CheckResult(Verdict.MALFORMED)
 
-        if not expressions_equivalent(got_expr, want_expr):
-            return CheckResult(Verdict.WRONG)
-
-        failed = tuple(
-            c for c in spec.form_constraints if not _satisfies(got_expr, c)
-        )
-        if failed:
-            return CheckResult(Verdict.WRONG, failed_constraints=failed)
-        return CheckResult(Verdict.CORRECT)
+    def key_submission(self, spec: AnswerSpec) -> Submission:
+        if spec.kind is AnswerKind.VALUE_SET:
+            values = _key_values(spec.expression)
+            return Submission(tuple(values)) if values else Submission.none()
+        return Submission.of(spec.expression)
 
     def diff_steps(self, steps: Sequence[str]) -> StepDiff | None:
         return None  # implemented in Task 6
 
     def extract_candidate_expressions(self, text: str) -> tuple[str, ...]:
+        """Every stretch of maths in a piece of prose, and its parts.
+
+        A word of two or more letters that is not a known function name ends a
+        stretch, so "Try rewriting it as (x+1)(x+2) and see." yields
+        "(x+1)(x+2)". Each side of an "=" and each item of a comma list is a
+        candidate too, since any of them may be the answer on its own.
+        """
+        text = _ROOT_SIGN.sub(
+            lambda m: "sqrt(" if m.group(1) == "(" else f"sqrt({m.group(1)})",
+            text.translate(_UNICODE_MATHS),
+        )
         found: list[str] = []
-        for match in _CANDIDATE_PATTERN.finditer(text):
-            candidate = match.group().strip()
-            if not any(ch.isdigit() or ch in "xyzab" for ch in candidate):
-                continue
-            found.append(candidate)
+        for stretch in _maths_stretches(text):
+            pieces = [stretch]
+            if "=" in stretch:
+                pieces += stretch.split("=")
+            pieces += [item for piece in list(pieces) for item in piece.split(",")]
+            for piece in pieces:
+                piece = piece.strip(_EDGE + " ")
+                if piece and piece not in found:
+                    found.append(piece)
         return tuple(found)
 
     def matches_answer(self, expression: str, spec: AnswerSpec) -> bool:
+        # Plain equivalence would be too broad: the question x^2 + 3x + 2 equals
+        # its answer (x+1)(x+2), and quoting the problem is not a leak.
+        if spec.kind is AnswerKind.VALUE_SET:
+            key = _parse_key(spec)
+            try:
+                value = parse_math(_value_text(expression), as_written=True)
+            except ParseError:
+                return False
+            return any(
+                expressions_equivalent(value, k) for k in key
+            ) and all(_satisfies(value, c) for c in spec.form_constraints)
+        verdict = self.check_answer(Submission.of(expression), spec).verdict
+        return verdict is Verdict.CORRECT
+
+
+def _maths_stretches(text: str) -> Iterator[str]:
+    current: list[str] = []
+    for token in text.split():
+        core = token.strip(_EDGE + "()")
+        if core.isalpha() and len(core) > 1 and core.lower() not in KNOWN_NAMES:
+            if current:
+                yield " ".join(current).strip(_EDGE + " ")
+            current = []
+        else:
+            current.append(token)
+    if current:
+        yield " ".join(current).strip(_EDGE + " ")
+
+
+def _parse_key(spec: AnswerSpec) -> object:
+    if spec.kind not in _SUPPORTED_KINDS:
+        raise UnsupportedAnswerKindError(spec.kind)
+    if unknown := set(spec.form_constraints) - MATH_CONSTRAINTS:
+        raise UnknownConstraintError(sorted(unknown))
+    try:
+        if spec.kind is AnswerKind.VALUE_SET:
+            return [parse_math(v) for v in _key_values(spec.expression)]
+        if spec.kind is AnswerKind.RELATION:
+            if spec.form_constraints:
+                raise InvalidAnswerKeyError("form constraints apply to values, not relations")
+            key = parse_math(spec.expression, allow_equation=True, as_written=True)
+            if not isinstance(key, sp.Eq):
+                raise InvalidAnswerKeyError(f"relation key {spec.expression!r} is not an equation")
+            return key
+        return parse_math(spec.expression)
+    except ParseError as exc:
+        raise InvalidAnswerKeyError(f"answer key {spec.expression!r} does not parse") from exc
+
+
+def _key_values(expression: str) -> list[str]:
+    return [v for v in (part.strip() for part in expression.split(",")) if v]
+
+
+def _value_text(field: str) -> str:
+    """'x = -3' reads as '-3': naming the value found is not part of the value."""
+    named = _NAMED_VALUE.fullmatch(field)
+    if named is None:
+        return field
+    try:
+        value = parse_math(named.group(2))
+    except ParseError:
+        return field
+    return named.group(2) if sp.Symbol(named.group(1)) not in value.free_symbols else field
+
+
+def _check_single(
+    field: str, key: sp.Expr, constraints: tuple[FormConstraint, ...]
+) -> CheckResult:
+    written = parse_math(_value_text(field), as_written=True)
+    if not expressions_equivalent(written, key):
+        return CheckResult(Verdict.WRONG)
+    failed = tuple(c for c in constraints if not _satisfies(written, c))
+    return CheckResult(Verdict.WRONG, failed) if failed else CheckResult(Verdict.CORRECT)
+
+
+def _check_relation(field: str, key: sp.Eq) -> CheckResult:
+    written = parse_math(field, allow_equation=True, as_written=True)
+    if not isinstance(written, sp.Eq):
+        return CheckResult(Verdict.MALFORMED)
+    return CheckResult(Verdict.CORRECT if equations_equivalent(written, key) else Verdict.WRONG)
+
+
+def _check_values(
+    submission: Submission, key: list[sp.Expr], constraints: tuple[FormConstraint, ...]
+) -> CheckResult:
+    if submission.claims_none:
+        return CheckResult(Verdict.CORRECT if not key else Verdict.WRONG)
+    written = [parse_math(_value_text(field), as_written=True) for field in submission.entries]
+    # A set: a repeated root is one solution, however many times it is entered.
+    if not solution_sets_equivalent(_distinct(written), _distinct(key)):
+        return CheckResult(Verdict.WRONG)
+    failed = tuple(c for c in constraints if not all(_satisfies(v, c) for v in written))
+    return CheckResult(Verdict.WRONG, failed) if failed else CheckResult(Verdict.CORRECT)
+
+
+def _distinct(values: Sequence[sp.Expr]) -> list[sp.Expr]:
+    kept: list[sp.Expr] = []
+    for value in values:
+        if not any(expressions_equivalent(value, seen) for seen in kept):
+            kept.append(value)
+    return kept
+
+
+# -- form constraints, judged on what the student wrote ------------------------
+
+
+def _factors(expr: sp.Basic) -> Iterator[sp.Basic]:
+    """The multiplicands of a written product, however the parser nested them."""
+    if isinstance(expr, sp.Mul):
+        for arg in expr.args:
+            yield from _factors(arg)
+    else:
+        yield expr
+
+
+def _terms(expr: sp.Basic) -> Iterator[sp.Basic]:
+    """The summands of a written sum, however the parser nested them."""
+    if isinstance(expr, sp.Add):
+        for arg in expr.args:
+            yield from _terms(arg)
+    else:
+        yield expr
+
+
+def _is_fully_factored(written: sp.Expr) -> bool:
+    """Every factor is irreducible over the rationals, with no whole number left inside it.
+
+    4(x+2) passes; (2x+2)(x+2) does not, since the 2 inside the first factor is
+    still common; x^2 + 1 passes, since it cannot be factored over the rationals.
+    """
+    for factor in _factors(written):
+        base = factor.base if isinstance(factor, sp.Pow) else factor
+        if base.is_number:
+            continue
         try:
-            got = parse_math(expression)
-            want = parse_math(spec.expression)
-        except ParseError:
+            content, irreducibles = sp.factor_list(evaluated(base))
+        except sp.PolynomialError:
+            continue  # not a polynomial: nothing left to factor at school level
+        if abs(content) != 1 or len(irreducibles) != 1 or irreducibles[0][1] != 1:
             return False
-        return expressions_equivalent(got, want)
+    return True
 
 
-def _is_completed_square(expr: sp.Expr) -> bool:
-    """True for (x + p)**2 + q and for a bare (x + p)**2."""
-    terms = expr.args if expr.is_Add else (expr,)
-    squares = [t for t in terms if t.is_Pow and t.exp == 2]
-    constants = [t for t in terms if t.is_number]
-    return len(squares) == 1 and len(terms) == len(squares) + len(constants)
+def _is_expanded(written: sp.Expr) -> bool:
+    """No product or power of a sum remains, and like terms are combined."""
+    for node in sp.preorder_traversal(written):
+        if isinstance(node, sp.Mul) and any(isinstance(f, sp.Add) for f in _factors(node)):
+            return False
+        if isinstance(node, sp.Pow) and isinstance(node.base, sp.Add):
+            if node.exp.is_Integer and node.exp > 1:
+                return False
+    combined = sp.Add.make_args(sp.expand(evaluated(written)))
+    return len(list(_terms(written))) == len(combined)
+
+
+def _is_square_of_sum(term: sp.Basic) -> bool:
+    factors = list(_factors(term))
+    squares = [
+        f for f in factors if isinstance(f, sp.Pow) and isinstance(f.base, sp.Add) and f.exp == 2
+    ]
+    return len(squares) == 1 and all(f.is_number for f in factors if f is not squares[0])
+
+
+def _is_completed_square(written: sp.Expr) -> bool:
+    """a(x + p)^2 + q: one squared sum, optionally times a number, and at most one number beside it."""
+    squares = numbers = others = 0
+    for term in _terms(written):
+        if term.is_number:
+            numbers += 1
+        elif _is_square_of_sum(term):
+            squares += 1
+        else:
+            others += 1
+    return squares == 1 and numbers <= 1 and others == 0
 
 
 _FORM_CHECKS: dict[FormConstraint, Callable[[sp.Expr], bool]] = {
-    # factor() is idempotent: an already-factored expression is its own factorisation.
-    FULLY_FACTORED: lambda e: sp.factor(e) == e,
-    EXPANDED: lambda e: sp.expand(e) == e,
-    SIMPLIFIED: lambda e: sp.count_ops(sp.simplify(e)) >= sp.count_ops(e),
-    EXACT_NOT_DECIMAL: lambda e: not e.atoms(sp.Float),
+    FULLY_FACTORED: _is_fully_factored,
+    EXPANDED: _is_expanded,
+    EXACT_NOT_DECIMAL: lambda written: not written.atoms(sp.Float),
     COMPLETED_SQUARE: _is_completed_square,
 }
 assert set(_FORM_CHECKS) == MATH_CONSTRAINTS, "declared vocabulary and checks disagree"
 
 
-def _satisfies(expr: sp.Expr, constraint: FormConstraint) -> bool:
+def _satisfies(written: sp.Expr, constraint: FormConstraint) -> bool:
+    """Judge a form constraint on the written form: 4(x+2) must still look factored."""
     check = _FORM_CHECKS.get(constraint)
     if check is None:
         raise UnknownConstraintError(constraint)
-    return check(expr)
+    return check(written)
 ```
 
 - [ ] **Step 6: Run the verifier tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/adapters/test_sympy_verifier.py -v`
-Expected: PASS — 16 tests.
+Expected: PASS — 43 tests.
 
 - [ ] **Step 7: Run the whole suite, including the purity test**
 
@@ -2714,6 +3115,7 @@ from learnai.adapters.cas.sympy_verifier import SympyVerifier
 from learnai.adapters.content.generators.quadratics import QUADRATICS_TEMPLATES
 from learnai.adapters.content.registry import GeneratorRegistry
 from learnai.domain.enums import AnswerKind, Verdict
+from learnai.domain.items import Submission
 
 REGISTRY = GeneratorRegistry(QUADRATICS_TEMPLATES)
 VERIFIER = SympyVerifier()
@@ -2741,7 +3143,7 @@ def test_generation_is_deterministic_and_well_formed(spec):
 def test_the_answer_key_is_correct_by_its_own_verifier(spec):
     for seed in range(DEEP_SEEDS):
         item = REGISTRY.instantiate(spec.id, seed)
-        result = VERIFIER.check_answer(item.answer_spec.expression, item.answer_spec)
+        result = VERIFIER.check_answer(VERIFIER.key_submission(item.answer_spec), item.answer_spec)
         assert result.verdict is Verdict.CORRECT, (spec.id, seed, item, result)
 
 
@@ -2753,27 +3155,17 @@ def test_worked_steps_never_contain_a_broken_transition(spec):
 
 
 @pytest.mark.parametrize("spec", QUADRATICS_TEMPLATES, ids=ids)
-def test_the_problem_is_never_already_in_its_answer_form(spec):
-    for seed in range(DEEP_SEEDS):
-        problem = REGISTRY.instantiate_raw(spec.id, seed)
-        if problem.prompt_expression is None:
-            continue
-        prompt = parse_math(problem.prompt_expression)
-        answer = parse_math(problem.answer)
-        assert prompt != answer, f"{spec.id} seed {seed} is a trivial restatement"
-
-
-@pytest.mark.parametrize("spec", QUADRATICS_TEMPLATES, ids=ids)
 def test_typing_the_question_back_is_never_accepted(spec):
     """Equivalence alone accepts a restatement — (x+1)(x+2) is equal to its own
     expansion — so an item whose prompt is an expression must carry a form
-    constraint that rejects the prompt itself."""
+    constraint that rejects the prompt itself. This subsumes checking that the
+    prompt is not already in its answer's form."""
     for seed in range(DEEP_SEEDS):
         problem = REGISTRY.instantiate_raw(spec.id, seed)
         if problem.prompt_expression is None:
             continue
         item = REGISTRY.instantiate(spec.id, seed)
-        result = VERIFIER.check_answer(problem.prompt_expression, item.answer_spec)
+        result = VERIFIER.check_answer(Submission.of(problem.prompt_expression), item.answer_spec)
         assert result.verdict is not Verdict.CORRECT, (spec.id, seed, problem.prompt_expression)
 
 
@@ -2826,7 +3218,7 @@ def test_every_skill_in_the_cluster_has_a_template():
 - [ ] **Step 5: Run the contract tests**
 
 Run: `.venv/bin/pytest tests/content/test_generator_contracts.py -v`
-Expected: PASS — 87 tests (seven parametrised suites over twelve templates, plus three standalone). This is the slowest suite in the project; if it exceeds about 90 seconds, lower `DEEP_SEEDS` to 30 rather than weakening an assertion.
+Expected: PASS — 75 tests (six parametrised suites over twelve templates, plus three standalone). This is the slowest suite in the project; if it exceeds about 90 seconds, lower `DEEP_SEEDS` to 30 rather than weakening an assertion.
 
 - [ ] **Step 6: Commit**
 
@@ -4485,7 +4877,7 @@ def detect_leak(
 Run: `.venv/bin/pytest tests/domain/test_leakguard.py -v`
 Expected: PASS — 10 tests.
 
-If a genuine-hint case fails, the fault is in `extract_candidate_expressions` being too greedy rather than in the guard. Tighten the regex in `SympyVerifier` — never loosen `matches_answer`, because a false negative there is a leak reaching a student.
+If a genuine-hint case fails, the fault is in `extract_candidate_expressions` being too greedy rather than in the guard. Tighten the extractor in `SympyVerifier` — never loosen `matches_answer`, because a false negative there is a leak reaching a student.
 
 - [ ] **Step 5: Commit**
 
@@ -5541,7 +5933,7 @@ git commit -m "feat: append-only evidence log with replayable projection"
 
 **Interfaces:**
 - Consumes: everything from Tasks 1–16.
-- Produces: `SubmitOutcome(verdict, step_diff, diagnosis, evidence_class, tutor_turn, task_completed)`; `PracticeEngine(graph, misconceptions, item_source, verifiers, tutor, matcher, evidence_log, clock, contract, parameters, parameter_overrides)` — `verifiers` is a `Mapping[VerificationKind, Verifier]` resolved per skill — construction raises `UnregisteredVerifierError` if any skill's kind is missing from it — and `parameter_overrides` a `Mapping[SkillId, MasteryParameters]` with `start_session(...) -> Session`, `submit(session, states, steps, final_answer, confidence) -> tuple[Session, states, SubmitOutcome]`, `request_help(session, states) -> tuple[Session, TutorTurn | None]`.
+- Produces: `SubmitOutcome(verdict, step_diff, diagnosis, evidence_class, tutor_turn, task_completed)`; `PracticeEngine(graph, misconceptions, item_source, verifiers, tutor, matcher, evidence_log, clock, contract, parameters, parameter_overrides)` — `verifiers` is a `Mapping[VerificationKind, Verifier]` resolved per skill — construction raises `UnregisteredVerifierError` if any skill's kind is missing from it — and `parameter_overrides` a `Mapping[SkillId, MasteryParameters]` with `start_session(...) -> Session`, `submit(session, states, steps, answer: Submission, confidence) -> tuple[Session, states, SubmitOutcome]`, `request_help(session, states) -> tuple[Session, TutorTurn | None]`.
 
 **Two seams made real here.** The engine resolves a verifier per skill through
 `verifiers[skill.verification_kind]`, so `verification_kind` is a live lookup rather than a
@@ -5575,12 +5967,18 @@ from learnai.domain.contracts import PRACTICE
 from learnai.domain.engine import PracticeEngine, UnregisteredVerifierError
 from learnai.domain.enums import Confidence, EvidenceClass, HelpRung, Verdict
 from learnai.domain.ids import CourseId, SessionId, StudentId
+from learnai.domain.items import Submission
 from learnai.domain.mastery import is_learned
 
 CLUSTER = load_cluster(
     pathlib.Path(__file__).parent.parent.parent / "content" / "quadratics" / "skills.yaml"
 )
 COURSE = CLUSTER.graph.topological_order()
+
+
+def right(task) -> Submission:
+    """What a student who knows the answer enters."""
+    return SympyVerifier().key_submission(task.item.answer_spec)
 
 
 def build(tutor: FakeTutor | None = None, clock: FakeClock | None = None):
@@ -5636,7 +6034,7 @@ def test_a_correct_first_attempt_costs_no_tutor_turn():
     engine, session, _ = build(tutor)
     task = session.current_task
     session, states, outcome = engine.submit(
-        session, {}, steps=[], final_answer=task.item.answer_spec.expression,
+        session, {}, steps=[], answer=right(task),
         confidence=Confidence.FAIRLY_SURE,
     )
     assert outcome.verdict is Verdict.CORRECT
@@ -5651,7 +6049,7 @@ def test_a_wrong_attempt_summons_the_tutor_with_a_localised_step():
     tutor = FakeTutor()
     engine, session, _ = build(tutor)
     session, _, outcome = engine.submit(
-        session, {}, steps=["(x+1)(x+2)", "x^2 + 2"], final_answer="x^2 + 2",
+        session, {}, steps=["(x+1)(x+2)", "x^2 + 2"], answer=Submission.of("x^2 + 2"),
         confidence=Confidence.UNSURE,
     )
     assert outcome.verdict is Verdict.WRONG
@@ -5664,7 +6062,7 @@ def test_a_wrong_attempt_earns_nothing_but_is_still_recorded():
     engine, session, _ = build()
     task = session.current_task
     session, states, _ = engine.submit(
-        session, {}, steps=[], final_answer="0", confidence=Confidence.CERTAIN
+        session, {}, steps=[], answer=Submission.of("0"), confidence=Confidence.CERTAIN
     )
     assert states[task.skill_id].attempt_count == 1
     assert states[task.skill_id].strength < 0.0
@@ -5678,7 +6076,7 @@ def test_requesting_help_climbs_one_rung_and_marks_the_attempt_assisted():
     assert turn is not None and turn.rung_used is HelpRung.NUDGE
 
     session, states, outcome = engine.submit(
-        session, {}, steps=[], final_answer=task.item.answer_spec.expression,
+        session, {}, steps=[], answer=right(task),
         confidence=Confidence.CERTAIN,
     )
     assert outcome.verdict is Verdict.CORRECT
@@ -5714,7 +6112,7 @@ def test_declining_costs_the_same_as_a_wrong_answer():
     engine, session, _ = build()
     task = session.current_task
     session, states, outcome = engine.submit(
-        session, {}, steps=[], final_answer="", confidence=Confidence.CERTAIN
+        session, {}, steps=[], answer=Submission.of(""), confidence=Confidence.CERTAIN
     )
     assert outcome.verdict is Verdict.NO_ANSWER
     assert outcome.evidence_class is EvidenceClass.UNASSISTED_COLD
@@ -5724,7 +6122,7 @@ def test_declining_costs_the_same_as_a_wrong_answer():
 
 def test_declining_forces_the_no_idea_confidence_reading():
     engine, session, _ = build()
-    engine.submit(session, {}, steps=[], final_answer="  ", confidence=Confidence.CERTAIN)
+    engine.submit(session, {}, steps=[], answer=Submission.of("  "), confidence=Confidence.CERTAIN)
     recorded = engine.evidence_log.events()[0]
     assert recorded.confidence is Confidence.NO_IDEA
 
@@ -5734,7 +6132,7 @@ def test_declining_does_not_climb_toward_a_reveal():
     engine, session, _ = build()
     for _ in range(2):
         session, _, _ = engine.submit(
-            session, {}, steps=[], final_answer="", confidence=Confidence.NO_IDEA
+            session, {}, steps=[], answer=Submission.of(""), confidence=Confidence.NO_IDEA
         )
     for _ in range(3):
         session, turn = engine.request_help(session, {})
@@ -5746,7 +6144,7 @@ def test_declining_does_not_climb_toward_a_reveal():
 def test_the_tutor_is_told_the_student_declined():
     tutor = FakeTutor()
     engine, session, _ = build(tutor)
-    engine.submit(session, {}, steps=[], final_answer="", confidence=Confidence.NO_IDEA)
+    engine.submit(session, {}, steps=[], answer=Submission.of(""), confidence=Confidence.NO_IDEA)
     assert tutor.contexts_seen[0].last_verdict is Verdict.NO_ANSWER
     assert tutor.contexts_seen[0].step_diff is None
 
@@ -5757,7 +6155,7 @@ def test_the_session_advances_and_finishes():
         task = session.current_task
         assert task is not None
         session, _, _ = engine.submit(
-            session, {}, steps=[], final_answer=task.item.answer_spec.expression,
+            session, {}, steps=[], answer=right(task),
             confidence=Confidence.FAIRLY_SURE,
         )
     assert session.is_finished
@@ -5766,7 +6164,7 @@ def test_the_session_advances_and_finishes():
 def test_every_attempt_lands_in_the_append_only_log():
     engine, session, _ = build()
     task = session.current_task
-    engine.submit(session, {}, steps=[], final_answer=task.item.answer_spec.expression,
+    engine.submit(session, {}, steps=[], answer=right(task),
                   confidence=Confidence.CERTAIN)
     assert len(engine.evidence_log.events()) == 1
 ```
@@ -5804,7 +6202,7 @@ from learnai.domain.ids import (
     TaskId,
     VerificationKind,
 )
-from learnai.domain.items import StepDiff
+from learnai.domain.items import StepDiff, Submission
 from learnai.domain.mastery import SkillState, is_fresh
 from learnai.domain.misconceptions import MisconceptionMatcher, diagnose
 from learnai.domain.parameters import DEFAULT_PARAMETERS, MasteryParameters
@@ -5909,10 +6307,10 @@ class PracticeEngine:
         session: Session,
         states: dict[SkillId, SkillState],
         steps: Sequence[str],
-        final_answer: str,
+        answer: Submission,
         confidence: Confidence,
     ) -> tuple[Session, dict[SkillId, SkillState], SubmitOutcome]:
-        """Submit an answer, or decline by passing an empty `final_answer`.
+        """Submit an answer, or decline by leaving every field blank.
 
         A decline costs exactly what a wrong answer costs — it is the same
         competence signal, and making it cheaper would teach students to stop
@@ -5923,14 +6321,15 @@ class PracticeEngine:
         if task is None:
             raise ValueError("session has no active task")
 
-        declined = not final_answer.strip()
+        answer.check_shape(task.item.answer_spec.kind)  # a wrong shape is a client bug
+        declined = answer.is_blank
         params = self._params_for(task.skill_id)
         verifier = self._verifier_for(task.skill_id)
         if declined:
             confidence = Confidence.NO_IDEA
             result = CheckResult(Verdict.NO_ANSWER)
         else:
-            result = verifier.check_answer(final_answer, task.item.answer_spec)
+            result = verifier.check_answer(answer, task.item.answer_spec)
         correct = result.verdict is Verdict.CORRECT
 
         # A decline is scored at the guess baseline, not at zero, so that saying
@@ -6158,6 +6557,7 @@ from learnai.domain.contracts import PRACTICE
 from learnai.domain.engine import PracticeEngine
 from learnai.domain.enums import Confidence
 from learnai.domain.ids import CourseId, SessionId, SkillId, StudentId
+from learnai.domain.items import Submission
 from learnai.domain.mastery import SkillState
 from learnai.domain.session import Task
 
@@ -6165,6 +6565,7 @@ CLUSTER = load_cluster(
     pathlib.Path(__file__).parent.parent.parent / "content" / "quadratics" / "skills.yaml"
 )
 COURSE = CLUSTER.graph.topological_order()
+_KEYS = SympyVerifier()  # turns an answer key into what a student would enter
 
 
 class Persona:
@@ -6172,8 +6573,8 @@ class Persona:
     asks_for_help = False
     confidence = Confidence.FAIRLY_SURE
 
-    def answer(self, task: Task) -> str:
-        return task.item.answer_spec.expression
+    def answer(self, task: Task) -> Submission:
+        return _KEYS.key_submission(task.item.answer_spec)
 
 
 class Diligent(Persona):
@@ -6194,9 +6595,12 @@ class MisconceptionCarrier(Persona):
     name = "misconception_carrier"
     confidence = Confidence.CERTAIN
 
-    def answer(self, task: Task) -> str:
+    def answer(self, task: Task) -> Submission:
         if task.skill_id != SkillId("quad.expand.square"):
-            return task.item.answer_spec.expression
+            return _KEYS.key_submission(task.item.answer_spec)
+        return Submission.of(self._believed_expansion(task))
+
+    def _believed_expansion(self, task: Task) -> str:
         correct = parse_math(task.item.answer_spec.expression)
         x = sp.Symbol("x")
         poly = sp.Poly(correct, x)
@@ -6206,7 +6610,7 @@ class MisconceptionCarrier(Persona):
     def steps(self, task: Task) -> list[str]:
         if task.skill_id != SkillId("quad.expand.square"):
             return []
-        return [task.item.statement.split(": ", 1)[-1], self.answer(task)]
+        return [task.item.statement.split(": ", 1)[-1], self._believed_expansion(task)]
 
 
 class Overconfident(Persona):
@@ -6215,8 +6619,8 @@ class Overconfident(Persona):
     name = "overconfident"
     confidence = Confidence.CERTAIN
 
-    def answer(self, task: Task) -> str:
-        return "0"
+    def answer(self, task: Task) -> Submission:
+        return Submission.of("0")
 
 
 @dataclass
@@ -6270,7 +6674,7 @@ def run_term(
                 session,
                 result.states,
                 steps=steps,
-                final_answer=persona.answer(task),
+                answer=persona.answer(task),
                 confidence=persona.confidence,
             )
             if not outcome.task_completed:
