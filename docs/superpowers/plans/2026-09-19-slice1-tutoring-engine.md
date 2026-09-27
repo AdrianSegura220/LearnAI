@@ -6353,6 +6353,35 @@ def test_the_tutor_is_told_the_student_declined():
     assert tutor.contexts_seen[0].step_diff is None
 
 
+def test_an_unreadable_answer_changes_nothing():
+    """A missing bracket is notation, not evidence (spec P7)."""
+    tutor = FakeTutor()
+    engine, session, _ = build(tutor)
+    before = session
+    session, states, outcome = engine.submit(
+        session, {}, steps=[], answer=Submission.of("(x+1)(x+2"), confidence=Confidence.CERTAIN
+    )
+    assert outcome.verdict is Verdict.MALFORMED
+    assert outcome.evidence_class is None
+    assert len(engine.evidence_log.events()) == 0, "nothing is recorded"
+    assert states == {}, "mastery does not move"
+    assert session == before, "no attempt is counted and the task is untouched"
+    assert tutor.contexts_seen == [], "no tutor call is spent on a typo"
+
+
+def test_an_unreadable_answer_does_not_use_up_the_cold_attempt():
+    engine, session, _ = build()
+    task = session.current_task
+    session, _, _ = engine.submit(
+        session, {}, steps=[], answer=Submission.of("(x+1)(x+2"), confidence=Confidence.CERTAIN
+    )
+    session, _, outcome = engine.submit(
+        session, {}, steps=[], answer=right(task), confidence=Confidence.CERTAIN
+    )
+    assert outcome.verdict is Verdict.CORRECT
+    assert outcome.evidence_class is EvidenceClass.UNASSISTED_COLD
+
+
 def test_the_session_advances_and_finishes():
     engine, session, _ = build()
     for _ in range(4):
@@ -6436,7 +6465,8 @@ class SubmitOutcome:
     verdict: Verdict
     step_diff: StepDiff | None
     diagnosis: MisconceptionId | None
-    evidence_class: EvidenceClass
+    evidence_class: EvidenceClass | None
+    """None when nothing was recorded: an unreadable answer is not evidence."""
     tutor_turn: TutorTurn | None
     task_completed: bool
 
@@ -6516,6 +6546,8 @@ class PracticeEngine:
     ) -> tuple[Session, dict[SkillId, SkillState], SubmitOutcome]:
         """Submit an answer, or decline by leaving every field blank.
 
+        An answer that cannot be read changes nothing and comes back MALFORMED.
+
         A decline costs exactly what a wrong answer costs — it is the same
         competence signal, and making it cheaper would teach students to stop
         trying. What differs is the tutor's opening move and the calibration
@@ -6534,6 +6566,20 @@ class PracticeEngine:
             result = CheckResult(Verdict.NO_ANSWER)
         else:
             result = verifier.check_answer(answer, task.item.answer_spec)
+
+        if result.verdict is Verdict.MALFORMED:
+            # Unreadable is never wrong (spec P7). A missing bracket records no
+            # evidence, counts no attempt toward a reveal, spends no tutor call,
+            # and above all leaves the cold attempt unused: the student fixes the
+            # notation, with the parser's suggestions, and submits again.
+            return session, states, SubmitOutcome(
+                verdict=Verdict.MALFORMED,
+                step_diff=None,
+                diagnosis=None,
+                evidence_class=None,
+                tutor_turn=None,
+                task_completed=False,
+            )
         correct = result.verdict is Verdict.CORRECT
 
         # A decline is scored at the guess baseline, not at zero, so that saying
@@ -6709,7 +6755,7 @@ class PracticeEngine:
 - [ ] **Step 4: Run the engine tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/domain/test_engine.py -v`
-Expected: PASS — 14 tests.
+Expected: PASS — 16 tests.
 
 - [ ] **Step 5: Run the whole suite**
 
