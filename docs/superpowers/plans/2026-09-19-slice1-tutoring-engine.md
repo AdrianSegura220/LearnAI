@@ -1083,7 +1083,7 @@ git commit -m "feat: quadratics skill cluster and validating content loader"
 
 **Interfaces:**
 - Consumes: ids and enums from Task 1, including `AnswerKind` (`SINGLE_VALUE` / `RELATION` / `VALUE_SET`) and `ProvenanceKind`.
-- Produces: `FormConstraint = NewType("FormConstraint", str)` — **opaque to the domain**, which never interprets one; each `Verifier` adapter owns its own vocabulary (see Task 5). `AnswerSpec(expression: str, form_constraints: tuple[FormConstraint, ...], kind: AnswerKind)`; `Provenance(kind: ProvenanceKind, template_id: TemplateId | None, seed: int | None)` with constructors `Provenance.generated(template_id, seed)` and `Provenance.authored()`; `Item(id, skill_id, provenance, statement, answer_spec, worked_steps, difficulty, vetting_level)`; `StepDiff(index: int, previous: str, current: str)`; `AnswerSpec` gains an optional, display-only `label`; `Submission(fields: tuple[str, ...], claims_none: bool = False)` with `Submission.of(*fields)`, `Submission.none()`, `is_blank`, `entries` and `check_shape(kind)`, which raises `SubmissionShapeError`; `MULTI_FIELD_KINDS`.
+- Produces: `FormConstraint = NewType("FormConstraint", str)` — **opaque to the domain**, which never interprets one; each `Verifier` adapter owns its own vocabulary (see Task 5). `AnswerSpec(expression: str, form_constraints: tuple[FormConstraint, ...], kind: AnswerKind)`; `Provenance(kind: ProvenanceKind, template_id: TemplateId | None, seed: int | None)` with constructors `Provenance.generated(template_id, seed)` and `Provenance.authored()`; `Item(id, skill_id, provenance, statement, answer_spec, worked_steps, difficulty, vetting_level)`; `StepDiff(index: int, previous: str, current: str, unreadable: bool = False)`; `AnswerSpec` gains an optional, display-only `label`; `Submission(fields: tuple[str, ...], claims_none: bool = False)` with `Submission.of(*fields)`, `Submission.none()`, `is_blank`, `entries` and `check_shape(kind)`, which raises `SubmissionShapeError`; `MULTI_FIELD_KINDS`.
 
 **Why answers arrive as fields:** the input widget follows the answer kind — one field, or one field per value with "add another" and a "none" option — so the student's answer reaches the engine already shaped, and nothing ever splits a string on commas or guesses at separators. The domain owns the shape and never what a field contains: the CAS adapter parses a field as maths, and a rubric adapter would judge it as prose, exactly as with form constraints.
 
@@ -1153,6 +1153,7 @@ def test_answer_kind_defaults_to_single_value():
 def test_step_diff_records_the_first_broken_transition():
     d = StepDiff(index=2, previous="2*x = 10", current="x = 8")
     assert d.index == 2
+    assert not d.unreadable, "a step that was read and found wrong is not unreadable"
 
 
 def test_a_label_is_optional_and_display_only():
@@ -1306,11 +1307,19 @@ class Item:
 
 @dataclass(frozen=True, slots=True)
 class StepDiff:
-    """The first transition at which the student's work stopped being equivalent."""
+    """The first step in the student's work that does not follow from the one before.
+
+    `steps[index - 1] -> steps[index]` is the transition; index 0 occurs only
+    for an unreadable first step, whose `previous` is empty.
+    """
 
     index: int
     previous: str
     current: str
+    unreadable: bool = False
+    """The step could not be read at all, so the problem is notation, not
+    necessarily reasoning: the tutor should ask what the student meant rather
+    than say the line is wrong (P7)."""
 ```
 
 - [ ] **Step 4: Run the tests to verify they pass**
@@ -2091,6 +2100,12 @@ def test_value_list_fields_may_name_their_values_and_leave_a_spare_blank():
     assert verdict(Submission.of("x = 2", "x = -3", ""), spec) is Verdict.CORRECT
 
 
+def test_plus_minus_in_a_value_field_stands_for_both_values():
+    spec = AnswerSpec("3, -3", kind=AnswerKind.VALUE_SET)
+    assert verdict(Submission.of("±3"), spec) is Verdict.CORRECT
+    assert verdict(Submission.of("x = ±3"), spec) is Verdict.CORRECT
+
+
 def test_a_repeated_root_counts_once():
     spec = AnswerSpec("3", kind=AnswerKind.VALUE_SET)
     assert verdict(Submission.of("3", "3"), spec) is Verdict.CORRECT
@@ -2331,6 +2346,7 @@ class InvalidAnswerKeyError(ValueError):
 
 ```python
 # src/learnai/adapters/cas/sympy_verifier.py
+import itertools
 import re
 from collections.abc import Callable, Iterator, Sequence
 
@@ -2361,6 +2377,9 @@ _SUPPORTED_KINDS = frozenset({AnswerKind.SINGLE_VALUE, AnswerKind.RELATION, Answ
 # "x = -3" names the value found. Only a single letter, and only when it does
 # not appear on the right: "x = x + 1" is an equation and stays one.
 _NAMED_VALUE = re.compile(r"\s*([A-Za-z])\s*=(?!=)(.*)", re.S)
+
+# "±" and "+/-" stand for two values, one with each sign.
+_PLUS_MINUS = re.compile(r"±|\+/-")
 
 # Tutor prose arrives with typographic maths; the parser only reads ASCII.
 _UNICODE_MATHS = str.maketrans(
@@ -2430,12 +2449,18 @@ class SympyVerifier:
         if spec.kind is AnswerKind.VALUE_SET:
             key = _parse_key(spec)
             try:
-                value = parse_math(_value_text(expression), as_written=True)
+                values = [
+                    parse_math(_value_text(v), as_written=True)
+                    for v in _expand_plus_minus(expression)
+                ]
             except ParseError:
                 return False
             return any(
-                expressions_equivalent(value, k) for k in key
-            ) and all(_satisfies(value, c) for c in spec.form_constraints)
+                expressions_equivalent(value, k)
+                and all(_satisfies(value, c) for c in spec.form_constraints)
+                for value in values
+                for k in key
+            )
         verdict = self.check_answer(Submission.of(expression), spec).verdict
         return verdict is Verdict.CORRECT
 
@@ -2478,6 +2503,17 @@ def _key_values(expression: str) -> list[str]:
     return [v for v in (part.strip() for part in expression.split(",")) if v]
 
 
+def _expand_plus_minus(text: str) -> list[str]:
+    """'(-5 ± sqrt(13))/2' stands for two values: one with +, one with -."""
+    pieces = _PLUS_MINUS.split(text)
+    if len(pieces) > 3:
+        raise ParseError("more than two ± signs in one entry")
+    return [
+        "".join(piece + sign for piece, sign in zip(pieces, (*signs, "")))
+        for signs in itertools.product("+-", repeat=len(pieces) - 1)
+    ]
+
+
 def _value_text(field: str) -> str:
     """'x = -3' reads as '-3': naming the value found is not part of the value."""
     named = _NAMED_VALUE.fullmatch(field)
@@ -2512,7 +2548,11 @@ def _check_values(
 ) -> CheckResult:
     if submission.claims_none:
         return CheckResult(Verdict.CORRECT if not key else Verdict.WRONG)
-    written = [parse_math(_value_text(field), as_written=True) for field in submission.entries]
+    written = [
+        parse_math(_value_text(value), as_written=True)
+        for field in submission.entries
+        for value in _expand_plus_minus(field)
+    ]
     # A set: a repeated root is one solution, however many times it is entered.
     if not solution_sets_equivalent(_distinct(written), _distinct(key)):
         return CheckResult(Verdict.WRONG)
@@ -2621,7 +2661,7 @@ def _satisfies(written: sp.Expr, constraint: FormConstraint) -> bool:
 - [ ] **Step 6: Run the verifier tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/adapters/test_sympy_verifier.py -v`
-Expected: PASS — 43 tests.
+Expected: PASS — 44 tests.
 
 - [ ] **Step 7: Run the whole suite, including the purity test**
 
@@ -2641,19 +2681,28 @@ git commit -m "feat: answer checking with form constraints and answer kinds"
 ### Task 6: Step diffing — localise the broken step
 
 **Files:**
-- Modify: `src/learnai/adapters/cas/sympy_verifier.py` (replace the `diff_steps` stub)
+- Modify: `src/learnai/adapters/cas/sympy_verifier.py` (replace the `diff_steps` stub, extend two imports, add the step helpers)
 - Test: `tests/adapters/test_step_diff.py`
 
 **Interfaces:**
-- Consumes: `StepDiff` (Task 3), equivalence functions (Task 4), `SympyVerifier` (Task 5).
-- Produces: `SympyVerifier.diff_steps(steps) -> StepDiff | None` returning the **first** transition at which equivalence breaks, with `index` being the index of the offending step (so `steps[index - 1] -> steps[index]` is the broken transition).
+- Consumes: `StepDiff` (Task 3), equivalence functions and `real_solutions` (Task 4), `SympyVerifier`, `_NAMED_VALUE` and `_expand_plus_minus` (Task 5).
+- Produces: `SympyVerifier.diff_steps(steps) -> StepDiff | None` returning the **first** step that does not follow from the one before, with `index` being the index of the offending step (so `steps[index - 1] -> steps[index]` is the broken transition). A step that cannot be read at all comes back with `unreadable=True`; an unreadable first step is reported at index 0.
 
-**Note on mixed step types:** algebra steps alternate between expressions (`x^2 + 3x + 2`) and equations (`2x = 10`). Equations compare by solution set, expressions by value. A transition from one kind to the other is treated as broken, because it is a change of claim rather than a manipulation.
+**What a step may be.** Students write working the way they write it on paper (spec P7), so the reader accepts:
+- an expression (`x^2 + 3x + 2`), or a line opening with `=`, which continues the previous expression (`= (x + 3)^2 - 4`);
+- an equation (`2x = 10`);
+- a list of alternatives — `x - 1 = 0 or x - 3 = 0`, `x = 1, x = 3`, `x = 1 or 3`, `x = ±3`, `x = (-5 ± sqrt(13))/2` — whose solutions are all of its equations' together. A bare value inherits the letter before it, and commas separate only when every part is an equation, so a Spanish decimal comma (`x = 0,5`) is never read as two values.
+
+Expressions compare by value. Equations and lists compare by their real solutions, holes respected (Task 4), which is what catches a lost root: `(x-1)(x-3) = 0 → x = 1`. A move between an expression and an equation changes what is being claimed, so it is always a break.
+
+**Unreadable is not wrong.** A step the parser cannot read is reported with `unreadable=True`, so the tutor asks what the student meant instead of calling a line mistaken. Lines that chain several equals signs (`(x+1)(x+2) = x^2 + 2x + x + 2 = x^2 + 3x + 2`) are ambiguous — simplification in one context, an equation then arithmetic in `x = 6/2 = 3` — and come back unreadable; spec D2 records that the editor should offer one claim per line.
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
 # tests/adapters/test_step_diff.py
+import pytest
+
 from learnai.adapters.cas.sympy_verifier import SympyVerifier
 
 V = SympyVerifier()
@@ -2673,6 +2722,7 @@ def test_arithmetic_slip_is_localised():
     assert diff.index == 2
     assert diff.previous == "2x = 6"
     assert diff.current == "x = 8"
+    assert not diff.unreadable
 
 
 def test_the_first_break_is_reported_not_the_last():
@@ -2694,56 +2744,181 @@ def test_a_single_step_can_never_break():
     assert V.diff_steps(["x = 3"]) is None
 
 
-def test_unparseable_step_is_reported_at_its_index():
-    diff = V.diff_steps(["2x = 6", "x =* 3"])
+@pytest.mark.parametrize(
+    "steps",
+    [
+        ["x^2 - 4x + 3 = 0", "(x-1)(x-3) = 0", "x = 1, x = 3"],
+        ["(x-1)(x-3) = 0", "x - 1 = 0 or x - 3 = 0"],
+        ["(x-1)(x-3) = 0", "x = 1 or 3"],
+        ["x^2 = 9", "x = ±3"],
+        ["x^2 = 9", "x = +/-3"],
+        ["x^2 + 5x + 3 = 0", "x = (-5 ± sqrt(13))/2"],
+        ["x^2 + 6x + 5", "= x^2 + 6x + 9 - 4", "= (x + 3)^2 - 4"],
+    ],
+)
+def test_correct_work_in_the_notations_students_use_has_no_diff(steps):
+    assert V.diff_steps(steps) is None
+
+
+def test_a_lost_root_is_caught():
+    diff = V.diff_steps(["(x-1)(x-3) = 0", "x = 1"])
+    assert diff is not None and diff.index == 1 and not diff.unreadable
+
+
+def test_a_plus_minus_with_the_wrong_value_is_caught():
+    diff = V.diff_steps(["x^2 = 9", "x = ±9"])
     assert diff is not None and diff.index == 1
+
+
+def test_an_unparseable_step_is_reported_as_unreadable_not_wrong():
+    diff = V.diff_steps(["2x = 6", "x =* 3"])
+    assert diff is not None and diff.index == 1 and diff.unreadable
+
+
+def test_an_unreadable_first_step_is_reported_at_its_own_index():
+    diff = V.diff_steps(["x =* 3", "x = 3"])
+    assert diff is not None and diff.index == 0 and diff.unreadable
+    assert diff.previous == ""
+
+
+def test_a_decimal_comma_is_never_read_as_two_values():
+    diff = V.diff_steps(["2x = 1", "x = 0,5"])
+    assert diff is not None and diff.unreadable
+
+
+def test_a_chain_of_equals_signs_is_unreadable_for_now():
+    diff = V.diff_steps(["(x+1)(x+2)", "(x+1)(x+2) = x^2 + 2x + x + 2 = x^2 + 3x + 2"])
+    assert diff is not None and diff.unreadable
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
 
 Run: `.venv/bin/pytest tests/adapters/test_step_diff.py -v`
-Expected: FAIL — six tests fail with `assert None is not None`, because the stub always returns `None`.
+Expected: FAIL — the tests expecting a diff fail with `assert None is not None`, because the stub always returns `None`.
 
 - [ ] **Step 3: Replace the stub**
 
 ```python
     def diff_steps(self, steps: Sequence[str]) -> StepDiff | None:
+        """The first step that does not follow from the one before, or None."""
         if len(steps) < 2:
             return None
 
-        parsed: list[sp.Basic | None] = []
+        parsed: list[_Step | None] = []
         for raw in steps:
             try:
-                # Written form: an equation step must keep its holes (Task 4).
-                parsed.append(parse_math(raw, allow_equation=True, as_written=True))
+                parsed.append(_parse_step(raw))
             except ParseError:
                 parsed.append(None)
 
-        for i in range(1, len(parsed)):
-            previous, current = parsed[i - 1], parsed[i]
-            if current is None or previous is None:
-                return StepDiff(index=i, previous=steps[i - 1], current=steps[i])
-            if not _steps_equivalent(previous, current):
-                return StepDiff(index=i, previous=steps[i - 1], current=steps[i])
+        for i, step in enumerate(parsed):
+            previous = steps[i - 1] if i else ""
+            if step is None:
+                return StepDiff(index=i, previous=previous, current=steps[i], unreadable=True)
+            if i and not _steps_equivalent(parsed[i - 1], step):
+                return StepDiff(index=i, previous=previous, current=steps[i])
         return None
 ```
 
-Add the module-level helper below `_satisfies`:
+Add `from dataclasses import dataclass` to the imports, and `real_solutions` to the import from `learnai.adapters.cas.equivalence`. Then add the module-level helpers below `_satisfies`:
 
 ```python
-def _steps_equivalent(a: sp.Basic, b: sp.Basic) -> bool:
-    a_is_eq, b_is_eq = isinstance(a, sp.Eq), isinstance(b, sp.Eq)
-    if a_is_eq != b_is_eq:
+@dataclass(frozen=True)
+class _Alternatives:
+    """A step listing equations any of which may hold: "x = 1 or x = 3", "x = ±3"."""
+
+    parts: tuple[sp.Eq, ...]
+
+    @property
+    def free_symbols(self) -> set[sp.Symbol]:
+        return set().union(*(part.free_symbols for part in self.parts))
+
+
+_Step = sp.Basic | _Alternatives
+
+_OR = re.compile(r"\s+or\s+", re.IGNORECASE)
+
+
+def _parse_step(text: str) -> _Step:
+    """Read one line of working, in the notations students actually use.
+
+    A line opening with "=" continues the previous expression. A line listing
+    alternatives — joined by "or", written with "±" or "+/-", or separated by
+    commas when every part is an equation — is the set of its equations, and a
+    bare value inherits the letter before it: "x = 1 or 3" is "x = 1 or x = 3".
+    """
+    text = text.strip()
+    if text.startswith("="):
+        return parse_math(text[1:], as_written=True)
+
+    parts = [part.strip() for part in _OR.split(text)]
+    if len(parts) == 1 and "," in text:
+        pieces = [piece.strip() for piece in text.split(",")]
+        if all("=" in piece for piece in pieces):  # never split a decimal comma
+            parts = pieces
+    if len(parts) == 1 and not _PLUS_MINUS.search(text):
+        return parse_math(text, allow_equation=True, as_written=True)
+
+    named = _NAMED_VALUE.fullmatch(parts[0])
+    equations: list[sp.Eq] = []
+    for part in parts:
+        if "=" not in part and named is not None:
+            part = f"{named.group(1)} = {part}"
+        for variant in _expand_plus_minus(part):
+            equation = parse_math(variant, allow_equation=True, as_written=True)
+            if not isinstance(equation, sp.Eq):
+                raise ParseError(f"{part!r} is not an equation")
+            equations.append(equation)
+    return _Alternatives(tuple(equations)) if len(equations) > 1 else equations[0]
+
+
+def _is_claim(step: _Step) -> bool:
+    return isinstance(step, (sp.Eq, _Alternatives))
+
+
+def _equations(step: _Step) -> tuple[sp.Eq, ...]:
+    return step.parts if isinstance(step, _Alternatives) else (step,)
+
+
+def _solutions(step: _Step, var: sp.Symbol) -> frozenset[sp.Expr] | None:
+    found = [real_solutions(equation, var) for equation in _equations(step)]
+    if any(f is None for f in found):
+        return None
+    return frozenset().union(*found)
+
+
+def _steps_equivalent(a: _Step, b: _Step) -> bool:
+    """Expressions compare by value; equations and lists by their real solutions.
+
+    A move between an expression and an equation changes what is claimed, so
+    it is never a valid step.
+    """
+    if _is_claim(a) != _is_claim(b):
         return False
-    if a_is_eq:
+    if not _is_claim(a):
+        return expressions_equivalent(a, b)
+    if isinstance(a, sp.Eq) and isinstance(b, sp.Eq):
         return equations_equivalent(a, b)
-    return expressions_equivalent(a, b)
+    variables = a.free_symbols | b.free_symbols
+    if len(variables) == 1:
+        (var,) = variables
+        sa, sb = _solutions(a, var), _solutions(b, var)
+        if sa is not None and sb is not None and (sa or sb):
+            return solution_sets_equivalent(list(sa), list(sb))
+    # Solutions cannot be listed: fall back to matching the equations pairwise.
+    remaining = list(_equations(b))
+    for equation in _equations(a):
+        match = next((r for r in remaining if equations_equivalent(equation, r)), None)
+        if match is None:
+            return False
+        remaining.remove(match)
+    return not remaining
 ```
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/adapters/test_step_diff.py -v`
-Expected: PASS — 8 tests.
+Expected: PASS — 20 tests.
 
 - [ ] **Step 5: Commit**
 
