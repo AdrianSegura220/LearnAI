@@ -1083,9 +1083,11 @@ git commit -m "feat: quadratics skill cluster and validating content loader"
 
 **Interfaces:**
 - Consumes: ids and enums from Task 1, including `AnswerKind` (`SINGLE_VALUE` / `RELATION` / `VALUE_SET`) and `ProvenanceKind`.
-- Produces: `FormConstraint = NewType("FormConstraint", str)` — **opaque to the domain**, which never interprets one; each `Verifier` adapter owns its own vocabulary (see Task 5). `AnswerSpec(expression: str, form_constraints: tuple[FormConstraint, ...], kind: AnswerKind)`; `Provenance(kind: ProvenanceKind, template_id: TemplateId | None, seed: int | None)` with constructors `Provenance.generated(template_id, seed)` and `Provenance.authored()`; `Item(id, skill_id, provenance, statement, answer_spec, worked_steps, difficulty, vetting_level)`; `StepDiff(index: int, previous: str, current: str, unreadable: bool = False)`; `AnswerSpec` gains an optional, display-only `label`; `Submission(fields: tuple[str, ...], claims_none: bool = False)` with `Submission.of(*fields)`, `Submission.none()`, `is_blank`, `entries` and `check_shape(kind)`, which raises `SubmissionShapeError`; `MULTI_FIELD_KINDS`.
+- Produces: `FormConstraint = NewType("FormConstraint", str)` — **opaque to the domain**, which never interprets one; each `Verifier` adapter owns its own vocabulary (see Task 5). `AnswerSpec(expression: str, form_constraints: tuple[FormConstraint, ...], kind: AnswerKind)`; `Provenance(kind: ProvenanceKind, template_id: TemplateId | None, seed: int | None)` with constructors `Provenance.generated(template_id, seed)` and `Provenance.authored()`; `Text(text)` and `Formula(source)` statement blocks, with `Block = Text | Formula`; `Item(id, skill_id, provenance, statement: tuple[Block, ...], answer_spec, worked_steps, difficulty, vetting_level)`; `StepDiff(index: int, previous: str, current: str, unreadable: bool = False)`; `AnswerSpec` gains an optional, display-only `label`; `Submission(fields: tuple[str, ...], claims_none: bool = False)` with `Submission.of(*fields)`, `Submission.none()`, `is_blank`, `entries` and `check_shape(kind)`, which raises `SubmissionShapeError`; `MULTI_FIELD_KINDS`.
 
 **Why answers arrive as fields:** the input widget follows the answer kind — one field, or one field per value with "add another" and a "none" option — so the student's answer reaches the engine already shaped, and nothing ever splits a string on commas or guesses at separators. The domain owns the shape and never what a field contains: the CAS adapter parses a field as maths, and a rubric adapter would judge it as prose, exactly as with form constraints.
+
+**Why a statement is blocks, not a string:** prose and notation are handled differently — notation is rendered by the subject's adapter (KaTeX, for maths) and is written exactly as a student types it, so that what they are shown is what they can enter — and only the author knows where one ends and the other begins. A `Formula` is as opaque to the domain as a form constraint: `x^2 + 3x` today, a chemistry adapter's `H2O` later. Media joins as a third block type (spec D19) without changing the format.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1098,11 +1100,13 @@ from learnai.domain.ids import ItemId, SkillId, TemplateId
 from learnai.domain.items import (
     AnswerSpec,
     FormConstraint,
+    Formula,
     Item,
     Provenance,
     StepDiff,
     Submission,
     SubmissionShapeError,
+    Text,
 )
 
 
@@ -1123,11 +1127,11 @@ def test_item_is_immutable():
         id=ItemId("i1"),
         skill_id=SkillId("quad.factor.monic"),
         provenance=Provenance.generated(TemplateId("t"), 1),
-        statement="Factor x^2 + 3x + 2",
+        statement=(Text("Factor "), Formula("x^2 + 3x + 2")),
         answer_spec=AnswerSpec(
-            "(x + 1)*(x + 2)", (FormConstraint("fully_factored"),), AnswerKind.SINGLE_VALUE
+            "(x + 1)(x + 2)", (FormConstraint("fully_factored"),), AnswerKind.SINGLE_VALUE
         ),
-        worked_steps=("x^2 + 3x + 2", "(x + 1)*(x + 2)"),
+        worked_steps=("x^2 + 3x + 2", "(x + 1)(x + 2)"),
         difficulty=0.0,
         vetting_level=VettingLevel.MACHINE_VERIFIED,
     )
@@ -1136,6 +1140,12 @@ def test_item_is_immutable():
     except AttributeError:
         return
     raise AssertionError("Item must be frozen")
+
+
+def test_prose_and_notation_are_different_blocks_even_with_the_same_characters():
+    """Only the author knows where notation starts; the domain reads neither."""
+    assert Formula("x^2") != Text("x^2")
+    assert Formula("x^2").source == Text("x^2").text
 
 
 def test_a_form_constraint_is_just_an_opaque_token():
@@ -1294,11 +1304,35 @@ class Provenance:
 
 
 @dataclass(frozen=True, slots=True)
+class Text:
+    """Prose, in the item's language. Never holds notation: that is a Formula."""
+
+    text: str
+
+
+@dataclass(frozen=True, slots=True)
+class Formula:
+    """Notation the item's verifier reads: "x^2 + 3x + 2", later "H2O".
+
+    Written exactly as a student types it, so what a student is shown is what
+    they can enter (spec P7). Opaque to the domain, like a form constraint:
+    rendering it — KaTeX, for the CAS adapter — is an adapter's job.
+    """
+
+    source: str
+
+
+Block = Text | Formula
+"""One piece of an item's statement. A Media block joins later (spec D19)."""
+
+
+@dataclass(frozen=True, slots=True)
 class Item:
     id: ItemId
     skill_id: SkillId
     provenance: Provenance
-    statement: str
+    statement: tuple[Block, ...]
+    """Text and Formula blocks, in reading order."""
     answer_spec: AnswerSpec
     worked_steps: tuple[str, ...]
     difficulty: float
@@ -1325,7 +1359,7 @@ class StepDiff:
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/domain/test_items.py -v`
-Expected: PASS — 10 tests.
+Expected: PASS — 11 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -1344,7 +1378,7 @@ git commit -m "feat: item, answer spec, and provenance value objects"
 
 **Interfaces:**
 - Consumes: nothing from earlier tasks.
-- Produces: `ParseError`; `parse_math(text: str, *, allow_equation: bool = False, as_written: bool = False) -> sympy.Basic`; `evaluated(expr: sympy.Basic) -> sympy.Basic`; `expressions_equivalent(a: sympy.Expr, b: sympy.Expr) -> bool`; `equations_equivalent(a: sympy.Eq, b: sympy.Eq) -> bool`, which expects written forms; `real_solutions(eq: sympy.Eq, var: sympy.Symbol) -> frozenset[sympy.Expr] | None`; `solution_sets_equivalent(a: Sequence[sympy.Expr], b: Sequence[sympy.Expr]) -> bool`.
+- Produces: `ParseError`; `parse_math(text: str, *, allow_equation: bool = False, as_written: bool = False) -> sympy.Basic`; `evaluated(expr: sympy.Basic) -> sympy.Basic`; `write_math(expr: sympy.Basic) -> str`, which writes an expression or equation in the notation `parse_math` reads; `expressions_equivalent(a: sympy.Expr, b: sympy.Expr) -> bool`; `equations_equivalent(a: sympy.Eq, b: sympy.Eq) -> bool`, which expects written forms; `real_solutions(eq: sympy.Eq, var: sympy.Symbol) -> frozenset[sympy.Expr] | None`; `solution_sets_equivalent(a: Sequence[sympy.Expr], b: Sequence[sympy.Expr]) -> bool`.
 
 **Why the parser is its own module, and why it has no blocklist:** `sympy.parse_expr` ends in Python's `eval`, so student text reaching it unguarded is a remote-code-execution path. Safety is by construction: a small alphabet (no quotes, underscores, brackets or semicolons, and a dot only inside a decimal), every name resolved before SymPy sees it, and an explicit empty `__builtins__`. A list of forbidden words cannot do this job — `eval` silently inserts every builtin into the namespace it is given, which leaves the list as the only barrier.
 
@@ -1356,6 +1390,8 @@ git commit -m "feat: item, answer spec, and provenance value objects"
 
 **Decimals are exact; ambiguous spacing is refused.** A typed `0.1` is one tenth, not the nearest binary fraction — otherwise `0.1 + 0.2` would not equal `0.3` and correct decimal work would be marked wrong. Parsing still keeps it as a decimal, so form constraints can see that one was typed; only equivalence reads it exactly. A space between two numbers (`2 3`, `1 1/2`) raises `ParseError` rather than multiplying: a structured maths editor will remove the ambiguity (spec D1), and until then refusing is kinder than a verdict on an answer the student did not mean.
 
+**Writing maths back.** Everything a person reads — a question, a key shown on a reveal, a worked step, the item the tutor is given — is written by `write_math` in the notation students type: `x^2 + 3x`, `2(2x + 7)`, `(x - 4)(x - 1)`, never SymPy's `x**2 + 3*x`. What a student is shown is then what they can enter (spec P7), and the tutor copies the notation it reads. The text reads back to the same tree as SymPy's own printing, form included, so a key written this way still passes its own form constraint.
+
 - [ ] **Step 1: Write the failing parser test**
 
 ```python
@@ -1365,7 +1401,7 @@ import time
 import pytest
 import sympy as sp
 
-from learnai.adapters.cas.parse import ParseError, evaluated, parse_math
+from learnai.adapters.cas.parse import ParseError, evaluated, parse_math, write_math
 
 x, y = sp.symbols("x y")
 
@@ -1478,6 +1514,32 @@ def test_overlong_input_is_rejected():
 def test_unparseable_input_raises_parse_error():
     with pytest.raises(ParseError):
         parse_math("x +* 2")
+
+
+WRITTEN = [
+    (x**2 - 5 * x + 4, "x^2 - 5x + 4"),
+    (sp.factor(x**2 - 5 * x + 4), "(x - 4)(x - 1)"),
+    (sp.factor(4 * x + 14), "2(2x + 7)"),
+    (sp.factor(30 * x**2 - 25 * x), "5x(6x - 5)"),
+    ((x + 3) ** 2 - 4, "(x + 3)^2 - 4"),
+    (-3 + sp.sqrt(5), "-3 + sqrt(5)"),
+    (sp.pi * (x + 1), "pi*(x + 1)"),  # a name keeps its star: "pi(" would read as a call
+]
+
+
+@pytest.mark.parametrize(("expr", "text"), WRITTEN)
+def test_maths_is_written_the_way_students_type_it(expr, text):
+    assert write_math(expr) == text
+
+
+@pytest.mark.parametrize(("expr", "text"), WRITTEN)
+def test_written_maths_reads_back_to_the_same_tree(expr, text):
+    """Form included: a key written for students still passes its own form constraint."""
+    assert parse_math(write_math(expr), as_written=True) == parse_math(sp.sstr(expr), as_written=True)
+
+
+def test_an_equation_is_written_with_an_equals_sign():
+    assert write_math(sp.Eq(x**2 + x - 42, 0)) == "x^2 + x - 42 = 0"
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
@@ -1519,6 +1581,8 @@ _ALLOWED = re.compile(r"[0-9A-Za-z\s.+\-*/^()=]*")
 _DOT_NOT_BEFORE_DIGIT = re.compile(r"\.(?!\d)")
 _NUMBER_SPACE_NUMBER = re.compile(r"[\d.]\s+[\d.]")
 _LETTER_RUN = re.compile(r"[A-Za-z]+")
+_TIMES_BEFORE_LETTER_OR_BRACKET = re.compile(r"(?<=[0-9)])\*(?=[A-Za-z(])")
+_LETTER_TIMES_BRACKET = re.compile(r"(?<![A-Za-z])([A-Za-z])\*\(")
 
 _FUNCTIONS = {
     "sqrt": sp.sqrt, "abs": sp.Abs, "exp": sp.exp, "log": sp.log, "ln": sp.log,
@@ -1613,6 +1677,22 @@ def evaluated(expr: sp.Basic, *, exact_decimals: bool = False) -> sp.Basic:
     return expr.func(*(evaluated(arg, exact_decimals=exact_decimals) for arg in expr.args))
 
 
+def write_math(expr: sp.Basic) -> str:
+    """Write an expression or equation the way a student types it.
+
+    `x^2 + 3x`, `2(2x + 7)`, `(x - 4)(x - 1)`: carets for powers, and no star
+    where students leave multiplication implicit — after a number or a closing
+    bracket, and between a lone letter and a bracket. A name such as pi keeps
+    its star, since "pi(" would read as a call. The text reads back through
+    parse_math to the same tree as SymPy's own printing, form included.
+    """
+    if isinstance(expr, sp.Eq):
+        return f"{write_math(expr.lhs)} = {write_math(expr.rhs)}"
+    text = sp.sstr(expr).replace("**", "^")
+    text = _TIMES_BEFORE_LETTER_OR_BRACKET.sub("", text)
+    return _LETTER_TIMES_BRACKET.sub(r"\1(", text)
+
+
 def _parse_side(text: str) -> sp.Expr:
     rewritten, names = _resolve_names(text)
     try:
@@ -1686,7 +1766,7 @@ def _exponent_load(expr: sp.Basic) -> float:
 - [ ] **Step 4: Run the parser tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/adapters/test_parse.py -v`
-Expected: PASS — 36 tests (the parametrised cases count individually).
+Expected: PASS — 51 tests (the parametrised cases count individually).
 
 - [ ] **Step 5: Write the failing equivalence test**
 
@@ -2307,6 +2387,10 @@ CAS_SYMBOLIC = VerificationKind("cas_symbolic")
 FULLY_FACTORED = FormConstraint("fully_factored")
 EXPANDED = FormConstraint("expanded")
 EXACT_NOT_DECIMAL = FormConstraint("exact_not_decimal")
+"""Written without a decimal point. Decimals compare exactly (Task 4), so a
+rounded answer is already wrong by value: this rejects only a right answer
+written as a decimal, such as 0.25 for 1/4. It belongs on items that ask for a
+fraction or a surd, never on "give an exact value", which 0.25 is."""
 COMPLETED_SQUARE = FormConstraint("completed_square")
 
 # No "simplified": it has no single meaning — lowest terms, rationalised
@@ -2934,13 +3018,19 @@ git commit -m "feat: localise the first broken step in student work"
 **Files:**
 - Create: `src/learnai/adapters/content/types.py`, `src/learnai/adapters/content/generators/__init__.py`, `src/learnai/adapters/content/generators/quadratics.py`, `src/learnai/adapters/content/registry.py`
 - Modify: `src/learnai/domain/ports.py` (add the `ItemSource` protocol)
-- Test: `tests/content/__init__.py`, `tests/content/test_generator_contracts.py`
+- Test: `tests/content/__init__.py`, `tests/content/test_generator_contracts.py`, `tests/content/golden_items.json` (recorded by the first test run)
 
 **Interfaces:**
-- Consumes: `AnswerKind` (Task 1); `Item`, `AnswerSpec`, `FormConstraint`, `Provenance` (Task 3); `SympyVerifier` (Tasks 5–6).
-- Produces: `GeneratedProblem(statement, prompt_expression, answer, form_constraints, kind, worked_steps)`; `TemplateSpec(id, skill_id, difficulty, generate)`; `QUADRATICS_TEMPLATES: tuple[TemplateSpec, ...]` (twelve, one per skill); `GeneratorRegistry` with `all_templates()`, `templates_for(skill_id)`, `instantiate(template_id, seed) -> Item`, `instantiate_raw(template_id, seed) -> GeneratedProblem`, and `next_item(skill_id, target_difficulty, seed) -> Item`; `ItemSource` protocol in `domain/ports.py`.
+- Consumes: `AnswerKind` (Task 1); `Item`, `AnswerSpec`, `FormConstraint`, `Provenance`, `Text`, `Formula`, `Block` (Task 3); `parse_math`, `write_math` (Task 4); `SympyVerifier` (Tasks 5–6).
+- Produces: `GeneratedProblem(statement: tuple[Block, ...], prompt_expression, answer, form_constraints, kind, worked_steps, label)`; `TemplateSpec(id, skill_id, difficulty, generate)`; `QUADRATICS_TEMPLATES: tuple[TemplateSpec, ...]` (twelve, one per skill); `GeneratorRegistry` with `all_templates()`, `templates_for(skill_id)`, `instantiate(template_id, seed) -> Item`, `instantiate_raw(template_id, seed) -> GeneratedProblem`, and `next_item(skill_id, target_difficulty, seed) -> Item`; `ItemSource` protocol in `domain/ports.py`.
 
-**Determinism contract:** `instantiate(template_id, seed)` must return an identical `Item` for identical arguments, forever. Item ids are `f"{template_id}#{seed}"`, so an item a student saw is reproducible from two values rather than stored.
+**Determinism contract:** `instantiate(template_id, seed)` must return an identical `Item` for identical arguments, forever. Item ids are `f"{template_id}#{seed}"`, so an item a student saw is reproducible from two values rather than stored. "Forever" is checked, not assumed: a recorded snapshot fails the suite if a Python or SymPy upgrade changes what a seed generates. A generator changes by registering a new version (`.v2`), never by editing a recorded item.
+
+**How a generator is written.** It builds the problem backwards from the answer — choose the roots, then multiply out — so the key is correct by construction. Four rules keep it honest:
+- **Maths is written the way students type it.** Every piece of maths a person may read — statement, key, worked steps — goes through `write_math` (Task 4): `x^2 - 5x + 4`, not `x**2 - 5*x + 4`. A statement is `Text` and `Formula` blocks (Task 3), so prose never carries notation.
+- **No answer is right by default.** Where the answers are few, the generator chooses the answer first. Drawing coefficients at random made "2 real roots" right 72% of the time, so a student who always typed 2 would earn mastery evidence.
+- **An item exercises only its own skill.** A factoring prompt with a common factor to take out first — `36x^2 - 9` — tests `quad.factor.common`, which neither `quad.factor.nonmonic` nor `quad.factor.diffsquares` requires, and a miss would be recorded against the wrong skill. The generators avoid these, and a monic item never has a missing x term. Items that combine skills wait for multi-skill tagging (spec D20).
+- **A right answer is never marked wrong for its notation.** The vertex and formula items carry no `exact_not_decimal`: decimals compare exactly (Task 4), so `-0.25` for `-1/4` is right, and a rounded root is already wrong by value.
 
 - [ ] **Step 1: Write the content types and the ItemSource port**
 
@@ -2952,18 +3042,16 @@ from dataclasses import dataclass
 
 from learnai.domain.enums import AnswerKind
 from learnai.domain.ids import SkillId, TemplateId
-from learnai.domain.items import FormConstraint
+from learnai.domain.items import Block, FormConstraint
 
 
 @dataclass(frozen=True, slots=True)
 class GeneratedProblem:
-    statement: str
+    statement: tuple[Block, ...]
     prompt_expression: str | None
-    """The bare mathematics the student is asked to transform, if any.
-
-    Used by the contract tests to assert a template never hands back a problem
-    that is already in its own answer form.
-    """
+    """The expression the student is asked to rewrite, if any, as it appears in
+    the statement. The contract tests check that typing it back is never
+    accepted."""
     answer: str
     form_constraints: tuple[FormConstraint, ...]
     kind: AnswerKind
@@ -2994,21 +3082,22 @@ and extend its imports to `from learnai.domain.ids import SkillId` and `from lea
 
 ```python
 # src/learnai/adapters/content/generators/quadratics.py
+"""The twelve quadratics templates, each building its problem backwards from the answer."""
+import math
 import random
+from collections.abc import Sequence
 
 import sympy as sp
 
-from learnai.adapters.cas.vocabulary import (
-    COMPLETED_SQUARE,
-    EXACT_NOT_DECIMAL,
-    EXPANDED,
-    FULLY_FACTORED,
-)
+from learnai.adapters.cas.parse import write_math
+from learnai.adapters.cas.vocabulary import COMPLETED_SQUARE, EXPANDED, FULLY_FACTORED
 from learnai.adapters.content.types import GeneratedProblem, TemplateSpec
 from learnai.domain.enums import AnswerKind
 from learnai.domain.ids import SkillId, TemplateId
+from learnai.domain.items import Block, FormConstraint, Formula, Text
 
 X = sp.Symbol("x")
+Y = sp.Symbol("y")
 
 
 def _nonzero(rng: random.Random, lo: int = -9, hi: int = 9) -> int:
@@ -3018,35 +3107,51 @@ def _nonzero(rng: random.Random, lo: int = -9, hi: int = 9) -> int:
     return value
 
 
+def _statement(*parts: str | sp.Basic) -> tuple[Block, ...]:
+    """Prose stays Text; every SymPy object becomes a Formula in student notation."""
+    return tuple(Text(part) if isinstance(part, str) else Formula(write_math(part)) for part in parts)
+
+
+def _signed(n: int) -> str:
+    return f"+ {n}" if n >= 0 else f"- {-n}"
+
+
+def _solutions_line(roots: Sequence[sp.Expr]) -> str:
+    """The last line of solving: "x = -7 or x = 6"."""
+    return " or ".join(write_math(sp.Eq(X, root)) for root in roots)
+
+
+def _rewrite(
+    instruction: str,
+    prompt: sp.Expr,
+    answer: sp.Expr,
+    constraint: FormConstraint,
+    *,
+    via: tuple[str, ...] = (),
+) -> GeneratedProblem:
+    """An item whose answer is its prompt rewritten into a required form."""
+    return GeneratedProblem(
+        statement=_statement(f"{instruction}: ", prompt),
+        prompt_expression=write_math(prompt),
+        answer=write_math(answer),
+        form_constraints=(constraint,),
+        kind=AnswerKind.SINGLE_VALUE,
+        worked_steps=(write_math(prompt), *via, write_math(answer)),
+    )
+
+
 def expand_binomial(rng: random.Random) -> GeneratedProblem:
     a = _nonzero(rng)
     b = _nonzero(rng)
     while b == a:
         b = _nonzero(rng)
     prompt = (X + a) * (X + b)
-    answer = sp.expand(prompt)
-    return GeneratedProblem(
-        statement=f"Expand and simplify: {sp.sstr(prompt)}",
-        prompt_expression=sp.sstr(prompt),
-        answer=sp.sstr(answer),
-        form_constraints=(EXPANDED,),
-        kind=AnswerKind.SINGLE_VALUE,
-        worked_steps=(sp.sstr(prompt), sp.sstr(answer)),
-    )
+    return _rewrite("Expand and simplify", prompt, sp.expand(prompt), EXPANDED)
 
 
 def expand_square(rng: random.Random) -> GeneratedProblem:
-    a = _nonzero(rng)
-    prompt = (X + a) ** 2
-    answer = sp.expand(prompt)
-    return GeneratedProblem(
-        statement=f"Expand and simplify: {sp.sstr(prompt)}",
-        prompt_expression=sp.sstr(prompt),
-        answer=sp.sstr(answer),
-        form_constraints=(EXPANDED,),
-        kind=AnswerKind.SINGLE_VALUE,
-        worked_steps=(sp.sstr(prompt), sp.sstr(answer)),
-    )
+    prompt = (X + _nonzero(rng)) ** 2
+    return _rewrite("Expand and simplify", prompt, sp.expand(prompt), EXPANDED)
 
 
 def factor_common(rng: random.Random) -> GeneratedProblem:
@@ -3054,61 +3159,42 @@ def factor_common(rng: random.Random) -> GeneratedProblem:
     power = rng.randint(0, 1)
     p = rng.randint(2, 7)
     q = _nonzero(rng)
-    while sp.gcd(p, q) != 1:
+    while math.gcd(p, q) != 1:
         q = _nonzero(rng)
     prompt = sp.expand(coefficient * X**power * (p * X + q))
-    answer = sp.factor(prompt)
-    return GeneratedProblem(
-        statement=f"Factor completely: {sp.sstr(prompt)}",
-        prompt_expression=sp.sstr(prompt),
-        answer=sp.sstr(answer),
-        form_constraints=(FULLY_FACTORED,),
-        kind=AnswerKind.SINGLE_VALUE,
-        worked_steps=(sp.sstr(prompt), sp.sstr(answer)),
-    )
+    return _rewrite("Factor completely", prompt, sp.factor(prompt), FULLY_FACTORED)
 
 
 def factor_monic(rng: random.Random) -> GeneratedProblem:
-    r1, r2 = _nonzero(rng), _nonzero(rng)
+    r1 = _nonzero(rng)
+    r2 = _nonzero(rng)
+    while r2 == -r1:  # x^2 - r^2 is a difference of squares: another skill's item
+        r2 = _nonzero(rng)
     prompt = sp.expand((X - r1) * (X - r2))
-    answer = sp.factor(prompt)
-    return GeneratedProblem(
-        statement=f"Factor: {sp.sstr(prompt)}",
-        prompt_expression=sp.sstr(prompt),
-        answer=sp.sstr(answer),
-        form_constraints=(FULLY_FACTORED,),
-        kind=AnswerKind.SINGLE_VALUE,
-        worked_steps=(sp.sstr(prompt), sp.sstr(answer)),
-    )
+    return _rewrite("Factor", prompt, sp.factor(prompt), FULLY_FACTORED)
 
 
 def factor_difference_of_squares(rng: random.Random) -> GeneratedProblem:
-    a, b = rng.randint(1, 6), rng.randint(1, 9)
-    prompt = sp.expand(a**2 * X**2 - b**2)
-    answer = sp.factor(prompt)
-    return GeneratedProblem(
-        statement=f"Factor: {sp.sstr(prompt)}",
-        prompt_expression=sp.sstr(prompt),
-        answer=sp.sstr(answer),
-        form_constraints=(FULLY_FACTORED,),
-        kind=AnswerKind.SINGLE_VALUE,
-        worked_steps=(sp.sstr(prompt), sp.sstr(answer)),
-    )
+    a = rng.randint(1, 6)
+    b = rng.randint(1, 9)
+    while math.gcd(a, b) != 1:  # a common factor would exercise quad.factor.common first
+        b = rng.randint(1, 9)
+    prompt = a**2 * X**2 - b**2
+    return _rewrite("Factor", prompt, sp.factor(prompt), FULLY_FACTORED)
+
+
+def _primitive_binomial(rng: random.Random) -> sp.Expr:
+    """px + q with no common factor, so a product of two has none either (Gauss's lemma)."""
+    p = rng.randint(2, 5)
+    q = _nonzero(rng, -7, 7)
+    while math.gcd(p, q) != 1:
+        q = _nonzero(rng, -7, 7)
+    return p * X + q
 
 
 def factor_nonmonic(rng: random.Random) -> GeneratedProblem:
-    p, r = rng.randint(2, 5), rng.randint(2, 5)
-    q, s = _nonzero(rng, -7, 7), _nonzero(rng, -7, 7)
-    prompt = sp.expand((p * X + q) * (r * X + s))
-    answer = sp.factor(prompt)
-    return GeneratedProblem(
-        statement=f"Factor: {sp.sstr(prompt)}",
-        prompt_expression=sp.sstr(prompt),
-        answer=sp.sstr(answer),
-        form_constraints=(FULLY_FACTORED,),
-        kind=AnswerKind.SINGLE_VALUE,
-        worked_steps=(sp.sstr(prompt), sp.sstr(answer)),
-    )
+    prompt = sp.expand(_primitive_binomial(rng) * _primitive_binomial(rng))
+    return _rewrite("Factor", prompt, sp.factor(prompt), FULLY_FACTORED)
 
 
 def solve_by_factoring(rng: random.Random) -> GeneratedProblem:
@@ -3116,12 +3202,16 @@ def solve_by_factoring(rng: random.Random) -> GeneratedProblem:
     lhs = sp.expand((X - r1) * (X - r2))
     roots = sorted({r1, r2})
     return GeneratedProblem(
-        statement=f"Solve for x: {sp.sstr(lhs)} = 0",
+        statement=_statement("Solve for x: ", sp.Eq(lhs, 0)),
         prompt_expression=None,
         answer=", ".join(str(r) for r in roots),
         form_constraints=(),
         kind=AnswerKind.VALUE_SET,
-        worked_steps=(f"{sp.sstr(lhs)} = 0", f"{sp.sstr(sp.factor(lhs))} = 0"),
+        worked_steps=(
+            write_math(sp.Eq(lhs, 0)),
+            write_math(sp.Eq(sp.factor(lhs), 0)),
+            _solutions_line(roots),
+        ),
         label="x =",
     )
 
@@ -3130,14 +3220,9 @@ def complete_the_square(rng: random.Random) -> GeneratedProblem:
     p = _nonzero(rng, -7, 7)
     q = rng.randint(-20, 20)
     answer = (X + p) ** 2 + q
-    prompt = sp.expand(answer)
-    return GeneratedProblem(
-        statement=f"Rewrite by completing the square: {sp.sstr(prompt)}",
-        prompt_expression=sp.sstr(prompt),
-        answer=sp.sstr(answer),
-        form_constraints=(COMPLETED_SQUARE,),
-        kind=AnswerKind.SINGLE_VALUE,
-        worked_steps=(sp.sstr(prompt), sp.sstr(answer)),
+    halfway = f"{write_math((X + p) ** 2)} - {p * p} {_signed(p * p + q)}"
+    return _rewrite(
+        "Rewrite by completing the square", sp.expand(answer), answer, COMPLETED_SQUARE, via=(halfway,)
     )
 
 
@@ -3150,30 +3235,37 @@ def apply_quadratic_formula(rng: random.Random) -> GeneratedProblem:
         if discriminant > 0 and not sp.sqrt(discriminant).is_Integer:
             break
     else:  # pragma: no cover - the search succeeds within a few draws in practice
-        a, b, c = 1, 1, -1
-    roots = sp.solve(sp.Eq(a * X**2 + b * X + c, 0), X)
+        a, b, c, discriminant = 1, 1, -1, 5
+    equation = sp.Eq(a * X**2 + b * X + c, 0)
+    roots = sp.solve(equation, X)
     return GeneratedProblem(
-        statement=f"Solve exactly using the quadratic formula: {sp.sstr(a * X**2 + b * X + c)} = 0",
+        statement=_statement("Solve exactly using the quadratic formula: ", equation),
         prompt_expression=None,
-        answer=", ".join(sp.sstr(r) for r in roots),
-        form_constraints=(EXACT_NOT_DECIMAL,),
+        answer=", ".join(write_math(r) for r in roots),
+        form_constraints=(),
         kind=AnswerKind.VALUE_SET,
-        worked_steps=(),
+        worked_steps=(
+            write_math(equation),
+            f"x = ({-b} ± sqrt({discriminant}))/{2 * a}",
+            _solutions_line(roots),
+        ),
         label="x =",
     )
 
 
 def count_real_roots(rng: random.Random) -> GeneratedProblem:
+    # The answer is chosen first, so no answer is right by default. The
+    # equation is then built from a perfect square a(x - r)^2, which has one
+    # root: lowering its constant gives two roots, raising it gives none. The
+    # three cases look alike, so only b^2 - 4ac tells them apart.
+    count = rng.choice((0, 1, 2))
     a = rng.randint(1, 3)
-    b = _nonzero(rng)
-    c = rng.randint(-9, 9)
-    discriminant = b * b - 4 * a * c
-    count = 2 if discriminant > 0 else (1 if discriminant == 0 else 0)
+    r = _nonzero(rng, -5, 5)
+    shift = 0 if count == 1 else rng.randint(1, 9)
+    constant = a * r * r + (shift if count == 0 else -shift)
+    equation = sp.Eq(a * X**2 - 2 * a * r * X + constant, 0)
     return GeneratedProblem(
-        statement=(
-            f"How many distinct real roots does {sp.sstr(a * X**2 + b * X + c)} = 0 have? "
-            "Answer 0, 1, or 2."
-        ),
+        statement=_statement("How many distinct real roots does ", equation, " have? Answer 0, 1, or 2."),
         prompt_expression=None,
         answer=str(count),
         form_constraints=(),
@@ -3188,13 +3280,14 @@ def vertex_x_coordinate(rng: random.Random) -> GeneratedProblem:
     b = _nonzero(rng)
     c = rng.randint(-9, 9)
     return GeneratedProblem(
-        statement=(
-            "Find the x-coordinate of the vertex of "
-            f"y = {sp.sstr(a * X**2 + b * X + c)}. Give an exact value."
+        statement=_statement(
+            "Find the x-coordinate of the vertex of ",
+            sp.Eq(Y, a * X**2 + b * X + c),
+            ". Give an exact value.",
         ),
         prompt_expression=None,
-        answer=sp.sstr(sp.Rational(-b, 2 * a)),
-        form_constraints=(EXACT_NOT_DECIMAL,),
+        answer=write_math(sp.Rational(-b, 2 * a)),
+        form_constraints=(),  # "exact" rules out -2.33 for -7/3; -0.25 for -1/4 is exact
         kind=AnswerKind.SINGLE_VALUE,
         worked_steps=(),
         label="x =",
@@ -3206,9 +3299,9 @@ def rectangle_area_word_problem(rng: random.Random) -> GeneratedProblem:
     extra = rng.randint(1, 9)
     area = width * (width + extra)
     return GeneratedProblem(
-        statement=(
+        statement=_statement(
             f"A rectangle is {extra} cm longer than it is wide. "
-            f"Its area is {area} cm^2. Find its width in cm."
+            f"Its area is {area} cm². Find its width in cm."
         ),
         prompt_expression=None,
         answer=str(width),
@@ -3234,6 +3327,8 @@ QUADRATICS_TEMPLATES: tuple[TemplateSpec, ...] = (
     TemplateSpec(TemplateId("quad.word.area.v1"), SkillId("quad.word.area"), 1.5, rectangle_area_word_problem),
 )
 ```
+
+Worked steps are the generator's reference solution, and each is a chain of equivalent lines that `diff_steps` verifies. Only the templates whose working is such a chain have them; the discriminant, vertex and word problem wait for a richer step format (spec D18).
 
 - [ ] **Step 3: Write the registry**
 
@@ -3300,6 +3395,10 @@ These are the tests that keep a wrong answer key from ever reaching an unassiste
 
 ```python
 # tests/content/test_generator_contracts.py
+import json
+import pathlib
+from collections import Counter
+
 import pytest
 import sympy as sp
 
@@ -3308,13 +3407,18 @@ from learnai.adapters.cas.sympy_verifier import SympyVerifier
 from learnai.adapters.content.generators.quadratics import QUADRATICS_TEMPLATES
 from learnai.adapters.content.registry import GeneratorRegistry
 from learnai.domain.enums import AnswerKind, Verdict
-from learnai.domain.items import Submission
+from learnai.domain.ids import SkillId, TemplateId
+from learnai.domain.items import Formula, Item, Submission
 
 REGISTRY = GeneratorRegistry(QUADRATICS_TEMPLATES)
 VERIFIER = SympyVerifier()
+X, Y = sp.symbols("x y")
 
 LIGHT_SEEDS = 300
 DEEP_SEEDS = 50
+
+GOLDEN = pathlib.Path(__file__).parent / "golden_items.json"
+GOLDEN_SEEDS = 5
 
 
 def ids(spec):
@@ -3326,7 +3430,7 @@ def test_generation_is_deterministic_and_well_formed(spec):
     for seed in range(LIGHT_SEEDS):
         item = REGISTRY.instantiate(spec.id, seed)
         assert item == REGISTRY.instantiate(spec.id, seed), "generator is not deterministic"
-        assert item.statement.strip()
+        assert item.statement
         assert item.answer_spec.expression.strip()
         assert item.id == f"{spec.id}#{seed}"
         assert item.skill_id == spec.skill_id
@@ -3374,13 +3478,52 @@ def test_an_item_that_asks_for_a_value_labels_its_field(spec):
 
 
 @pytest.mark.parametrize("spec", QUADRATICS_TEMPLATES, ids=ids)
+def test_statements_show_maths_only_as_formulas_a_student_could_type(spec):
+    """Prose never carries notation; every Formula reads back through the
+    student's own parser and names only the item's variables, so a stray "zoo"
+    or "nan" from SymPy fails here; and a rewriting item shows its prompt."""
+    for seed in range(DEEP_SEEDS):
+        problem = REGISTRY.instantiate_raw(spec.id, seed)
+        for block in problem.statement:
+            if isinstance(block, Formula):
+                parsed = parse_math(block.source, allow_equation=True)
+                assert parsed.free_symbols <= {X, Y}, (spec.id, seed, block.source)
+            else:
+                assert not set(block.text) & set("^*="), (spec.id, seed, block.text)
+        if problem.prompt_expression is not None:
+            assert Formula(problem.prompt_expression) in problem.statement, (spec.id, seed)
+
+
+@pytest.mark.parametrize("spec", QUADRATICS_TEMPLATES, ids=ids)
+def test_no_single_answer_is_right_for_most_items(spec):
+    """A student who types the same thing every time must not be right by default."""
+    keys = Counter(REGISTRY.instantiate_raw(spec.id, seed).answer for seed in range(LIGHT_SEEDS))
+    answer, count = keys.most_common(1)[0]
+    assert count <= LIGHT_SEEDS / 2, f"{spec.id}: {answer!r} is right for {count} of {LIGHT_SEEDS} items"
+
+
+@pytest.mark.parametrize(
+    "template_id", ["quad.factor.monic.v1", "quad.factor.diffsquares.v1", "quad.factor.nonmonic.v1"]
+)
+def test_a_factoring_item_exercises_no_other_factoring_skill(template_id):
+    """A common factor to take out first belongs to quad.factor.common, and a
+    monic prompt with no x term is a difference of squares: either way a miss
+    would be recorded against the wrong skill."""
+    for seed in range(DEEP_SEEDS):
+        prompt = parse_math(REGISTRY.instantiate_raw(TemplateId(template_id), seed).prompt_expression)
+        assert sp.factor_list(prompt)[0] == 1, (template_id, seed, prompt)
+        if template_id == "quad.factor.monic.v1":
+            assert sp.Poly(prompt, X).coeff_monomial(X) != 0, (seed, prompt)
+
+
+@pytest.mark.parametrize("spec", QUADRATICS_TEMPLATES, ids=ids)
 def test_no_degenerate_coefficients(spec):
     for seed in range(DEEP_SEEDS):
         problem = REGISTRY.instantiate_raw(spec.id, seed)
-        expr_text = problem.prompt_expression or problem.statement
-        for number in parse_math(problem.answer).atoms(sp.Integer) if problem.kind is AnswerKind.SINGLE_VALUE else ():
+        if problem.kind is not AnswerKind.SINGLE_VALUE:
+            continue
+        for number in parse_math(problem.answer).atoms(sp.Integer):
             assert abs(int(number)) <= 400, f"{spec.id} seed {seed} produced a wild coefficient"
-        assert "zoo" not in expr_text and "nan" not in expr_text
 
 
 @pytest.mark.parametrize("spec", QUADRATICS_TEMPLATES, ids=ids)
@@ -3392,24 +3535,49 @@ def test_every_emitted_constraint_is_supported_by_the_verifier(spec):
         assert not unknown, f"{spec.id} emits constraints the verifier cannot judge: {unknown}"
 
 
-def test_next_item_picks_the_closest_difficulty_band():
-    from learnai.domain.ids import SkillId
+def _snapshot(item: Item) -> dict[str, object]:
+    return {
+        "statement": [repr(block) for block in item.statement],
+        "answer": item.answer_spec.expression,
+        "form_constraints": list(item.answer_spec.form_constraints),
+        "label": item.answer_spec.label,
+        "worked_steps": list(item.worked_steps),
+    }
 
+
+def test_an_item_id_names_the_same_problem_forever():
+    """The determinism contract across upgrades, not just within one run. An
+    evidence event names its item as template#seed, so a Python or SymPy
+    upgrade that changed what a seed generates would silently rewrite a
+    student's history. Change a generator by registering a new version
+    (".v2"), never by editing a recorded item. New templates are recorded on
+    their first run: review the file, commit it, and rerun."""
+    current = {
+        str(item.id): _snapshot(item)
+        for spec in QUADRATICS_TEMPLATES
+        for item in (REGISTRY.instantiate(spec.id, seed) for seed in range(GOLDEN_SEEDS))
+    }
+    recorded = json.loads(GOLDEN.read_text()) if GOLDEN.exists() else {}
+    changed = sorted(i for i in recorded if current.get(i) != recorded[i])
+    assert not changed, f"these ids no longer generate their recorded problem: {changed}"
+    new = {i: s for i, s in current.items() if i not in recorded}
+    if new:
+        GOLDEN.write_text(json.dumps(recorded | new, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
+        pytest.fail(f"recorded {len(new)} new items in {GOLDEN.name}: review it, commit it, and rerun")
+
+
+def test_next_item_picks_the_closest_difficulty_band():
     item = REGISTRY.next_item(SkillId("quad.factor.monic"), target_difficulty=0.0, seed=7)
     assert item.skill_id == SkillId("quad.factor.monic")
     assert item.difficulty == 0.0
 
 
 def test_unknown_skill_raises():
-    from learnai.domain.ids import SkillId
-
     with pytest.raises(KeyError):
         REGISTRY.next_item(SkillId("nope"), target_difficulty=0.0, seed=1)
 
 
 def test_every_skill_in_the_cluster_has_a_template():
-    import pathlib
-
     from learnai.adapters.content.loader import load_cluster
 
     cluster = load_cluster(
@@ -3422,7 +3590,8 @@ def test_every_skill_in_the_cluster_has_a_template():
 - [ ] **Step 5: Run the contract tests**
 
 Run: `.venv/bin/pytest tests/content/test_generator_contracts.py -v`
-Expected: PASS — 87 tests (seven parametrised suites over twelve templates, plus three standalone). This is the slowest suite in the project; if it exceeds about 90 seconds, lower `DEEP_SEEDS` to 30 rather than weakening an assertion.
+Expected: the first run FAILS in exactly one test, by design — `recorded 60 new items in golden_items.json`. Open `tests/content/golden_items.json` and read a few items: the statements show `Text` and `Formula` blocks in student notation (`Formula(source='x^2 - 5x + 4')`). Then rerun.
+Expected on the rerun: PASS — 115 tests (nine parametrised suites over twelve templates, three factoring templates, plus four standalone). This is the slowest suite in the project; if it exceeds about 90 seconds, lower `DEEP_SEEDS` to 30 rather than weakening an assertion.
 
 - [ ] **Step 6: Commit**
 
@@ -5249,7 +5418,7 @@ from learnai.adapters.cas.sympy_verifier import SympyVerifier
 from learnai.domain.enums import HelpRung, PrereqStrength, VettingLevel
 from learnai.domain.graph import SkillGraph
 from learnai.domain.ids import ItemId, SkillId, VerificationKind
-from learnai.domain.items import AnswerSpec, Item, Provenance
+from learnai.domain.items import AnswerSpec, Formula, Item, Provenance, Text
 from learnai.domain.skills import PrereqEdge, Skill
 from learnai.domain.turn import (
     Proposal,
@@ -5278,7 +5447,7 @@ ITEM = Item(
     id=ItemId("i1"),
     skill_id=SkillId("quad.factor.monic"),
     provenance=Provenance.authored(),
-    statement="Factor x^2 + 3x + 2",
+    statement=(Text("Factor "), Formula("x^2 + 3x + 2")),
     answer_spec=AnswerSpec("(x + 1)*(x + 2)"),
     worked_steps=(),
     difficulty=0.0,
@@ -5401,7 +5570,7 @@ from learnai.adapters.tutor.fake_tutor import FakeTutor
 from learnai.domain.enums import HelpRung, VettingLevel
 from learnai.domain.graph import SkillGraph
 from learnai.domain.ids import ItemId, SkillId, VerificationKind
-from learnai.domain.items import AnswerSpec, Item, Provenance
+from learnai.domain.items import AnswerSpec, Formula, Item, Provenance, Text
 from learnai.domain.skills import Skill
 from learnai.domain.turn import SkillPack, StudentSummary, TurnContext, TutorTurn, validate_turn
 
@@ -5409,7 +5578,7 @@ GRAPH = SkillGraph.build(
     [Skill(SkillId("s"), "math", "s", "can s", VerificationKind("cas_symbolic"), (), ())], []
 )
 ITEM = Item(
-    ItemId("i"), SkillId("s"), Provenance.authored(), "Factor x^2 + 3x + 2",
+    ItemId("i"), SkillId("s"), Provenance.authored(), (Text("Factor "), Formula("x^2 + 3x + 2")),
     AnswerSpec("(x + 1)*(x + 2)"), (), 0.0, VettingLevel.MACHINE_VERIFIED,
 )
 
@@ -5555,12 +5724,12 @@ from learnai.adapters.clock import FakeClock
 from learnai.domain.contracts import PRACTICE
 from learnai.domain.enums import VettingLevel
 from learnai.domain.ids import CourseId, ItemId, SessionId, SkillId, StudentId, TaskId
-from learnai.domain.items import AnswerSpec, Item, Provenance
+from learnai.domain.items import AnswerSpec, Item, Provenance, Text
 from learnai.domain.session import Session, Task, TaskState, advance, end_session, replace_task
 
 
 def item(n: int) -> Item:
-    return Item(ItemId(f"i{n}"), SkillId("s"), Provenance.authored(), f"q{n}",
+    return Item(ItemId(f"i{n}"), SkillId("s"), Provenance.authored(), (Text(f"q{n}"),),
                 AnswerSpec("1"), (), 0.0, VettingLevel.MACHINE_VERIFIED)
 
 
@@ -6794,7 +6963,7 @@ from dataclasses import dataclass, field
 import sympy as sp
 
 from learnai.adapters.cas.misconception_rules import SympyMisconceptionRules
-from learnai.adapters.cas.parse import parse_math
+from learnai.adapters.cas.parse import parse_math, write_math
 from learnai.adapters.cas.sympy_verifier import SympyVerifier
 from learnai.adapters.clock import FakeClock
 from learnai.adapters.content.generators.quadratics import QUADRATICS_TEMPLATES
@@ -6807,7 +6976,7 @@ from learnai.domain.contracts import PRACTICE
 from learnai.domain.engine import PracticeEngine
 from learnai.domain.enums import Confidence
 from learnai.domain.ids import CourseId, SessionId, SkillId, StudentId
-from learnai.domain.items import Submission
+from learnai.domain.items import Formula, Submission
 from learnai.domain.mastery import SkillState
 from learnai.domain.session import Task
 
@@ -6855,12 +7024,13 @@ class MisconceptionCarrier(Persona):
         x = sp.Symbol("x")
         poly = sp.Poly(correct, x)
         constant = poly.coeff_monomial(1)
-        return sp.sstr(x**2 + constant)
+        return write_math(x**2 + constant)
 
     def steps(self, task: Task) -> list[str]:
         if task.skill_id != SkillId("quad.expand.square"):
             return []
-        return [task.item.statement.split(": ", 1)[-1], self._believed_expansion(task)]
+        prompt = next(block.source for block in task.item.statement if isinstance(block, Formula))
+        return [prompt, self._believed_expansion(task)]
 
 
 class Overconfident(Persona):
