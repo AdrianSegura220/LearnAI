@@ -1,0 +1,750 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mastery model explorer — Slice 1</title>
+<style>
+  :root {
+    --ink: #0f172a; --muted: #64748b; --line: #e2e8f0; --bg: #f6f7f9; --card: #ffffff;
+    --blue: #2563eb; --green: #16a34a; --red: #dc2626; --amber: #d97706;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 28px 20px 64px; }
+  header h1 { font-size: 22px; margin: 0 0 4px; }
+  header p { color: var(--muted); margin: 0 0 18px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
+  .tabs button {
+    padding: 9px 16px; border-radius: 999px; border: 1px solid var(--line);
+    background: var(--card); color: var(--ink); font: inherit; cursor: pointer;
+  }
+  .tabs button.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(280px, 1fr); gap: 16px; align-items: start; }
+  @media (max-width: 920px) { .grid { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 16px; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  }
+  .card h2 { font-size: 15px; margin: 0 0 10px; }
+  .card h2 .sub { color: var(--muted); font-weight: 400; font-size: 13px; }
+  .stack { display: grid; gap: 16px; }
+  canvas { width: 100%; display: block; }
+  #memCanvas, #stCanvas { height: 340px; }
+  #memMini, #stMini { height: 150px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+  button.action {
+    padding: 8px 13px; border-radius: 10px; border: 1px solid var(--line);
+    background: #fff; color: var(--ink); font: inherit; cursor: pointer;
+  }
+  button.action:hover { border-color: #94a3b8; }
+  button.action.good { border-color: #bbf7d0; background: #f0fdf4; color: #166534; }
+  button.action.bad { border-color: #fecaca; background: #fef2f2; color: #991b1b; }
+  button.action.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .readouts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; margin: 10px 0; }
+  .readouts .item { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+  .readouts .item .k { font-size: 12px; color: var(--muted); }
+  .readouts .item .v { font-size: 16px; font-variant-numeric: tabular-nums; }
+  .chip { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12.5px; border: 1px solid var(--line); background: #f8fafc; }
+  .chip.green { background: #f0fdf4; border-color: #bbf7d0; color: #166534; }
+  .chip.red { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+  .chip.amber { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+  pre.math {
+    margin: 10px 0 0; padding: 12px; border-radius: 10px; background: #f8fafc;
+    border: 1px dashed #cbd5e1; font: 12.5px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #334155; overflow-x: auto; white-space: pre;
+  }
+  .sliders { display: grid; gap: 8px; margin-top: 8px; }
+  .sliders label { display: grid; grid-template-columns: 92px 1fr 66px; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); }
+  .sliders input[type=range] { width: 100%; accent-color: var(--blue); }
+  .sliders output { font-variant-numeric: tabular-nums; color: var(--ink); text-align: right; }
+  table.log { width: 100%; border-collapse: collapse; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  table.log th, table.log td { padding: 4px 8px; border-bottom: 1px solid #f1f5f9; text-align: right; }
+  table.log th:first-child, table.log td:first-child { text-align: left; }
+  table.log th { color: var(--muted); font-weight: 500; }
+  .legend { margin-top: 8px; font-size: 12.5px; color: var(--muted); display: flex; gap: 14px; flex-wrap: wrap; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+  .note { font-size: 12.5px; color: var(--muted); }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .seg button { border: 0; padding: 8px 12px; background: #fff; font: inherit; cursor: pointer; border-right: 1px solid var(--line); color: var(--muted); }
+  .seg button:last-child { border-right: 0; }
+  .seg button.on { background: #eef2ff; color: #3730a3; font-weight: 600; }
+  .gate { display: grid; gap: 6px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Mastery model explorer</h1>
+    <p>Two numbers per (student, skill): <strong>strength</strong> — can they do it? — and <strong>stability</strong> — will they still have it? The maths from the Slice 1 plan, made playable.</p>
+  </header>
+
+  <nav class="tabs">
+    <button id="tabBtnMemory" class="active">Memory — stability &amp; forgetting</button>
+    <button id="tabBtnStrength">Strength — Elo &amp; the evidence gate</button>
+  </nav>
+
+  <main>
+    <section id="tabMemory">
+      <div class="grid">
+        <div class="stack">
+          <div class="card">
+            <h2>Forgetting curve <span class="sub">R(t) = 2^(−(t − last success)/S)</span></h2>
+            <canvas id="memCanvas"></canvas>
+            <div class="legend">
+              <span><i style="background:#2563eb"></i>live decay</span>
+              <span><i style="background:#93c5fd"></i>past segments</span>
+              <span><i style="background:#16a34a"></i>successful review</span>
+              <span><i style="background:#dc2626"></i>failure</span>
+              <span><i style="background:#eab308"></i>due point</span>
+            </div>
+            <p class="note" style="margin-top:8px">
+              The curve drops by half every <em>S</em> days. A review resets it to 1. A failure doesn't reset it — the curve steepens from the same anchor, which is why a lapse feels like losing progress.
+            </p>
+          </div>
+          <div class="card">
+            <h2>Stability history <span class="sub">after each review (log scale)</span></h2>
+            <canvas id="memMini"></canvas>
+            <p class="note" style="margin-top:8px">On-time successes at r_target = 0.90 multiply S by ×1.5 each. Fourteen of them carry a skill from "gone by tomorrow" to monthly upkeep. A failure drops it to ×0.3 — about three reviews' worth.</p>
+          </div>
+          <div class="card">
+            <h2>Review log</h2>
+            <table class="log" id="memTable">
+              <thead><tr><th>#</th><th>day</th><th>result</th><th>R at review</th><th>S before → after</th><th>effect</th></tr></thead>
+              <tbody></tbody>
+            </table>
+            <p class="note" id="memTableEmpty">No reviews yet — run the simulation or place one.</p>
+          </div>
+        </div>
+
+        <div class="stack">
+          <div class="card">
+            <h2>Do things</h2>
+            <div class="controls">
+              <button class="action primary" id="btnRun">▶ Run 14 on-time reviews</button>
+              <button class="action" id="btnReset">Reset</button>
+            </div>
+            <div class="controls">
+              <button class="action" id="btnHour">+1 h</button>
+              <button class="action" id="btnDay">+1 day</button>
+              <button class="action" id="btnWeek">+1 week</button>
+              <button class="action" id="btnToDue">→ advance to due</button>
+            </div>
+            <div class="controls">
+              <button class="action good" id="btnSuccess">✓ Review succeeds</button>
+              <button class="action bad" id="btnFail">✗ Review fails</button>
+            </div>
+            <p class="note">Advance time to move "now", then review. Try: advance <em>past</em> due and still succeed — a late success earns a bigger multiplier than an on-time one.</p>
+          </div>
+
+          <div class="card">
+            <h2>State</h2>
+            <div class="readouts">
+              <div class="item"><div class="k">stability S</div><div class="v" id="outS">—</div></div>
+              <div class="item"><div class="k">R(now)</div><div class="v" id="outR">0.00</div></div>
+              <div class="item"><div class="k">next due</div><div class="v" id="outDue">—</div></div>
+              <div class="item"><div class="k">status</div><div class="v"><span id="outStatus" class="chip">not retrieved</span></div></div>
+            </div>
+            <pre class="math" id="memMath"></pre>
+          </div>
+
+          <div class="card">
+            <h2>Parameters <span class="sub">the dials</span></h2>
+            <div class="sliders">
+              <label>A <input type="range" id="slA" min="1" max="10" step="0.5" value="5"><output id="slAv">5</output></label>
+              <label>F <input type="range" id="slF" min="0.1" max="0.6" step="0.05" value="0.3"><output id="slFv">0.30</output></label>
+              <label>r_target <input type="range" id="slR" min="0.75" max="0.95" step="0.01" value="0.9"><output id="slRv">0.90</output></label>
+              <label>S₀ <input type="range" id="slS0" min="0.5" max="5" step="0.5" value="1"><output id="slS0v">1.0</output></label>
+            </div>
+            <p class="note" style="margin-top:10px">
+              A = spacing growth. F = failure factor (0.3 ≈ three reviews lost). r_target = the retrievability you schedule at — lower it to review less often (and forget more).
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="tabStrength" hidden>
+      <div class="grid">
+        <div class="stack">
+          <div class="card">
+            <h2>Expected success <span class="sub">p = 1 / (1 + e^(−(strength − difficulty)))</span></h2>
+            <canvas id="stCanvas"></canvas>
+            <div class="legend">
+              <span><i style="background:#2563eb"></i>sigmoid</span>
+              <span><i style="background:#0f172a"></i>current gap</span>
+              <span><i style="background:#16a34a"></i>surprise on correct</span>
+              <span><i style="background:#dc2626"></i>surprise on wrong</span>
+            </div>
+            <p class="note" style="margin-top:8px">
+              The gap <em>strength − difficulty</em> is in logits: +1 means p ≈ 0.73, +1.5 means p ≈ 0.82 (the mastery threshold). Attempts move <em>strength</em>, not difficulty — the model moves only by surprise, and only by as much as the weight allows.
+            </p>
+          </div>
+          <div class="card">
+            <h2>Strength over attempts</h2>
+            <canvas id="stMini"></canvas>
+            <p class="note" style="margin-top:8px">Each correct answer climbs by K·w·(1−p); hard items and early attempts move more. K = 0.4/(1+0.05·n) shrinks as evidence accumulates.</p>
+          </div>
+        </div>
+
+        <div class="stack">
+          <div class="card">
+            <h2>Attempt</h2>
+            <div class="controls">
+              <button class="action good" id="btnCorrect">✓ correct</button>
+              <button class="action bad" id="btnWrong">✗ wrong</button>
+              <button class="action" id="btnStReset">Reset</button>
+            </div>
+            <p class="note" style="margin-bottom:6px">Evidence weight w (policy — how much this attempt may count):</p>
+            <div class="seg" id="segW">
+              <button data-w="1" class="on">cold / timed · 1.0</button>
+              <button data-w="0.1">post-instruction · 0.1</button>
+              <button data-w="0">assisted · 0.0</button>
+            </div>
+            <p class="note" style="margin-top:8px">Set w = 0.0 and answer correctly: nothing moves. That is P2/P4 as arithmetic — assistance cannot manufacture mastery.</p>
+          </div>
+
+          <div class="card">
+            <h2>State</h2>
+            <div class="readouts">
+              <div class="item"><div class="k">strength</div><div class="v" id="stOutS">0.000</div></div>
+              <div class="item"><div class="k">attempts</div><div class="v" id="stOutN">0</div></div>
+              <div class="item"><div class="k">p_expected</div><div class="v" id="stOutP">0.500</div></div>
+              <div class="item"><div class="k">last Δ</div><div class="v" id="stOutD">—</div></div>
+            </div>
+            <pre class="math" id="stMath"></pre>
+          </div>
+
+          <div class="card">
+            <h2>Mastery gate <span class="sub">is_learned</span></h2>
+            <div class="sliders">
+              <label>difficulty <input type="range" id="slDiff" min="-2" max="2" step="0.1" value="0"><output id="slDiffv">0.0</output></label>
+            </div>
+            <div class="gate">
+              <div>strength ≥ 1.5 &nbsp;<span class="chip" id="gateStrength">✗</span></div>
+              <div>≥ 2 unassisted-correct &nbsp;<span class="chip" id="gateCount">✗</span></div>
+            </div>
+            <p style="margin:10px 0 0"><span class="chip" id="gateLearned">is_learned = false</span></p>
+            <p class="note" style="margin-top:8px">A badge, not a reading: once earned it never un-earns. Freshness (R ≥ r_target) is the quieter "needs a tune-up" state, over on the memory tab.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+
+  function setupCanvas(c) {
+    const dpr = window.devicePixelRatio || 1;
+    const w = c.clientWidth || 600;
+    const h = c.clientHeight || 300;
+    if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) {
+      c.width = Math.round(w * dpr);
+      c.height = Math.round(h * dpr);
+    }
+    const ctx = c.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    return { ctx, w, h };
+  }
+
+  function fmtDays(d) {
+    if (d === null || !isFinite(d)) return '—';
+    const a = Math.abs(d);
+    if (a < 1 / 24) return (a * 24 * 60).toFixed(0) + ' min';
+    if (a < 1) return (a * 24).toFixed(1) + ' h';
+    if (a < 10) return a.toFixed(2) + ' d';
+    return a.toFixed(1) + ' d';
+  }
+
+  function niceStep(range, target) {
+    const steps = [0.05, 0.1, 0.2, 0.25, 0.5, 1, 2, 5, 10, 20, 50, 100, 200];
+    for (const s of steps) if (range / s <= target) return s;
+    return steps[steps.length - 1];
+  }
+
+  // ---------- memory tab ----------
+
+  const mem = {
+    A: 5, F: 0.3, rTarget: 0.9, S0: 1, Smin: 0.2,
+    S: 0, lastSucc: null, now: 0,
+    epochs: [], reviews: [], timer: null,
+  };
+
+  const memR = (t) => (mem.lastSucc === null || mem.S <= 0) ? 0 : Math.pow(2, -(t - mem.lastSucc) / mem.S);
+  const memDueAt = () => mem.lastSucc === null ? null : mem.lastSucc + mem.S * Math.log2(1 / mem.rTarget);
+
+  function memReset() {
+    if (mem.timer) { clearInterval(mem.timer); mem.timer = null; }
+    mem.S = 0; mem.lastSucc = null; mem.now = 0; mem.epochs = []; mem.reviews = [];
+    renderMemory();
+  }
+
+  function memAdvance(dt) { mem.now += dt; renderMemory(); }
+
+  function memToDue() {
+    const due = memDueAt();
+    if (due !== null && due > mem.now) mem.now = due;
+    else mem.now += mem.lastSucc === null ? 0.5 : 0.05;
+    renderMemory();
+  }
+
+  function memReview(ok) {
+    const t = mem.now;
+    const rAt = mem.lastSucc === null ? null : memR(t);
+    const sBefore = mem.S;
+    let sAfter, newLast = mem.lastSucc;
+    if (ok) {
+      if (mem.lastSucc === null) { sAfter = mem.S0; newLast = t; }
+      else { sAfter = mem.S * (1 + mem.A * (1 - rAt)); newLast = t; }
+    } else {
+      sAfter = Math.max(mem.Smin, mem.S * mem.F);
+    }
+    mem.reviews.push({ t, ok, rAt, sBefore, sAfter });
+    mem.S = sAfter; mem.lastSucc = newLast;
+    mem.epochs.push({ start: t, anchor: newLast, S: sAfter });
+    renderMemory();
+  }
+
+  function memRun14() {
+    if (mem.timer) { clearInterval(mem.timer); mem.timer = null; }
+    memReset();
+    let done = 0;
+    mem.timer = setInterval(() => {
+      if (done >= 14) { clearInterval(mem.timer); mem.timer = null; return; }
+      if (mem.lastSucc !== null) memToDue();
+      memReview(true);
+      done += 1;
+    }, 320);
+  }
+
+  function memXMax() {
+    const due = memDueAt();
+    const base = mem.lastSucc === null ? Math.max(3, mem.now + 1)
+      : Math.max(mem.lastSucc + (due - mem.lastSucc) * 2.5, mem.now * 1.05);
+    return Math.max(base, 1);
+  }
+
+  function drawMemCanvas() {
+    const c = $('memCanvas');
+    const { ctx, w, h } = setupCanvas(c);
+    const L = 46, R = 16, T = 14, B = 30;
+    const pw = w - L - R, ph = h - T - B;
+    const xMax = memXMax();
+    const X = (t) => L + (t / xMax) * pw;
+    const Y = (r) => T + (1 - r) * ph;
+
+    ctx.fillStyle = 'rgba(22, 163, 74, 0.07)';
+    ctx.fillRect(L, Y(1), pw, Y(mem.rTarget) - Y(1));
+    ctx.strokeStyle = '#16a34a';
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath(); ctx.moveTo(L, Y(mem.rTarget)); ctx.lineTo(L + pw, Y(mem.rTarget)); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#166534';
+    ctx.font = '11px ui-monospace, monospace';
+    ctx.fillText('r_target = ' + mem.rTarget.toFixed(2), L + 6, Y(mem.rTarget) - 5);
+
+    ctx.strokeStyle = '#eef2f7';
+    ctx.fillStyle = '#94a3b8';
+    for (let r = 0; r <= 1.001; r += 0.25) {
+      ctx.beginPath(); ctx.moveTo(L, Y(r)); ctx.lineTo(L + pw, Y(r)); ctx.stroke();
+      ctx.fillText(r.toFixed(2), 8, Y(r) + 3);
+    }
+    const step = niceStep(xMax, 7);
+    for (let t = 0; t <= xMax + 1e-9; t += step) {
+      ctx.beginPath(); ctx.moveTo(X(t), T); ctx.lineTo(X(t), T + ph); ctx.stroke();
+      ctx.fillText(fmtDays(t), X(t) - 14, h - 10);
+    }
+
+    ctx.lineWidth = 1.6;
+    mem.epochs.forEach((ep, i) => {
+      if (ep.anchor === null) return;
+      const end = (i + 1 < mem.epochs.length) ? mem.epochs[i + 1].start : xMax;
+      const isLive = i === mem.epochs.length - 1;
+      ctx.strokeStyle = isLive ? '#2563eb' : 'rgba(147, 197, 253, 0.9)';
+      if (isLive) ctx.lineWidth = 2.4; else ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      const steps = 120;
+      for (let s = 0; s <= steps; s++) {
+        const t = ep.start + (end - ep.start) * (s / steps);
+        const r = Math.max(0, Math.pow(2, -(t - ep.anchor) / ep.S));
+        if (s === 0) ctx.moveTo(X(t), Y(r)); else ctx.lineTo(X(t), Y(r));
+      }
+      ctx.stroke();
+    });
+
+    mem.reviews.forEach((rv) => {
+      const x = X(rv.t);
+      ctx.strokeStyle = rv.ok ? 'rgba(22, 163, 74, 0.55)' : 'rgba(220, 38, 38, 0.55)';
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.moveTo(x, T); ctx.lineTo(x, T + ph); ctx.stroke();
+      ctx.setLineDash([]);
+      const rAfter = rv.ok ? 1 : memR(rv.t);
+      ctx.fillStyle = rv.ok ? '#16a34a' : '#dc2626';
+      ctx.beginPath(); ctx.arc(x, Y(rAfter), 3.5, 0, Math.PI * 2); ctx.fill();
+    });
+
+    if (mem.lastSucc !== null) {
+      const due = memDueAt();
+      if (due <= xMax) {
+        ctx.fillStyle = '#eab308';
+        ctx.beginPath();
+        ctx.moveTo(X(due), Y(mem.rTarget) - 6);
+        ctx.lineTo(X(due) + 6, Y(mem.rTarget));
+        ctx.lineTo(X(due), Y(mem.rTarget) + 6);
+        ctx.lineTo(X(due) - 6, Y(mem.rTarget));
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#a16207';
+        ctx.font = '11px ui-monospace, monospace';
+        ctx.fillText('due', X(due) - 10, Y(mem.rTarget) + 18);
+      }
+    }
+
+    const nx = X(mem.now);
+    ctx.strokeStyle = 'rgba(15, 23, 42, 0.5)';
+    ctx.beginPath(); ctx.moveTo(nx, T); ctx.lineTo(nx, T + ph); ctx.stroke();
+    const rNow = memR(mem.now);
+    ctx.fillStyle = '#0f172a';
+    ctx.beginPath(); ctx.arc(nx, Y(rNow), 4, 0, Math.PI * 2); ctx.fill();
+    ctx.font = '11px ui-monospace, monospace';
+    ctx.fillText('now', nx + 5, T + ph - 6);
+  }
+
+  function drawMemMini() {
+    const c = $('memMini');
+    const { ctx, w, h } = setupCanvas(c);
+    const L = 46, R = 16, T = 12, B = 22;
+    const pw = w - L - R, ph = h - T - B;
+    ctx.strokeStyle = '#eef2f7'; ctx.fillStyle = '#94a3b8'; ctx.font = '11px ui-monospace, monospace';
+    const vals = mem.reviews.map((r) => r.sAfter).filter((v) => v > 0);
+    if (vals.length === 0) {
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText('no reviews yet', L + 8, T + ph / 2);
+      return;
+    }
+    const hi = Math.max.apply(null, vals.concat([1])) * 1.2;
+    const lo = Math.min.apply(null, vals.concat([mem.S0])) * 0.6;
+    const logLo = Math.log10(lo), logHi = Math.log10(hi);
+    const Y = (v) => T + (1 - (Math.log10(v) - logLo) / (logHi - logLo)) * ph;
+    for (const tick of [0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200]) {
+      if (tick < lo || tick > hi) continue;
+      ctx.strokeStyle = '#f1f5f9';
+      ctx.beginPath(); ctx.moveTo(L, Y(tick)); ctx.lineTo(L + pw, Y(tick)); ctx.stroke();
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText(fmtDays(tick), 6, Y(tick) + 3);
+    }
+    const n = mem.reviews.length;
+    const X = (i) => L + (n === 1 ? pw / 2 : (i / (n - 1)) * pw);
+    ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    mem.reviews.forEach((rv, i) => {
+      const y = Y(Math.max(rv.sAfter, 0.19));
+      if (i === 0) ctx.moveTo(X(i), y); else ctx.lineTo(X(i), y);
+    });
+    ctx.stroke();
+    mem.reviews.forEach((rv, i) => {
+      ctx.fillStyle = rv.ok ? '#16a34a' : '#dc2626';
+      ctx.beginPath(); ctx.arc(X(i), Y(Math.max(rv.sAfter, 0.19)), 3, 0, Math.PI * 2); ctx.fill();
+    });
+  }
+
+  function renderMemReadout() {
+    const rNow = memR(mem.now);
+    const due = memDueAt();
+    $('outS').textContent = mem.lastSucc === null && mem.S === 0 ? '—' : fmtDays(mem.S);
+    $('outR').textContent = rNow.toFixed(3);
+    $('outDue').textContent = due === null ? '—' : fmtDays(due - mem.now) + ' (day ' + due.toFixed(1) + ')';
+    const st = $('outStatus');
+    if (mem.lastSucc === null) { st.textContent = 'not retrieved — R = 0'; st.className = 'chip'; }
+    else if (rNow >= mem.rTarget) { st.textContent = 'fresh — R ≥ r_target'; st.className = 'chip green'; }
+    else { st.textContent = 'due for review'; st.className = 'chip amber'; }
+
+    const lines = [];
+    if (mem.lastSucc === null) {
+      lines.push('No successful retrieval yet: R(t) = 0 everywhere.');
+      lines.push('First success sets S = S₀ = ' + mem.S0.toFixed(1) + ' d.');
+    } else {
+      const r = memR(mem.now);
+      const elapsed = mem.now - mem.lastSucc;
+      lines.push('R(t)  = 2^(−(t − last_success)/S)');
+      lines.push('S     = ' + mem.S.toFixed(2) + ' d   ·   elapsed = ' + elapsed.toFixed(2) + ' d   ·   R(now) = ' + r.toFixed(3));
+      const iv = mem.S * Math.log2(1 / mem.rTarget);
+      lines.push('due   = last_success + S·log2(1/r_target) = ' + mem.lastSucc.toFixed(2) + ' + ' + iv.toFixed(2) + ' = ' + due.toFixed(2) + ' d');
+      const sSucc = mem.S * (1 + mem.A * (1 - r));
+      lines.push('if success now (R=' + r.toFixed(2) + '):  S′ = S·(1 + A·(1−R)) = ' + mem.S.toFixed(2) + ' × ' + (1 + mem.A * (1 - r)).toFixed(2) + ' = ' + sSucc.toFixed(2) + ' d  (×' + (sSucc / mem.S).toFixed(2) + ')' );
+      const sFail = Math.max(mem.Smin, mem.S * mem.F);
+      lines.push('if failure now:            S′ = max(' + mem.Smin + ', S·F) = ' + sFail.toFixed(2) + ' d  (×' + (sFail / mem.S).toFixed(2) + ')');
+      lines.push('fresh zone: R ≥ ' + mem.rTarget.toFixed(2) + '  →  ' + (rNow >= mem.rTarget ? 'still fresh' : 'past due'));
+    }
+    $('memMath').textContent = lines.join('\n');
+  }
+
+  function renderMemTable() {
+    const tb = $('memTable').querySelector('tbody');
+    tb.innerHTML = '';
+    const rows = mem.reviews.slice(-8).reverse();
+    $('memTableEmpty').style.display = rows.length ? 'none' : '';
+    for (const rv of rows) {
+      const n = mem.reviews.indexOf(rv) + 1;
+      const tr = document.createElement('tr');
+      const effect = rv.sBefore > 0 ? '×' + (rv.sAfter / rv.sBefore).toFixed(2) : 'set S₀';
+      const cells = [
+        n, rv.t.toFixed(2), rv.ok ? '✓' : '✗',
+        rv.rAt === null ? '—' : rv.rAt.toFixed(3),
+        fmtDays(rv.sBefore) + ' → ' + fmtDays(rv.sAfter),
+        rv.ok && rv.sBefore === 0 ? 'set S₀' : effect,
+      ];
+      for (const v of cells) {
+        const td = document.createElement('td');
+        td.textContent = v;
+        tr.appendChild(td);
+      }
+      tb.appendChild(tr);
+    }
+  }
+
+  function renderMemory() {
+    drawMemCanvas();
+    drawMemMini();
+    renderMemReadout();
+    renderMemTable();
+  }
+
+  // ---------- strength tab ----------
+
+  const st = { S: 0, attempt: 0, w: 1, difficulty: 0, trail: [], lastArrow: null, everLearned: false };
+  const pExp = (s, d) => 1 / (1 + Math.exp(-(s - d)));
+  const kOf = (n) => 0.4 / (1 + 0.05 * n);
+
+  function stSubmit(correct) {
+    const p = pExp(st.S, st.difficulty);
+    const K = kOf(st.attempt);
+    const outcome = correct ? 1 : 0;
+    const delta = K * st.w * (outcome - p);
+    const gapBefore = st.S - st.difficulty;
+    st.S += delta;
+    st.attempt += 1;
+    st.trail.push({ gap: gapBefore, p, correct, w: st.w, strength: st.S });
+    st.lastArrow = { gapBefore, pBefore: p, outcome, delta, w: st.w };
+    renderStrength();
+  }
+
+  function stReset() {
+    st.S = 0; st.attempt = 0; st.trail = []; st.lastArrow = null; st.everLearned = false;
+    renderStrength();
+  }
+
+  function drawStCanvas() {
+    const c = $('stCanvas');
+    const { ctx, w, h } = setupCanvas(c);
+    const L = 46, R = 18, T = 14, B = 30;
+    const pw = w - L - R, ph = h - T - B;
+    const xMin = -4, xMax = 4;
+    const X = (g) => L + ((g - xMin) / (xMax - xMin)) * pw;
+    const Y = (p) => T + (1 - p) * ph;
+
+    ctx.strokeStyle = '#eef2f7'; ctx.fillStyle = '#94a3b8'; ctx.font = '11px ui-monospace, monospace';
+    for (let p = 0; p <= 1.001; p += 0.25) {
+      ctx.beginPath(); ctx.moveTo(L, Y(p)); ctx.lineTo(L + pw, Y(p)); ctx.stroke();
+      ctx.fillText(p.toFixed(2), 8, Y(p) + 3);
+    }
+    for (let g = xMin; g <= xMax + 1e-9; g += 1) {
+      ctx.beginPath(); ctx.moveTo(X(g), T); ctx.lineTo(X(g), T + ph); ctx.stroke();
+      ctx.fillText((g > 0 ? '+' : '') + g.toFixed(0), X(g) - 6, h - 10);
+    }
+    ctx.fillStyle = '#64748b';
+    ctx.fillText('gap  strength − difficulty  (logits)', L + 6, h - 10);
+
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(L, Y(0)); ctx.lineTo(L + pw, Y(0)); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(L, Y(1)); ctx.lineTo(L + pw, Y(1)); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillText('outcome 1 (correct)', L + 6, Y(1) - 5);
+    ctx.fillText('outcome 0 (wrong)', L + 6, Y(0) + 13);
+
+    ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    const steps = 160;
+    for (let s = 0; s <= steps; s++) {
+      const g = xMin + (xMax - xMin) * (s / steps);
+      const p = pExp(g, 0);
+      if (s === 0) ctx.moveTo(X(g), Y(p)); else ctx.lineTo(X(g), Y(p));
+    }
+    ctx.stroke();
+
+    st.trail.forEach((tp) => {
+      if (tp.w === 0) return;
+      ctx.fillStyle = tp.correct ? 'rgba(22, 163, 74, 0.35)' : 'rgba(220, 38, 38, 0.35)';
+      ctx.beginPath(); ctx.arc(X(tp.gap), Y(tp.p), 3, 0, Math.PI * 2); ctx.fill();
+    });
+
+    if (st.lastArrow) {
+      const a = st.lastArrow;
+      const gx = Math.max(xMin, Math.min(xMax, a.gapBefore));
+      const y1 = Y(a.pBefore), y2 = Y(a.outcome);
+      ctx.strokeStyle = a.outcome === 1 ? '#16a34a' : '#dc2626';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(X(gx), y1); ctx.lineTo(X(gx), y2); ctx.stroke();
+      const dir = y2 < y1 ? -1 : 1;
+      ctx.beginPath();
+      ctx.moveTo(X(gx), y2);
+      ctx.lineTo(X(gx) - 5, y2 - dir * 8);
+      ctx.lineTo(X(gx) + 5, y2 - dir * 8);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = a.outcome === 1 ? '#166534' : '#991b1b';
+      ctx.fillText('surprise ' + (a.outcome - a.pBefore >= 0 ? '+' : '') + (a.outcome - a.pBefore).toFixed(2), X(gx) + 8, (y1 + y2) / 2);
+    }
+
+    const gap = st.S - st.difficulty;
+    const p = pExp(st.S, st.difficulty);
+    const gx = Math.max(xMin, Math.min(xMax, gap));
+    ctx.fillStyle = '#0f172a';
+    ctx.beginPath(); ctx.arc(X(gx), Y(p), 5, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#0f172a'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(X(gx), Y(p)); ctx.lineTo(X(gx), Y(0)); ctx.stroke();
+    ctx.font = '12px ui-monospace, monospace';
+    ctx.fillText('gap ' + gap.toFixed(2) + ' → p ' + p.toFixed(3), X(gx) + 8, Y(p) + 16);
+  }
+
+  function drawStMini() {
+    const c = $('stMini');
+    const { ctx, w, h } = setupCanvas(c);
+    const L = 46, R = 16, T = 12, B = 22;
+    const pw = w - L - R, ph = h - T - B;
+    if (st.trail.length === 0) {
+      ctx.fillStyle = '#94a3b8'; ctx.font = '11px ui-monospace, monospace';
+      ctx.fillText('no attempts yet', L + 8, T + ph / 2);
+      return;
+    }
+    const strengths = st.trail.map((t) => t.strength);
+    const lo = Math.min.apply(null, strengths.concat([-0.5, 0]));
+    const hi = Math.max.apply(null, strengths.concat([2, 1.6]));
+    const Y = (v) => T + (1 - (v - lo) / (hi - lo)) * ph;
+    const n = st.trail.length;
+    const X = (i) => L + (n === 1 ? pw / 2 : (i / (n - 1)) * pw);
+    ctx.strokeStyle = '#f1f5f9'; ctx.fillStyle = '#94a3b8'; ctx.font = '11px ui-monospace, monospace';
+    for (let v = Math.ceil(lo * 2) / 2; v <= hi + 1e-9; v += 0.5) {
+      ctx.beginPath(); ctx.moveTo(L, Y(v)); ctx.lineTo(L + pw, Y(v)); ctx.stroke();
+      ctx.fillText(v.toFixed(1), 8, Y(v) + 3);
+    }
+    if (Y(1.5) > T && Y(1.5) < T + ph) {
+      ctx.strokeStyle = '#d97706'; ctx.setLineDash([4, 4]);
+      ctx.beginPath(); ctx.moveTo(L, Y(1.5)); ctx.lineTo(L + pw, Y(1.5)); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#a16207';
+      ctx.fillText('threshold 1.5', L + 6, Y(1.5) - 5);
+    }
+    ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    strengths.forEach((v, i) => { if (i === 0) ctx.moveTo(X(i), Y(v)); else ctx.lineTo(X(i), Y(v)); });
+    ctx.stroke();
+    st.trail.forEach((tp, i) => {
+      const v = tp.strength;
+      ctx.fillStyle = tp.w === 0 ? '#94a3b8' : (tp.correct ? '#16a34a' : '#dc2626');
+      ctx.beginPath(); ctx.arc(X(i), Y(v), 3, 0, Math.PI * 2); ctx.fill();
+    });
+  }
+
+  function renderStReadout() {
+    const p = pExp(st.S, st.difficulty);
+    const K = kOf(st.attempt);
+    $('stOutS').textContent = st.S.toFixed(3);
+    $('stOutN').textContent = String(st.attempt);
+    $('stOutP').textContent = p.toFixed(3);
+    const a = st.lastArrow;
+    $('stOutD').textContent = a === null ? '—' : (a.delta >= 0 ? '+' : '') + a.delta.toFixed(3);
+
+    const gap = st.S - st.difficulty;
+    const lines = [];
+    lines.push('p_expected = 1 / (1 + e^(−gap))');
+    lines.push('gap = strength − difficulty = ' + st.S.toFixed(3) + ' − ' + st.difficulty.toFixed(1) + ' = ' + gap.toFixed(3) + '   →   p = ' + p.toFixed(4));
+    lines.push('K = k₀ / (1 + k_decay·n) = 0.4 / (1 + 0.05·' + st.attempt + ') = ' + K.toFixed(4));
+    lines.push('Δ = K · w · (outcome − p) = ' + K.toFixed(4) + ' × ' + st.w.toFixed(1) + ' × (outcome − ' + p.toFixed(4) + ')');
+    if (a !== null) {
+      lines.push('last: outcome ' + a.outcome + ' with w = ' + a.w.toFixed(1) + '   →   Δ = ' + (a.delta >= 0 ? '+' : '') + a.delta.toFixed(4));
+    }
+    if (st.w === 0) lines.push('w = 0 → Δ = 0 exactly. Nothing moves. (P2 / P4 as arithmetic.)');
+    $('stMath').textContent = lines.join('\n');
+
+    const cold = st.trail.filter((t) => t.correct && t.w > 0).length;
+    const gs = st.S >= 1.5, gc = cold >= 2;
+    if (gs && gc) st.everLearned = true;
+    const eS = $('gateStrength'), eC = $('gateCount'), eL = $('gateLearned');
+    eS.textContent = (gs ? '✓ ' : '✗ ') + st.S.toFixed(2);
+    eS.className = 'chip ' + (gs ? 'green' : '');
+    eC.textContent = (gc ? '✓ ' : '✗ ') + cold;
+    eC.className = 'chip ' + (gc ? 'green' : '');
+    eL.textContent = 'is_learned = ' + (st.everLearned ? 'true ★' : 'false');
+    eL.className = 'chip ' + (st.everLearned ? 'green' : '');
+  }
+
+  function renderStrength() {
+    drawStCanvas();
+    drawStMini();
+    renderStReadout();
+  }
+
+  // ---------- wiring ----------
+
+  $('tabBtnMemory').addEventListener('click', () => {
+    $('tabMemory').hidden = false;
+    $('tabStrength').hidden = true;
+    $('tabBtnMemory').classList.add('active');
+    $('tabBtnStrength').classList.remove('active');
+    renderMemory();
+  });
+  $('tabBtnStrength').addEventListener('click', () => {
+    $('tabMemory').hidden = true;
+    $('tabStrength').hidden = false;
+    $('tabBtnStrength').classList.add('active');
+    $('tabBtnMemory').classList.remove('active');
+    renderStrength();
+  });
+
+  $('btnRun').addEventListener('click', memRun14);
+  $('btnReset').addEventListener('click', memReset);
+  $('btnHour').addEventListener('click', () => memAdvance(1 / 24));
+  $('btnDay').addEventListener('click', () => memAdvance(1));
+  $('btnWeek').addEventListener('click', () => memAdvance(7));
+  $('btnToDue').addEventListener('click', memToDue);
+  $('btnSuccess').addEventListener('click', () => { if (!mem.timer) memReview(true); });
+  $('btnFail').addEventListener('click', () => { if (!mem.timer) memReview(false); });
+
+  const bind = (id, out, fn, fmt) => {
+    const el = $(id), o = $(out);
+    el.addEventListener('input', () => { o.textContent = fmt(el.value); fn(parseFloat(el.value)); });
+    o.textContent = fmt(el.value);
+  };
+  bind('slA', 'slAv', (v) => { mem.A = v; renderMemory(); }, (v) => Number(v).toFixed(1));
+  bind('slF', 'slFv', (v) => { mem.F = v; renderMemory(); }, (v) => Number(v).toFixed(2));
+  bind('slR', 'slRv', (v) => { mem.rTarget = v; renderMemory(); }, (v) => Number(v).toFixed(2));
+  bind('slS0', 'slS0v', (v) => { mem.S0 = v; renderMemory(); }, (v) => Number(v).toFixed(1));
+
+  $('btnCorrect').addEventListener('click', () => stSubmit(true));
+  $('btnWrong').addEventListener('click', () => stSubmit(false));
+  $('btnStReset').addEventListener('click', stReset);
+  document.querySelectorAll('#segW button').forEach((b) => {
+    b.addEventListener('click', () => {
+      st.w = parseFloat(b.dataset.w);
+      document.querySelectorAll('#segW button').forEach((x) => x.classList.toggle('on', x === b));
+      renderStrength();
+    });
+  });
+  bind('slDiff', 'slDiffv', (v) => { st.difficulty = v; renderStrength(); }, (v) => Number(v).toFixed(1));
+
+  window.addEventListener('resize', () => { renderMemory(); renderStrength(); });
+
+  renderMemory();
+  renderStrength();
+})();
+</script>
+</body>
+</html>
