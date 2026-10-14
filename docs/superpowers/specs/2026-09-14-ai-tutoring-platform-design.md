@@ -239,6 +239,13 @@ matcher adapter resolves to code; the domain never interprets it. It is delibera
 from the misconception's `id`, which is content identity an author may rename, whereas the
 signature is a contract with a registered rule.
 
+**Signatures are a flat, subject-wide namespace.** The matcher resolves a signature by name
+alone, so two clusters must never spend one string on two beliefs: the collision would silently
+share a rule. Name signatures for the belief, specifically enough to be unique across the
+subject — `square_distributes_over_sum`, not `sign_error` — and treat renaming one as a content
+migration, unlike an id. When a second cluster arrives, cross-cluster uniqueness belongs in the
+content tooling's checks.
+
 Rules start life as *predicates*: given the step before and the step after, does this transition
 exhibit the belief? That is all diagnosis needs. Distractor generation needs the other direction
 — given the correct expression, what would this belief produce? — and the transform is already
@@ -734,8 +741,9 @@ When the CAS detects that equivalence broke at a step, the tutor stays quiet for
 lets the student meet the contradiction themselves, then walks back to where the error entered.
 This matches observed expert-tutor behaviour and preserves the productive-failure benefit.
 `intervention_timing` governs only **when the tutor speaks about a wrong step inside a problem**.
-It never ends a task or a session: a wrong answer closes the item, records the evidence, and the
-session proceeds to the next task.
+It never ends a task or a session: a wrong answer records its evidence and the task stays open —
+the student retries, takes a hint, or unlocks the full reveal; the session moves to the next task
+only once the current one is completed.
 
 Mock exam is `never` — no feedback of any kind during the exam, as in the real thing. Review is
 `immediate`, because review items are short, often single-step, and there is no later contradiction

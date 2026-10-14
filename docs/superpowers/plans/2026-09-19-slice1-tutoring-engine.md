@@ -63,7 +63,8 @@ src/learnai/
     clock.py                   # SystemClock, FakeClock
     cas/vocabulary.py          # this adapter's kind, answer kinds, form tokens
     cas/parse.py               # safe parsing of student/author input
-    cas/sympy_verifier.py      # Verifier implementation
+    cas/sympy_verifier.py      # Verifier implementation and the shared step reader
+    cas/misconception_rules.py # SympyMisconceptionRules — signature rules
     content/loader.py          # YAML -> SkillGraph
     content/registry.py        # GeneratorRegistry -> ItemSource
     content/generators/quadratics.py
@@ -612,6 +613,8 @@ verification: cas_symbolic
 
 # One catalogue, referenced by id. A belief that afflicts several skills is
 # authored once — see mc.square.distributes below, which two skills share.
+# On a skill, the list order is diagnosis priority: the first rule that fires
+# wins, so list the most specific belief first.
 misconceptions:
   - id: mc.foil.drops.cross
     name: Drops the cross terms
@@ -2770,7 +2773,7 @@ git commit -m "feat: answer checking with form constraints and answer kinds"
 
 **Interfaces:**
 - Consumes: `StepDiff` (Task 3), equivalence functions and `real_solutions` (Task 4), `SympyVerifier`, `_NAMED_VALUE` and `_expand_plus_minus` (Task 5).
-- Produces: `SympyVerifier.diff_steps(steps) -> StepDiff | None` returning the **first** step that does not follow from the one before, with `index` being the index of the offending step (so `steps[index - 1] -> steps[index]` is the broken transition). A step that cannot be read at all comes back with `unreadable=True`; an unreadable first step is reported at index 0.
+- Produces: `SympyVerifier.diff_steps(steps) -> StepDiff | None` returning the **first** step that does not follow from the one before, with `index` being the index of the offending step (so `steps[index - 1] -> steps[index]` is the broken transition). A step that cannot be read at all comes back with `unreadable=True`; an unreadable first step is reported at index 0. Also produces, as public module functions on the verifier: `parse_step(text) -> Step`, the `Alternatives` type, and the `Step` alias — the one reader for a line of student working. Task 8's misconception rules consume the same reader, so a belief fires on exactly the notations `diff_steps` accepts: one comma policy, one `or`/`±` handling.
 
 **What a step may be.** Students write working the way they write it on paper (spec P7), so the reader accepts:
 - an expression (`x^2 + 3x + 2`), or a line opening with `=`, which continues the previous expression (`= (x + 3)^2 - 4`);
@@ -2888,10 +2891,10 @@ Expected: FAIL — the tests expecting a diff fail with `assert None is not None
         if len(steps) < 2:
             return None
 
-        parsed: list[_Step | None] = []
+        parsed: list[Step | None] = []
         for raw in steps:
             try:
-                parsed.append(_parse_step(raw))
+                parsed.append(parse_step(raw))
             except ParseError:
                 parsed.append(None)
 
@@ -2904,11 +2907,11 @@ Expected: FAIL — the tests expecting a diff fail with `assert None is not None
         return None
 ```
 
-Add `from dataclasses import dataclass` to the imports, and `real_solutions` to the import from `learnai.adapters.cas.equivalence`. Then add the module-level helpers below `_satisfies`:
+Add `from dataclasses import dataclass` to the imports, and `real_solutions` to the import from `learnai.adapters.cas.equivalence`. Then add the module-level helpers below `_satisfies`. Three of them — `parse_step`, `Alternatives`, `Step` — drop the underscore and stay public: they are the one reader for a line of student working, and Task 8's misconception rules import them, so a belief fires on exactly the notations `diff_steps` accepts, with one comma policy and one `or`/`±` handling:
 
 ```python
 @dataclass(frozen=True)
-class _Alternatives:
+class Alternatives:
     """A step listing equations any of which may hold: "x = 1 or x = 3", "x = ±3"."""
 
     parts: tuple[sp.Eq, ...]
@@ -2918,13 +2921,17 @@ class _Alternatives:
         return set().union(*(part.free_symbols for part in self.parts))
 
 
-_Step = sp.Basic | _Alternatives
+Step = sp.Basic | Alternatives
 
 _OR = re.compile(r"\s+or\s+", re.IGNORECASE)
 
 
-def _parse_step(text: str) -> _Step:
+def parse_step(text: str) -> Step:
     """Read one line of working, in the notations students actually use.
+
+    Public: the one reader for a line of student working. Task 8's rules read
+    steps through it too, so a belief fires on exactly the notations the
+    differ accepts and the comma policy lives in one place.
 
     A line opening with "=" continues the previous expression. A line listing
     alternatives — joined by "or", written with "±" or "+/-", or separated by
@@ -2953,25 +2960,25 @@ def _parse_step(text: str) -> _Step:
             if not isinstance(equation, sp.Eq):
                 raise ParseError(f"{part!r} is not an equation")
             equations.append(equation)
-    return _Alternatives(tuple(equations)) if len(equations) > 1 else equations[0]
+    return Alternatives(tuple(equations)) if len(equations) > 1 else equations[0]
 
 
-def _is_claim(step: _Step) -> bool:
-    return isinstance(step, (sp.Eq, _Alternatives))
+def _is_claim(step: Step) -> bool:
+    return isinstance(step, (sp.Eq, Alternatives))
 
 
-def _equations(step: _Step) -> tuple[sp.Eq, ...]:
-    return step.parts if isinstance(step, _Alternatives) else (step,)
+def _equations(step: Step) -> tuple[sp.Eq, ...]:
+    return step.parts if isinstance(step, Alternatives) else (step,)
 
 
-def _solutions(step: _Step, var: sp.Symbol) -> frozenset[sp.Expr] | None:
+def _solutions(step: Step, var: sp.Symbol) -> frozenset[sp.Expr] | None:
     found = [real_solutions(equation, var) for equation in _equations(step)]
     if any(f is None for f in found):
         return None
     return frozenset().union(*found)
 
 
-def _steps_equivalent(a: _Step, b: _Step) -> bool:
+def _steps_equivalent(a: Step, b: Step) -> bool:
     """Expressions compare by value; equations and lists by their real solutions.
 
     A move between an expression and an equation changes what is claimed, so
@@ -3610,10 +3617,12 @@ git commit -m "feat: twelve CAS-verified quadratics generators with contract tes
 - Test: `tests/domain/test_diagnosis.py`, `tests/adapters/test_misconception_rules.py`
 
 **Interfaces:**
-- Consumes: `StepDiff` (Task 3), `Misconception` (Task 1), equivalence functions (Task 4).
+- Consumes: `StepDiff` (Task 3), `Misconception` (Task 1), equivalence functions (Task 4), and `parse_step` / `Alternatives` / `Step` (Task 6) — the shared step reader, so beliefs fire on exactly the notations `diff_steps` accepts.
 - Produces: `MisconceptionMatcher` protocol with `exhibits(signature: str, previous: str, current: str) -> bool`; `diagnose(step_diff, candidates, matcher) -> MisconceptionId | None` in the domain; `SympyMisconceptionRules` implementing the protocol, with `IMPLEMENTED_SIGNATURES: frozenset[str]` and `DEFERRED_SIGNATURES: frozenset[str]`.
 
 **Scope decision — six rules, six deferred.** Rules are written for the six skills a Slice 1 Practice session actually reaches from an empty frontier: `product_of_sums_drops_cross`, `square_distributes_over_sum`, `incomplete_common_factor`, `factor_sign_flip`, `sum_of_squares_factored`, `zero_product_without_zero`. The remaining six signatures are declared in `DEFERRED_SIGNATURES` and return `False` cleanly, so diagnosis degrades to "novel error" rather than crashing. A test asserts every signature in the content file is in exactly one of the two sets, so a new misconception cannot be added without a decision being made about it.
+
+**Rules pool per verification kind, not per cluster.** `SympyMisconceptionRules` is the matcher for every `cas_symbolic` skill, and a signature is a contract with a rule, not a quadratics-local name: a calculus cluster reuses `square_distributes_over_sum` by declaring the same signature, and a new belief is a new rule or an explicit deferral. When the registry outgrows this cluster, split the one module into a `cas/rules/` package with per-domain modules (algebra, calculus, …) that populate the same table — authoring becomes local, resolution stays flat, and nothing outside the adapter changes. A subject with a different verification kind gets a different matcher over the same protocol.
 
 - [ ] **Step 1: Write the failing domain test**
 
@@ -3765,6 +3774,42 @@ def test_unparseable_input_returns_false_rather_than_raising():
     assert RULES.exhibits("square_distributes_over_sum", "x +* 2", "y") is False
 
 
+def test_dropped_cross_terms_fire_on_either_written_order():
+    """"(2+x)" and "(x+2)" parse to the same product, so the belief must fire
+    whichever diagonal the student's term order selects."""
+    assert RULES.exhibits("product_of_sums_drops_cross", "(2+x)(x+5)", "x^2 + 10")
+    assert RULES.exhibits("product_of_sums_drops_cross", "(x+2)(x+5)", "7x")
+
+
+def test_correct_work_where_cross_terms_cancel_is_not_the_belief():
+    """(x+2)(x-2) = x^2 - 4 is the full expansion and also one diagonal."""
+    assert not RULES.exhibits("product_of_sums_drops_cross", "(x+2)(x-2)", "x^2 - 4")
+
+
+def test_the_same_error_in_or_notation_is_the_same_belief():
+    assert RULES.exhibits("zero_product_without_zero", "(x-1)(x-2) = 6", "x = 7 or x = 8")
+
+
+CANONICAL_ERRORS = {
+    "square_distributes_over_sum": ("(x+3)^2", "x^2 + 9"),
+    "product_of_sums_drops_cross": ("(x+2)(x+5)", "x^2 + 10"),
+    "incomplete_common_factor": ("12x^2 + 18x", "2*(6x^2 + 9x)"),
+    "factor_sign_flip": ("x^2 + 3x + 2", "(x-1)(x-2)"),
+    "sum_of_squares_factored": ("x^2 + 9", "(x+3)(x+3)"),
+    "zero_product_without_zero": ("(x-1)(x-2) = 6", "x = 7, x = 8"),
+}
+
+
+@pytest.mark.parametrize("signature", sorted(CANONICAL_ERRORS))
+def test_a_canonical_error_fires_exactly_one_rule(signature):
+    """The guard behind first-match-wins: the rules stay disjoint, so the
+    content's declaration order is priority between specific beliefs, not a
+    tie-break between overlapping ones."""
+    previous, current = CANONICAL_ERRORS[signature]
+    fired = [s for s in sorted(IMPLEMENTED_SIGNATURES) if RULES.exhibits(s, previous, current)]
+    assert fired == [signature]
+
+
 def test_every_content_signature_is_classified():
     cluster = load_cluster(CLUSTER)
     declared = {m.signature for m in cluster.misconceptions.values()}
@@ -3787,15 +3832,26 @@ from collections.abc import Callable
 import sympy as sp
 
 from learnai.adapters.cas.equivalence import expressions_equivalent
-from learnai.adapters.cas.parse import ParseError, parse_math
+from learnai.adapters.cas.parse import ParseError
+from learnai.adapters.cas.sympy_verifier import Alternatives, Step, parse_step
 
 X = sp.Symbol("x")
-_A, _B, _C, _D = (sp.Wild(n, exclude=[0]) for n in ("wa", "wb", "wc", "wd"))
+_A, _B = (sp.Wild(n, exclude=[0]) for n in ("wa", "wb"))
 
 Rule = Callable[[sp.Basic, sp.Basic], bool]
 
 
+def _comparable(previous: sp.Basic, current: sp.Basic) -> bool:
+    """Whether both sides are expressions, which every rule below but the
+    zero-product one needs. A claim — an equation, or a list of them — is a
+    Basic but not an Expr, and handing one over would raise inside the rule
+    instead of declining to match."""
+    return isinstance(previous, sp.Expr) and isinstance(current, sp.Expr)
+
+
 def _square_distributes(previous: sp.Basic, current: sp.Basic) -> bool:
+    if not _comparable(previous, current):
+        return False
     match = previous.match((_A + _B) ** 2)
     if not match:
         return False
@@ -3804,15 +3860,34 @@ def _square_distributes(previous: sp.Basic, current: sp.Basic) -> bool:
 
 
 def _drops_cross_terms(previous: sp.Basic, current: sp.Basic) -> bool:
-    match = previous.match((_A + _B) * (_C + _D))
-    if not match:
+    """One diagonal of the multiplication grid, cross terms dropped.
+
+    Which two products are "first" and "last" depends on the order the student
+    wrote the terms in each factor, which parsing does not preserve — so either
+    diagonal is this belief, not just the one canonical argument order happens
+    to pick. The grid is read directly rather than Wild-matched: a match returns
+    one assignment, never all, so which diagonal it picks is not stable.
+    """
+    if not _comparable(previous, current):
         return False
-    wrong = match[_A] * match[_C] + match[_B] * match[_D]
-    return expressions_equivalent(sp.expand(current), sp.expand(wrong))
+    if not previous.is_Mul or len(previous.args) != 2:
+        return False
+    f1, f2 = previous.args
+    if not (f1.is_Add and len(f1.args) == 2 and f2.is_Add and len(f2.args) == 2):
+        return False
+    if expressions_equivalent(sp.expand(current), sp.expand(previous)):
+        return False  # correct work, or cross terms that cancel: (x+2)(x-2)
+    (t1, t2), (u1, u2) = f1.args, f2.args
+    diagonals = (t1 * u1 + t2 * u2, t1 * u2 + t2 * u1)
+    return any(expressions_equivalent(sp.expand(current), sp.expand(d)) for d in diagonals)
 
 
 def _incomplete_common_factor(previous: sp.Basic, current: sp.Basic) -> bool:
     """Still algebraically correct, but a further common factor remains."""
+    if not _comparable(previous, current):
+        return False
+    if not current.is_Mul:
+        return False  # expanded or untouched work is not a partial factoring
     if not expressions_equivalent(sp.expand(previous), sp.expand(current)):
         return False
     return sp.factor(current) != current
@@ -3820,6 +3895,8 @@ def _incomplete_common_factor(previous: sp.Basic, current: sp.Basic) -> bool:
 
 def _factor_sign_flip(previous: sp.Basic, current: sp.Basic) -> bool:
     """Right magnitudes, wrong signs: the answer factors previous(-x) instead."""
+    if not _comparable(previous, current):
+        return False
     if expressions_equivalent(sp.expand(previous), sp.expand(current)):
         return False
     reflected = sp.expand(previous.subs(X, -X))
@@ -3827,6 +3904,8 @@ def _factor_sign_flip(previous: sp.Basic, current: sp.Basic) -> bool:
 
 
 def _sum_of_squares_factored(previous: sp.Basic, current: sp.Basic) -> bool:
+    if not _comparable(previous, current):
+        return False
     if not previous.is_Add or len(previous.args) != 2:
         return False
     if not all(term.is_number or term.is_Pow for term in previous.args):
@@ -3854,8 +3933,18 @@ def _zero_product_without_zero(previous: sp.Basic, current: sp.Basic) -> bool:
 
 
 def _claimed_values(current: sp.Basic) -> set[sp.Expr]:
+    """The values a step claims, for comparison with the naive roots.
+
+    A step may claim several at once — "x = 7, x = 8" — which the shared
+    reader flattens into one Tuple of equations.
+    """
     if isinstance(current, sp.Eq):
-        return {current.rhs}
+        return {sp.nsimplify(current.rhs)}
+    if isinstance(current, sp.Tuple):
+        values: set[sp.Expr] = set()
+        for entry in current:
+            values |= _claimed_values(entry)
+        return values
     return set()
 
 
@@ -3885,7 +3974,8 @@ DEFERRED_SIGNATURES = frozenset(
 class SympyMisconceptionRules:
     """Matcher for `cas_symbolic` skills.
 
-    A deferred or unknown signature returns False, so diagnosis degrades to
+    A deferred or unknown signature returns False, and so does a step the
+    shared reader cannot parse or a rule cannot handle: diagnosis degrades to
     "novel error" and the tutor still receives the localised step.
     """
 
@@ -3894,45 +3984,29 @@ class SympyMisconceptionRules:
         if rule is None:
             return False
         try:
-            prev_expr = parse_math(previous, allow_equation=True)
+            prev_step = parse_step(previous)
         except ParseError:
             return False
         try:
-            cur_expr = _parse_current(current)
+            cur_step = parse_step(current)
         except ParseError:
             return False
         try:
-            return bool(rule(prev_expr, cur_expr))
+            return bool(rule(_as_basic(prev_step), _as_basic(cur_step)))
         except (TypeError, ValueError, NotImplementedError, sp.SympifyError):
             return False
 
 
-def _parse_current(current: str) -> sp.Basic:
-    """Student work may claim several roots at once, e.g. "x = 7, x = 8"."""
-    parts = [p for p in current.split(",") if p.strip()]
-    if len(parts) > 1:
-        return sp.Tuple(*[parse_math(p, allow_equation=True) for p in parts])
-    return parse_math(current, allow_equation=True)
-```
-
-Note: `_claimed_values` must also read a `sp.Tuple` of equations, so extend it:
-
-```python
-def _claimed_values(current: sp.Basic) -> set[sp.Expr]:
-    if isinstance(current, sp.Eq):
-        return {sp.nsimplify(current.rhs)}
-    if isinstance(current, sp.Tuple):
-        values: set[sp.Expr] = set()
-        for entry in current:
-            values |= _claimed_values(entry)
-        return values
-    return set()
+def _as_basic(step: Step) -> sp.Basic:
+    """A step listing several claims becomes one Tuple, so every rule can
+    pattern-match whatever it is handed."""
+    return sp.Tuple(*step.parts) if isinstance(step, Alternatives) else step
 ```
 
 - [ ] **Step 8: Run the rules tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/adapters/test_misconception_rules.py -v`
-Expected: PASS — 16 tests.
+Expected: PASS — 25 tests.
 
 - [ ] **Step 9: Run the whole suite**
 
@@ -3960,6 +4034,8 @@ git commit -m "feat: misconception diagnosis with six CAS rules and explicit def
 - Produces: `MasteryParameters` (frozen, all fields defaulted, including `guess_baseline` and `confidence_probability`) and `DEFAULT_PARAMETERS` in `parameters.py`; `SkillState` frozen dataclass; `p_expected(strength, difficulty) -> float`, `k_factor(attempt_count) -> float`, `update_strength(state, item_difficulty, outcome: float, weight, params) -> SkillState`; every mastery function takes `params: MasteryParameters = DEFAULT_PARAMETERS` as its final argument; `EVIDENCE_WEIGHT: dict[EvidenceClass, float]` and `classify_evidence(*, attempt_index, help_taken, taught_this_session, timed) -> EvidenceClass`.
 
 **Interpretation recorded here:** the spec says "first attempt cold counts". A second attempt on the same item, even with no hint taken, follows a wrong-answer verdict — information the student did not have before — so it is **not** cold. `classify_evidence` returns `ASSISTED` for any attempt after the first. Flag this to the spec owner if they intended otherwise; it is a one-line change.
+
+**Second interpretation, same shape:** `TIMED_EXAM` is awarded only to a **clean first attempt**. Help or a retry outranks `timed` — the class carries full weight because it claims unassisted performance under time pressure, and a hint taken during an exam (or a retry after a verdict) is neither. Task 12's contracts make the combination unreachable (`ModeContract` rejects `timed=True` with any ladder), and the classifier here is the accounting backstop that keeps the evidence log honest if a leak ever happens.
 
 - [ ] **Step 1: Write the parameters value object**
 
@@ -4195,6 +4271,9 @@ class SkillState:
     unassisted_correct_count: int = 0
     calibration_gap: float = 0.0
     active_misconceptions: tuple[MisconceptionId, ...] = ()
+    ever_learned: bool = False
+    """Set the moment the learned bar is first crossed; is_learned honours it
+    forever, so a later lapse never revokes an earned badge (spec §7.3)."""
 
 
 def p_expected(
@@ -4279,10 +4358,25 @@ def test_same_session_teaching_makes_it_post_instruction():
     )
 
 
-def test_timed_beats_everything():
+def test_a_clean_timed_attempt_beats_taught_this_session():
+    """Timed beats context — but only when the attempt is uncontaminated."""
     assert (
-        classify_evidence(attempt_index=3, help_taken=True, taught_this_session=True, timed=True)
+        classify_evidence(attempt_index=0, help_taken=False, taught_this_session=True, timed=True)
         is EvidenceClass.TIMED_EXAM
+    )
+
+
+def test_help_beats_timing_because_contamination_beats_context():
+    assert (
+        classify_evidence(attempt_index=0, help_taken=True, taught_this_session=False, timed=True)
+        is EvidenceClass.ASSISTED
+    )
+
+
+def test_a_timed_retry_is_not_clean_exam_evidence():
+    assert (
+        classify_evidence(attempt_index=1, help_taken=False, taught_this_session=False, timed=True)
+        is EvidenceClass.ASSISTED
     )
 
 
@@ -4321,15 +4415,20 @@ EVIDENCE_WEIGHT: dict[EvidenceClass, float] = {
 def classify_evidence(
     *, attempt_index: int, help_taken: bool, taught_this_session: bool, timed: bool
 ) -> EvidenceClass:
-    """Decide what an attempt is worth. Strictest applicable class wins.
+    """Decide what an attempt is worth.
+
+    Contamination beats context: help or a retry demotes to ASSISTED even in a
+    timed task. `TIMED_EXAM` is awarded only to a clean first attempt, because
+    its full weight claims unassisted performance under time pressure, and a
+    hint taken during an exam — or a retry after a verdict — is neither.
 
     `attempt_index` is zero-based: only the very first submission on a task can
     be cold, because every later one follows a verdict the student learned from.
     """
-    if timed:
-        return EvidenceClass.TIMED_EXAM
     if help_taken or attempt_index > 0:
         return EvidenceClass.ASSISTED
+    if timed:
+        return EvidenceClass.TIMED_EXAM
     if taught_this_session:
         return EvidenceClass.POST_INSTRUCTION
     return EvidenceClass.UNASSISTED_COLD
@@ -4338,7 +4437,7 @@ def classify_evidence(
 - [ ] **Step 8: Run the evidence tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/domain/test_evidence.py -v`
-Expected: PASS — 8 tests.
+Expected: PASS — 10 tests.
 
 - [ ] **Step 9: Commit**
 
@@ -4564,11 +4663,16 @@ def update_stability(
 def due_at(
     state: SkillState, params: MasteryParameters = DEFAULT_PARAMETERS
 ) -> datetime | None:
-    """When retrievability will fall to r_target — roughly 0.152 half-lives."""
+    """When retrievability will fall to r_target — roughly 0.152 half-lives.
+
+    The microsecond nudge keeps the instant itself 'fresh': datetime arithmetic
+    quantises to microseconds, and without it `is_fresh(state, due_at(state))`
+    can land just below the target when the quantisation rounds the other way.
+    """
     if state.last_success_at is None or state.stability <= 0.0:
         return None
     gap = state.stability * math.log2(1.0 / params.r_target)
-    return state.last_success_at + timedelta(days=gap)
+    return state.last_success_at + timedelta(days=gap) - timedelta.resolution
 
 
 def is_fresh(
@@ -4578,8 +4682,12 @@ def is_fresh(
 
 
 def is_learned(state: SkillState, params: MasteryParameters = DEFAULT_PARAMETERS) -> bool:
-    """An achievement, not a freshness reading: once earned it never un-earns."""
-    return (
+    """An achievement, not a freshness reading: once earned it never un-earns.
+
+    A later failure may drop strength below the bar; the projection set
+    `ever_learned` the moment it was first crossed, and this predicate honours
+    it (spec §7.3)."""
+    return state.ever_learned or (
         state.strength >= params.strength_threshold
         and state.unassisted_correct_count >= params.min_unassisted_correct
     )
@@ -4872,14 +4980,20 @@ git commit -m "feat: prerequisite propagation and calibration tracking"
 
 **Interfaces:**
 - Consumes: `HelpRung`, `RevealPrice`, `InterventionTiming`, `VettingLevel` (Task 1).
-- Produces: `EffortCondition(min_attempts, ladder_exhausted)`; `ModeContract(name, base_max_rung, unlock_full_reveal_after, reveal_price, evidence_weight, min_vetting_level, intervention_timing, timed, mixes_skills)`; the `PRACTICE` contract instance; `HelpState(rungs_used, attempts)` with properties `highest_rung` and `help_taken`; `ladder_exhausted(contract, help_state) -> bool`, `reveal_unlocked(contract, help_state) -> bool`, `permitted_rung(contract, help_state) -> HelpRung`, `next_rung(contract, help_state) -> HelpRung | None`, `record_help(help_state, rung) -> HelpState`, `record_attempt(help_state) -> HelpState`.
+- Produces: `EffortCondition(min_attempts, ladder_exhausted)`; `ModeContract(name, base_max_rung, unlock_full_reveal_after, reveal_price, evidence_weight, min_vetting_level, intervention_timing, timed, mixes_skills)`; the `PRACTICE` contract instance; `HelpState(rungs_used, attempts, submissions)` with properties `highest_rung` and `help_taken`; `ladder_exhausted(contract, help_state) -> bool`, `reveal_unlocked(contract, help_state) -> bool`, `permitted_rung(contract, help_state) -> HelpRung`, `next_rung(contract, help_state) -> HelpRung | None`, `record_help(help_state, rung) -> HelpState`, `record_attempt(help_state) -> HelpState`, `record_submission(help_state) -> HelpState`.
 
-**Deferred:** `initial_strategy` / `TeachingStrategy` from spec §8.3 belongs to Learn mode and arrives with it in Slice 3. In Practice the generosity that applies is difficulty targeting, which Task 15's planner implements.
+**Deferred:** `initial_strategy` / `TeachingStrategy` from spec §8.3 belongs to Learn mode and arrives with it in Slice 3. In Practice the generosity that applies is difficulty targeting, which Task 15's planner implements. The drop-to-prerequisite escape hatch (§8.1) and failure-driven frontier descent (§7.4) are also deferred — see the note in Task 15.
+
+**Invariant — a timed contract offers no help.** `timed=True` is the evidence claim "exam conditions": attempts carry `TIMED_EXAM`'s full weight only because it means unassisted performance under time pressure, so a hint button in an exam would make the claim false. `ModeContract` rejects `timed=True` with any ladder rung, any reveal unlock, or any intervention timing other than `NEVER`; a future assessment contract ships with `base_max_rung=HelpRung.NONE`, `unlock_full_reveal_after=None`, and `intervention_timing=InterventionTiming.NEVER`. Note `timed` is not "the UI shows a clock": a speed drill that offers hints is simply not `timed=True`. Task 9's classifier holds the same invariant as an accounting backstop — help or a retry demotes a timed attempt to `ASSISTED`.
 
 - [ ] **Step 1: Write the failing contract test**
 
 ```python
 # tests/domain/test_contracts.py
+from dataclasses import replace
+
+import pytest
+
 from learnai.domain.contracts import PRACTICE, EffortCondition, ModeContract
 from learnai.domain.enums import HelpRung, InterventionTiming, RevealPrice, VettingLevel
 
@@ -4908,6 +5022,39 @@ def test_practice_lets_an_error_run_before_intervening():
 
 def test_practice_is_untimed_and_mixes_skills():
     assert PRACTICE.timed is False and PRACTICE.mixes_skills is True
+
+
+def test_a_timed_contract_must_not_offer_help():
+    """TIMED_EXAM's full weight claims unassisted performance under time
+    pressure; a ladder in an exam would make that claim false. The combination
+    is rejected at construction, and Task 9's classifier demotes any helped
+    timed attempt as an accounting backstop."""
+    with pytest.raises(ValueError):
+        ModeContract(
+            name="assessment",
+            base_max_rung=HelpRung.NUDGE,
+            unlock_full_reveal_after=None,
+            reveal_price=RevealPrice.NONE,
+            evidence_weight=1.0,
+            min_vetting_level=VettingLevel.MACHINE_VERIFIED,
+            intervention_timing=InterventionTiming.NEVER,
+            timed=True,
+            mixes_skills=False,
+        )
+    assessment = ModeContract(
+        name="assessment",
+        base_max_rung=HelpRung.NONE,
+        unlock_full_reveal_after=None,
+        reveal_price=RevealPrice.NONE,
+        evidence_weight=1.0,
+        min_vetting_level=VettingLevel.MACHINE_VERIFIED,
+        intervention_timing=InterventionTiming.NEVER,
+        timed=True,
+        mixes_skills=False,
+    )
+    assert assessment.base_max_rung is HelpRung.NONE
+    with pytest.raises(ValueError):
+        replace(assessment, intervention_timing=InterventionTiming.IMMEDIATE)
 
 
 def test_a_contract_is_immutable():
@@ -4947,6 +5094,22 @@ class ModeContract:
     timed: bool
     mixes_skills: bool
 
+    def __post_init__(self) -> None:
+        """A timed contract offers no help — see Task 9's evidence weights.
+
+        `TIMED_EXAM` carries full weight because it claims unassisted
+        performance under time pressure, so a ladder, a reveal unlock, or any
+        unsolicited intervention in exam conditions would make the claim false.
+        """
+        if not self.timed:
+            return
+        if (
+            self.base_max_rung > HelpRung.NONE
+            or self.unlock_full_reveal_after is not None
+            or self.intervention_timing is not InterventionTiming.NEVER
+        ):
+            raise ValueError(f"{self.name}: a timed contract must not offer help")
+
 
 PRACTICE = ModeContract(
     name="practice",
@@ -4964,7 +5127,7 @@ PRACTICE = ModeContract(
 - [ ] **Step 3: Run the contract tests**
 
 Run: `.venv/bin/pytest tests/domain/test_contracts.py -v`
-Expected: PASS — 7 tests.
+Expected: PASS — 8 tests.
 
 - [ ] **Step 4: Write the failing hint-ladder test**
 
@@ -4979,6 +5142,7 @@ from learnai.domain.help import (
     permitted_rung,
     record_attempt,
     record_help,
+    record_submission,
     reveal_unlocked,
 )
 
@@ -5040,6 +5204,11 @@ def test_taking_help_is_recorded_and_never_forgotten():
     assert state.rungs_used == (HelpRung.NUDGE,)
 
 
+def test_recording_a_submission_is_not_an_attempt():
+    state = record_submission(HelpState())
+    assert state.submissions == 1 and state.attempts == 0
+
+
 def test_nothing_is_left_after_a_reveal():
     state = HelpState(rungs_used=(HelpRung.FULL_REVEAL,), attempts=3)
     assert next_rung(PRACTICE, state) is None
@@ -5057,10 +5226,14 @@ from learnai.domain.enums import HelpRung
 
 @dataclass(frozen=True, slots=True)
 class HelpState:
-    """Per-task help history. Append-only: a rung once taken is never unrecorded."""
+    """Per-task interaction history. Append-only: a rung once taken is never unrecorded."""
 
     rungs_used: tuple[HelpRung, ...] = ()
     attempts: int = 0
+    """Answered attempts — the effort condition's counter. A decline never counts."""
+    submissions: int = 0
+    """Readable submissions recorded, declines included. Distinct from `attempts`:
+    a decline spends a task's cold attempt but is not documented effort."""
 
     @property
     def highest_rung(self) -> HelpRung:
@@ -5115,12 +5288,22 @@ def record_attempt(state: HelpState) -> HelpState:
     condition exists to prevent.
     """
     return replace(state, attempts=state.attempts + 1)
+
+
+def record_submission(state: HelpState) -> HelpState:
+    """Count a readable submission — any recorded verdict, declines included.
+
+    A decline gets the tutor's orientation, so it spends the task's cold
+    attempt: a later correct answer on the same task is no longer unassisted.
+    Malformed input is never recorded and never reaches this counter.
+    """
+    return replace(state, submissions=state.submissions + 1)
 ```
 
 - [ ] **Step 6: Run the ladder tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/domain/test_help_ladder.py -v`
-Expected: PASS — 9 tests.
+Expected: PASS — 10 tests.
 
 - [ ] **Step 7: Commit**
 
@@ -5248,7 +5431,7 @@ def detect_leak(
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/domain/test_leakguard.py -v`
-Expected: PASS — 10 tests.
+Expected: PASS — 11 tests.
 
 If a genuine-hint case fails, the fault is in `extract_candidate_expressions` being too greedy rather than in the guard. Tighten the extractor in `SympyVerifier` — never loosen `matches_answer`, because a false negative there is a leak reaching a student.
 
@@ -5271,6 +5454,8 @@ git commit -m "feat: CAS-backed leak guard over tutor drafts"
 **Interfaces:**
 - Consumes: `SkillGraph` (Task 1), `Item` (Task 3), `HelpRung` (Task 1), `detect_leak` (Task 13), `Misconception` (Task 1).
 - Produces: `SkillPack`, `StudentSummary`, `TranscriptEntry`, `TurnContext`; `ProposalKind`, `Proposal`, `TutorTurn`; `RejectionReason`, `ValidationResult`; `validate_turn(turn, context, graph, verifier) -> ValidationResult`; `Tutor` protocol; `FakeTutor`.
+
+**Deferred — acting on proposals.** A proposal is a *request*; its fate is engine policy, and Slice 1 ships no policy: `validate_turn` checks a drop-to-prerequisite target is a real hard prerequisite, then the request rides back with the turn unanswered. Acting on it — ending an unproductive task, descending to a prerequisite, swapping in an easier item — arrives with failure-driven descent (see Task 15).
 
 - [ ] **Step 1: Write the turn types and the Tutor port**
 
@@ -5408,7 +5593,7 @@ class Tutor(Protocol):
     def respond(self, context: "TurnContext") -> "TutorTurn": ...
 ```
 
-with `from learnai.domain.turn import TurnContext, TutorTurn` guarded under `if TYPE_CHECKING:` to avoid a circular import, since `turn.py` imports nothing from `ports.py`.
+with `from learnai.domain.turn import TurnContext, TutorTurn` guarded under `if TYPE_CHECKING:` to avoid a circular import — `turn.py` imports `Verifier` from `ports.py` at runtime, so the reverse import must stay type-checking only.
 
 - [ ] **Step 2: Write the failing validation test**
 
@@ -5644,7 +5829,9 @@ git commit -m "feat: tutor turn contract, validation pipeline, and fake tutor"
 
 **Interfaces:**
 - Consumes: `SkillGraph`, `Item`, `ModeContract`, `HelpState`, `SkillState`, `is_learned`, `is_fresh`, `ItemSource`, constants.
-- Produces: `TaskState` enum (`PENDING`, `ACTIVE`, `COMPLETED`, `ABANDONED`); `Task(id, session_id, item, skill_id, state, help_state)`; `Session(id, student_id, course_id, contract, plan, cursor, started_at, ended_at, skills_taught)` with `current_task` and `is_finished`; pure transitions `replace_task(session, task)`, `advance(session)`, `end_session(session, now)`; `target_difficulty(state) -> float`, `select_skills(graph, states, course_skills, count, now) -> tuple[SkillId, ...]`, `plan_session(...) -> Session`.
+- Produces: `TaskState` enum (`PENDING`, `ACTIVE`, `COMPLETED`, `ABANDONED`); `Task(id, session_id, item, skill_id, state, help_state, last_step_diff, last_diagnosis)`; `Session(id, student_id, course_id, contract, plan, cursor, started_at, ended_at, skills_taught)` with `current_task` and `is_finished`; pure transitions `replace_task(session, task)`, `advance(session)`, `end_session(session, now)`; `target_difficulty(state) -> float`, `select_skills(graph, states, course_skills, count, now) -> tuple[SkillId, ...]`, `plan_session(...) -> Session`.
+
+**Deferred — failure-driven descent.** Spec §7.4's "failure walks down" and §8.1's drop-to-prerequisite escape hatch are not implemented in Slice 1: both need a failure signal the planner does not receive, and "error diagnosis is prerequisite-shaped" needs an error-to-prerequisite mapping the content does not yet define. Until then, a stuck student gets the diagnosis and the hint ladder, and stale prerequisites are covered by the repair rule in `select_skills`. The tutor-side half of the escape hatch already exists — Task 14's `Proposal` channel, validated with the turn — but the engine deliberately does not act on a request yet. **Where this lands:** the Slice 2 plan (the scheduler) — a per-skill failure streak in the projection, session insert/abandon transitions, an engine policy acting on validated proposals (`END_TASK_UNPRODUCTIVE` first, `DROP_TO_PREREQUISITE` next, `SERVE_EASIER_ITEM` last), and the automatic descent rule. If Plan 2's UI makes the escape hatch actionable before then, the first two proposal kinds move into Plan 2 instead.
 
 - [ ] **Step 1: Write the session module**
 
@@ -5656,8 +5843,8 @@ from enum import Enum
 
 from learnai.domain.contracts import ModeContract
 from learnai.domain.help import HelpState
-from learnai.domain.ids import CourseId, SessionId, SkillId, StudentId, TaskId
-from learnai.domain.items import Item
+from learnai.domain.ids import CourseId, MisconceptionId, SessionId, SkillId, StudentId, TaskId
+from learnai.domain.items import Item, StepDiff
 
 
 class TaskState(Enum):
@@ -5675,6 +5862,10 @@ class Task:
     skill_id: SkillId
     state: TaskState = TaskState.PENDING
     help_state: HelpState = HelpState()
+    last_step_diff: StepDiff | None = None
+    last_diagnosis: MisconceptionId | None = None
+    """The last wrong submission's break, kept for the tutor's walk-back on a
+    later help request (Task 17's LET_RUN policy). Declines do not touch them."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -6064,6 +6255,7 @@ from learnai.domain.events import AttemptRecorded, HelpTaken
 from learnai.domain.graph import SkillGraph
 from learnai.domain.ids import ItemId, SkillId, StudentId, TaskId, VerificationKind
 from learnai.domain.mastery import is_learned
+from learnai.domain.parameters import DEFAULT_PARAMETERS
 from learnai.domain.projection import apply_event, project
 from learnai.domain.skills import PrereqEdge, Skill
 
@@ -6125,17 +6317,27 @@ def test_events_for_other_students_are_ignored():
 
 
 def test_a_downstream_success_refreshes_a_learned_prerequisite():
+    """Six cold successes on a hard item cross the learned bar (strength >= 1.5); three easy ones would not."""
     clock = FakeClock()
-    events = [
-        attempt(clock, skill=PREREQ, difficulty=-1.0),
-        attempt(clock, skill=PREREQ, difficulty=-1.0),
-        attempt(clock, skill=PREREQ, difficulty=-1.0),
-    ]
+    events = [attempt(clock, skill=PREREQ, difficulty=2.0) for _ in range(6)]
     clock.advance(20.0)
     before = project(events, GRAPH, STUDENT)[PREREQ].last_success_at
     events.append(attempt(clock, skill=SKILL))
     after = project(events, GRAPH, STUDENT)[PREREQ].last_success_at
     assert after > before
+
+
+def test_a_later_lapse_does_not_revoke_a_learned_badge():
+    """is_learned is an achievement: strength moves on a cold failure, the
+    badge does not (spec §7.3)."""
+    clock = FakeClock()
+    events = [attempt(clock, skill=SKILL, difficulty=2.0) for _ in range(6)]
+    before = project(events, GRAPH, STUDENT)[SKILL]
+    assert is_learned(before)
+    events.append(attempt(clock, skill=SKILL, correct=False, difficulty=0.0))
+    after = project(events, GRAPH, STUDENT)[SKILL]
+    assert after.strength < DEFAULT_PARAMETERS.strength_threshold < before.strength
+    assert is_learned(after)
 
 
 def test_calibration_records_overconfidence():
@@ -6204,7 +6406,7 @@ from learnai.domain.events import AttemptRecorded, EvidenceEvent, HelpTaken
 from learnai.domain.evidence import EVIDENCE_WEIGHT
 from learnai.domain.graph import SkillGraph
 from learnai.domain.ids import SkillId, StudentId
-from learnai.domain.mastery import SkillState, update_stability, update_strength
+from learnai.domain.mastery import SkillState, is_learned, update_stability, update_strength
 from learnai.domain.parameters import DEFAULT_PARAMETERS, MasteryParameters
 from learnai.domain.propagation import propagate_success
 
@@ -6237,7 +6439,18 @@ def apply_event(
     result[event.skill_id] = updated
     if event.correct and weight > 0.0:
         result = propagate_success(result, graph, event.skill_id, event.at, params)
-    return result
+    return {sid: _earn_if_due(state, params) for sid, state in result.items()}
+
+
+def _earn_if_due(state: SkillState, params: MasteryParameters) -> SkillState:
+    """Latch the achievement the moment the bar is crossed (spec §7.3).
+
+    is_learned is a badge, not a reading: strength may fall again, but an
+    earned skill stays earned. One-way by construction — the marker is only
+    ever set, and the live path and the replay both come through here."""
+    if state.ever_learned or not is_learned(state, params):
+        return state
+    return dc_replace(state, ever_learned=True)
 
 
 def project(
@@ -6285,7 +6498,7 @@ class EvidenceLog(Protocol):
 - [ ] **Step 4: Run the projection tests**
 
 Run: `.venv/bin/pytest tests/domain/test_projection.py -v`
-Expected: PASS — 10 tests.
+Expected: PASS — 11 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -6319,11 +6532,18 @@ step 3 needs when parameters start being fitted per skill.
 
 **The cost shape to preserve:** a correct first attempt must invoke the tutor **zero** times. The generator serves the item, the CAS checks it, the engine records evidence. That is the property that makes Opus-tier tutoring affordable, and there is a test for it.
 
+**Intervention timing made real.** `intervention_timing` decides when the tutor speaks about a wrong step, unprompted (spec §8.4). `NEVER` — mock exam — stays silent. `IMMEDIATE` — review's short items — answers every failure at once. `BY_ERROR_TYPE` speaks only when the error was recognised. And `LET_RUN` — practice — renders "stays quiet for a step or two" as one beat: a first wrong submission **that shows working** earns no tutor call, giving the student their self-correction moment — whether the working is broken or merely wrong in form. The failure after it summons the tutor with the walk-back, and a help request mid-beat always carries the last break back — the task keeps it (`last_step_diff` / `last_diagnosis`, Task 15) for exactly this. Declines and wrong answers with no working have nothing to let run, so they are answered immediately — which is where a decline's opening orientation comes from, and why a decline spends the task's cold attempt: whatever follows the orientation is no longer unassisted.
+
+**Wrong answers do not close the task.** Submitting wrong leaves the task active: the student retries, takes hints, or — once documented effort unlocks the full reveal (Task 12) — submits the revealed answer to complete it. Only a correct submission advances the cursor; skipping past an unsolved task belongs to the deferred escape hatch (`END_TASK_UNPRODUCTIVE`, Slice 2's scheduler) — a student leaves a task by seeing the answer, not by ignoring the question.
+
+**Deferred — session memory.** Nothing writes `Session.skills_taught` and nothing populates `TurnContext.transcript` in Slice 1: no teach flow exists yet, and turns are stateless (the fake dodges repetition by counting its own calls). So `POST_INSTRUCTION` is unreachable through the engine until the reveal/teach flow lands, and the real-tutor task must decide whether the engine threads prior turns; the field is already in the contract, waiting.
+
 - [ ] **Step 1: Write the failing engine test**
 
 ```python
 # tests/domain/test_engine.py
 import pathlib
+from dataclasses import replace
 
 import pytest
 
@@ -6333,15 +6553,16 @@ from learnai.adapters.clock import FakeClock
 from learnai.adapters.content.generators.quadratics import QUADRATICS_TEMPLATES
 from learnai.adapters.content.loader import load_cluster
 from learnai.adapters.content.registry import GeneratorRegistry
-from learnai.adapters.cas.vocabulary import CAS_SYMBOLIC
+from learnai.adapters.cas.vocabulary import CAS_SYMBOLIC, FULLY_FACTORED
 from learnai.adapters.persistence.in_memory import InMemoryEvidenceLog
 from learnai.adapters.tutor.fake_tutor import FakeTutor
-from learnai.domain.contracts import PRACTICE
+from learnai.domain.contracts import ModeContract, PRACTICE
 from learnai.domain.engine import PracticeEngine, UnregisteredVerifierError
-from learnai.domain.enums import Confidence, EvidenceClass, HelpRung, Verdict
-from learnai.domain.ids import CourseId, SessionId, StudentId
-from learnai.domain.items import Submission
+from learnai.domain.enums import Confidence, EvidenceClass, HelpRung, InterventionTiming, Verdict
+from learnai.domain.ids import CourseId, SessionId, SkillId, StudentId
+from learnai.domain.items import AnswerSpec, Formula, Submission, Text
 from learnai.domain.mastery import is_learned
+from learnai.domain.session import replace_task
 
 CLUSTER = load_cluster(
     pathlib.Path(__file__).parent.parent.parent / "content" / "quadratics" / "skills.yaml"
@@ -6354,7 +6575,11 @@ def right(task) -> Submission:
     return SympyVerifier().key_submission(task.item.answer_spec)
 
 
-def build(tutor: FakeTutor | None = None, clock: FakeClock | None = None):
+def build(
+    tutor: FakeTutor | None = None,
+    clock: FakeClock | None = None,
+    contract: ModeContract = PRACTICE,
+):
     clock = clock or FakeClock()
     verifier = SympyVerifier()
     engine = PracticeEngine(
@@ -6366,7 +6591,7 @@ def build(tutor: FakeTutor | None = None, clock: FakeClock | None = None):
         matcher=SympyMisconceptionRules(),
         evidence_log=InMemoryEvidenceLog(),
         clock=clock,
-        contract=PRACTICE,
+        contract=contract,
     )
     session = engine.start_session(
         student_id=StudentId("stu"),
@@ -6378,6 +6603,21 @@ def build(tutor: FakeTutor | None = None, clock: FakeClock | None = None):
         seed=7,
     )
     return engine, session, clock
+
+
+def _form_trap(session):
+    """Swap the current task for a fully-factored item the student can miss on
+    form alone: the working is equivalent, the final line is not factored."""
+    task = session.current_task
+    item = replace(
+        task.item,
+        skill_id=SkillId("quad.factor.common"),
+        statement=(Text("Factor completely: "), Formula("12x^2 + 18x")),
+        answer_spec=AnswerSpec("6x(2x + 3)", (FULLY_FACTORED,)),
+    )
+    return replace_task(
+        session, replace(task, skill_id=SkillId("quad.factor.common"), item=item)
+    )
 
 
 def test_a_session_starts_with_a_plan_of_the_requested_size():
@@ -6418,7 +6658,8 @@ def test_a_correct_first_attempt_costs_no_tutor_turn():
     assert outcome.task_completed
 
 
-def test_a_wrong_attempt_summons_the_tutor_with_a_localised_step():
+def test_a_first_wrong_attempt_that_localises_a_break_stays_quiet():
+    """LET_RUN: one beat for the student to catch the slip themselves."""
     tutor = FakeTutor()
     engine, session, _ = build(tutor)
     session, _, outcome = engine.submit(
@@ -6426,9 +6667,76 @@ def test_a_wrong_attempt_summons_the_tutor_with_a_localised_step():
         confidence=Confidence.UNSURE,
     )
     assert outcome.verdict is Verdict.WRONG
+    assert outcome.tutor_turn is None
+    assert tutor.contexts_seen == [], "the first break is the student's to find"
+    assert outcome.step_diff is not None
+
+
+def test_the_failure_after_a_self_correction_summons_the_tutor():
+    tutor = FakeTutor()
+    engine, session, _ = build(tutor)
+    for _ in range(2):
+        session, _, outcome = engine.submit(
+            session, {}, steps=["(x+1)(x+2)", "x^2 + 2"], answer=Submission.of("x^2 + 2"),
+            confidence=Confidence.UNSURE,
+        )
+    assert outcome.tutor_turn is not None
+    assert len(tutor.contexts_seen) == 1, "the first failure was let run"
+    assert tutor.contexts_seen[0].step_diff is not None
+
+
+def test_a_wrong_attempt_with_nothing_to_let_run_summons_the_tutor():
+    tutor = FakeTutor()
+    engine, session, _ = build(tutor)
+    session, _, outcome = engine.submit(
+        session, {}, steps=[], answer=Submission.of("0"), confidence=Confidence.UNSURE
+    )
+    assert outcome.verdict is Verdict.WRONG
+    assert outcome.tutor_turn is not None, "no working to think about: the tutor orients"
+    assert tutor.contexts_seen[0].step_diff is None
+
+
+def test_a_form_miss_still_gets_the_self_correction_beat():
+    """Work was shown, so the one beat applies even though nothing in it is
+    broken; the belief behind the partial factoring is still named."""
+    tutor = FakeTutor()
+    engine, session, _ = build(tutor)
+    session = _form_trap(session)
+    session, _, outcome = engine.submit(
+        session, {}, steps=["12x^2 + 18x", "2(6x^2 + 9x)"],
+        answer=Submission.of("2(6x^2 + 9x)"), confidence=Confidence.UNSURE,
+    )
+    assert outcome.verdict is Verdict.WRONG
+    assert outcome.step_diff is None, "the working is equivalent; only the form failed"
+    assert outcome.diagnosis is not None
+    assert outcome.tutor_turn is None
+    assert tutor.contexts_seen == [], "visible working: one beat to catch it"
+
+
+def test_an_immediate_contract_answers_the_very_first_failure():
+    tutor = FakeTutor()
+    engine, session, _ = build(
+        tutor, contract=replace(PRACTICE, intervention_timing=InterventionTiming.IMMEDIATE)
+    )
+    session, _, outcome = engine.submit(
+        session, {}, steps=["(x+1)(x+2)", "x^2 + 2"], answer=Submission.of("x^2 + 2"),
+        confidence=Confidence.UNSURE,
+    )
     assert outcome.tutor_turn is not None
     assert len(tutor.contexts_seen) == 1
-    assert tutor.contexts_seen[0].step_diff is not None
+
+
+def test_requesting_help_carries_the_last_break_back_to_the_tutor():
+    tutor = FakeTutor()
+    engine, session, _ = build(tutor)
+    session, _, _ = engine.submit(
+        session, {}, steps=["(x+1)(x+2)", "x^2 + 2"], answer=Submission.of("x^2 + 2"),
+        confidence=Confidence.UNSURE,
+    )
+    assert tutor.contexts_seen == []
+    session, turn = engine.request_help(session, {})
+    assert turn is not None
+    assert tutor.contexts_seen[0].step_diff is not None, "the walk-back survives into the request"
 
 
 def test_a_wrong_attempt_earns_nothing_but_is_still_recorded():
@@ -6464,6 +6772,36 @@ def test_help_runs_out_at_the_base_rung_before_effort_is_documented():
         assert turn is not None
     session, turn = engine.request_help(session, {})
     assert turn is None, "no reveal until the effort condition is met"
+
+
+def test_two_answered_attempts_and_three_hints_unlock_the_reveal():
+    engine, session, _ = build()
+    for _ in range(2):
+        session, _, _ = engine.submit(
+            session, {}, steps=[], answer=Submission.of("0"), confidence=Confidence.UNSURE
+        )
+    for expected in (HelpRung.NUDGE, HelpRung.NEXT_STEP, HelpRung.NAME_METHOD):
+        session, turn = engine.request_help(session, {})
+        assert turn is not None and turn.rung_used is expected
+    session, turn = engine.request_help(session, {})
+    assert turn is not None and turn.rung_used is HelpRung.FULL_REVEAL
+
+
+def test_help_records_the_rung_the_tutor_delivered():
+    """A NUDGE answer to a NEXT_STEP request logs a nudge — the ladder never
+    claims a rung the student did not see."""
+    from learnai.domain.turn import TutorTurn
+
+    nudge = TutorTurn("Look again at the previous step.", HelpRung.NUDGE)
+    engine, session, _ = build(FakeTutor([nudge] * 8))
+    for _ in range(2):
+        session, _, _ = engine.submit(
+            session, {}, steps=[], answer=Submission.of("0"), confidence=Confidence.UNSURE
+        )
+    for _ in range(4):
+        session, turn = engine.request_help(session, {})
+        assert turn is not None and turn.rung_used is HelpRung.NUDGE
+    assert session.current_task.help_state.rungs_used == (HelpRung.NUDGE,) * 4
 
 
 def test_a_leaking_tutor_turn_never_reaches_the_student():
@@ -6512,6 +6850,21 @@ def test_declining_does_not_climb_toward_a_reveal():
         assert turn is not None
     session, turn = engine.request_help(session, {})
     assert turn is None, "declines are not documented effort"
+
+
+def test_a_declined_cold_attempt_is_spent():
+    """The tutor oriented after the decline, so a later success is not
+    unassisted evidence."""
+    engine, session, _ = build()
+    task = session.current_task
+    session, states, _ = engine.submit(
+        session, {}, steps=[], answer=Submission.of(""), confidence=Confidence.NO_IDEA
+    )
+    _, states, corrected = engine.submit(
+        session, states, steps=[], answer=right(task), confidence=Confidence.CERTAIN
+    )
+    assert corrected.evidence_class is EvidenceClass.ASSISTED
+    assert states[task.skill_id].unassisted_correct_count == 0
 
 
 def test_the_tutor_is_told_the_student_declined():
@@ -6594,14 +6947,19 @@ from learnai.domain.enums import (
 from learnai.domain.events import AttemptRecorded, HelpTaken
 from learnai.domain.evidence import classify_evidence
 from learnai.domain.graph import SkillGraph
-from learnai.domain.help import next_rung, permitted_rung, record_attempt, record_help
+from learnai.domain.help import (
+    next_rung,
+    permitted_rung,
+    record_attempt,
+    record_help,
+    record_submission,
+)
 from learnai.domain.ids import (
     CourseId,
     MisconceptionId,
     SessionId,
     SkillId,
     StudentId,
-    TaskId,
     VerificationKind,
 )
 from learnai.domain.items import StepDiff, Submission
@@ -6763,9 +7121,23 @@ class PracticeEngine:
         if not correct and not declined and steps:
             step_diff = verifier.diff_steps(steps)
             diagnosis = diagnose(step_diff, self._catalogue(task.skill_id), self.matcher)
+            if step_diff is None and len(steps) >= 2:
+                # No equivalence break, yet wrong: a form constraint failed,
+                # and the belief may still name itself on the final transition
+                # — partial factoring is algebraically correct work.
+                last = StepDiff(index=len(steps) - 1, previous=steps[-2], current=steps[-1])
+                diagnosis = diagnosis or diagnose(
+                    last, self._catalogue(task.skill_id), self.matcher
+                )
+        if not correct and not declined:
+            # Keep the last break on the task: it is the tutor's walk-back
+            # material when the student asks for help before another failure.
+            task = replace(task, last_step_diff=step_diff, last_diagnosis=diagnosis)
 
+        # Every readable submission spends the cold attempt — a decline too,
+        # since the tutor answers it. Malformed returned before this point.
         evidence_class = classify_evidence(
-            attempt_index=task.help_state.attempts,
+            attempt_index=task.help_state.submissions,
             help_taken=task.help_state.help_taken,
             taught_this_session=task.skill_id in session.skills_taught,
             timed=self.contract.timed,
@@ -6786,10 +7158,16 @@ class PracticeEngine:
         self.evidence_log.append(event)
         states = apply_event(states, event, self.graph, params)
 
+        task = replace(task, help_state=record_submission(task.help_state))
         if not declined:
             task = replace(task, help_state=record_attempt(task.help_state))
         tutor_turn: TutorTurn | None = None
-        if not correct and self._should_intervene():
+        working_shown = not declined and any(step.strip() for step in steps)
+        if not correct and self._should_intervene(
+            diagnosis=diagnosis,
+            has_work=working_shown,
+            attempts=task.help_state.attempts,
+        ):
             # Unprompted feedback opens at the bottom of the ladder. The ceiling is
             # what the student may climb to on request, not where the tutor starts.
             tutor_turn = self._ask_tutor(
@@ -6833,6 +7211,23 @@ class PracticeEngine:
         if rung is None:
             return session, None
 
+        turn = self._ask_tutor(
+            session,
+            task,
+            states,
+            step_diff=task.last_step_diff,
+            diagnosis=task.last_diagnosis,
+            rung_override=rung,
+        )
+        if turn is None:
+            # Nothing reached the student: no rung is consumed and no help is
+            # recorded. A request the tutor could not answer must not mark the
+            # task assisted, or climb the ladder for help that was never seen.
+            return session, None
+        if turn.rung_used <= HelpRung.NONE:
+            # A turn that used no rung gave no ladder help; deliver the message
+            # but record nothing, so help_taken stays honest.
+            return replace_task(session, task), turn
         self.evidence_log.append(
             HelpTaken(
                 at=self.clock.now(),
@@ -6840,11 +7235,10 @@ class PracticeEngine:
                 skill_id=task.skill_id,
                 item_id=task.item.id,
                 task_id=task.id,
-                rung=rung,
+                rung=turn.rung_used,
             )
         )
-        task = replace(task, help_state=record_help(task.help_state, rung))
-        turn = self._ask_tutor(session, task, states, None, None, rung_override=rung)
+        task = replace(task, help_state=record_help(task.help_state, turn.rung_used))
         return replace_task(session, task), turn
 
     # -- internals -----------------------------------------------------------
@@ -6856,8 +7250,27 @@ class PracticeEngine:
     def _params_for(self, skill_id: SkillId) -> MasteryParameters:
         return self.parameter_overrides.get(skill_id, self.parameters)
 
-    def _should_intervene(self) -> bool:
-        return self.contract.intervention_timing is not InterventionTiming.NEVER
+    def _should_intervene(
+        self, *, diagnosis: MisconceptionId | None, has_work: bool, attempts: int
+    ) -> bool:
+        """Whether the tutor speaks about a wrong step, unprompted (spec §8.4).
+
+        NEVER never speaks. IMMEDIATE answers every failure at once. BY_ERROR_TYPE
+        speaks only when the error was recognised. LET_RUN — practice — renders
+        "stays quiet for a step or two" as one beat: a first failure that shows
+        working is the student's to find, and the tutor walks back on the
+        failure that follows it. A decline or a workless answer has nothing to
+        let run, so it is answered immediately — that is where a decline's
+        opening orientation comes from.
+        """
+        timing = self.contract.intervention_timing
+        if timing is InterventionTiming.NEVER:
+            return False
+        if timing is InterventionTiming.IMMEDIATE:
+            return True
+        if timing is InterventionTiming.BY_ERROR_TYPE:
+            return diagnosis is not None
+        return not has_work or attempts >= 2
 
     def _catalogue(self, skill_id: SkillId) -> tuple[Misconception, ...]:
         skill = self.graph.skills[skill_id]
@@ -6893,7 +7306,7 @@ class PracticeEngine:
             diagnosis=diagnosis,
             last_verdict=last_verdict,
             permitted_rung=(
-                rung_override
+                min(rung_override, permitted_rung(self.contract, task.help_state))
                 if rung_override is not None
                 else permitted_rung(self.contract, task.help_state)
             ),
@@ -6924,7 +7337,7 @@ class PracticeEngine:
 - [ ] **Step 4: Run the engine tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/domain/test_engine.py -v`
-Expected: PASS — 16 tests.
+Expected: PASS — 24 tests.
 
 - [ ] **Step 5: Run the whole suite**
 
@@ -6948,7 +7361,7 @@ git commit -m "feat: practice engine orchestrating verify, evidence, and tutor"
 
 **Interfaces:**
 - Consumes: the whole engine.
-- Produces: `run_term(persona, *, days, sessions_per_week, items_per_session) -> TermResult` with `states`, `log`, `sessions_run`.
+- Produces: `run_term(persona, *, days, days_between_sessions, items_per_session) -> TermResult` with `states`, `log`, `sessions_run`, `clock`.
 
 **Why this task exists:** it is the only way to test a forgetting curve before five weeks of real users exist, and it is where the treadmill problem gets caught before a student feels it.
 
@@ -6958,7 +7371,7 @@ git commit -m "feat: practice engine orchestrating verify, evidence, and tutor"
 # tests/simulation/personas.py
 """Synthetic students. Each decides what to submit and whether to ask for help."""
 import pathlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import sympy as sp
 
@@ -6978,7 +7391,7 @@ from learnai.domain.enums import Confidence
 from learnai.domain.ids import CourseId, SessionId, SkillId, StudentId
 from learnai.domain.items import Formula, Submission
 from learnai.domain.mastery import SkillState
-from learnai.domain.session import Task
+from learnai.domain.session import Task, TaskState, advance, replace_task
 
 CLUSTER = load_cluster(
     pathlib.Path(__file__).parent.parent.parent / "content" / "quadratics" / "skills.yaml"
@@ -7106,17 +7519,29 @@ def run_term(
 
 
 def _abandon(session):
-    from learnai.domain.session import advance
+    """The harness's skip: mark the task abandoned and move the cursor on.
 
-    return advance(session)
+    The engine itself never advances past a wrong task — the product's exit is
+    the full reveal (Task 17). A simulated persona cannot adapt to a reveal, so
+    the driver skips instead; the task state records what happened.
+    """
+    return advance(
+        replace_task(session, replace(session.current_task, state=TaskState.ABANDONED))
+    )
 ```
 
 - [ ] **Step 2: Write the simulation tests**
 
 ```python
 # tests/simulation/test_simulated_students.py
-from learnai.domain.ids import SkillId
+from learnai.adapters.cas.misconception_rules import SympyMisconceptionRules
+from learnai.adapters.cas.sympy_verifier import SympyVerifier
+from learnai.adapters.content.generators.quadratics import QUADRATICS_TEMPLATES
+from learnai.adapters.content.registry import GeneratorRegistry
+from learnai.domain.ids import SessionId, SkillId, TaskId
 from learnai.domain.mastery import is_fresh, is_learned, retrievability
+from learnai.domain.misconceptions import diagnose
+from learnai.domain.session import Task
 
 from tests.simulation.personas import (
     CLUSTER,
@@ -7156,19 +7581,9 @@ def test_the_hint_abuser_never_advances_past_the_graph_roots():
 
 
 def test_the_misconception_carrier_is_diagnosed_by_name():
-    from learnai.adapters.cas.misconception_rules import SympyMisconceptionRules
-    from learnai.adapters.cas.sympy_verifier import SympyVerifier
-    from learnai.domain.misconceptions import diagnose
-    from tests.simulation.personas import CLUSTER
-
     persona = MisconceptionCarrier()
     verifier = SympyVerifier()
-    from learnai.adapters.content.generators.quadratics import QUADRATICS_TEMPLATES
-    from learnai.adapters.content.registry import GeneratorRegistry
-
     registry = GeneratorRegistry(QUADRATICS_TEMPLATES)
-    from learnai.domain.session import Task
-    from learnai.domain.ids import SessionId, TaskId
 
     item = registry.next_item(SkillId("quad.expand.square"), target_difficulty=-0.5, seed=1)
     task = Task(TaskId("t"), SessionId("s"), item, SkillId("quad.expand.square"))
@@ -7210,7 +7625,7 @@ def test_an_earned_achievement_survives_the_decay():
 Run: `.venv/bin/pytest tests/simulation -v`
 Expected: PASS — 8 tests. These are the slowest tests after the generator contracts; a full term is a few thousand CAS calls.
 
-If `test_a_diligent_student_learns_the_cluster_over_a_term` finds fewer than six skills learned, the cause is almost certainly `MIN_UNASSISTED_CORRECT` interacting with `STRENGTH_THRESHOLD` — a student needs several successes per skill at the served difficulty. Retune `TARGET_LOGIT_MARGIN` or `K0` in `constants.py` rather than weakening the assertion; the point of the test is that the parameters produce a sane trajectory.
+If `test_a_diligent_student_learns_the_cluster_over_a_term` finds fewer than six skills learned, the cause is almost certainly `min_unassisted_correct` interacting with `strength_threshold` — a student needs several successes per skill at the served difficulty. Retune `target_logit_margin` or `k0` on `MasteryParameters` (`parameters.py`) rather than weakening the assertion; the point of the test is that the parameters produce a sane trajectory.
 
 - [ ] **Step 4: Run everything and record the timing**
 
