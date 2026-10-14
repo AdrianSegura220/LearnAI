@@ -71,6 +71,13 @@ earned by cold attempts delayed from teaching.
 Attempts and help events are an immutable log; mastery state is a projection. The mastery algorithm
 will change; student history must survive the change.
 
+**P7 — Input friction is extraneous load.**
+Difficulty that makes students retrieve and construct is the point; difficulty in operating the
+input is not — it competes with the mathematics and costs motivation. The structure the engine
+needs lives in the data, not in the student's way: students type the way they write on paper,
+readers are lenient about notation, and what cannot be read is reported as unreadable, with a
+suggestion, never as wrong.
+
 ## 5. Architecture
 
 Hexagonal. The domain core is pure Python — no I/O, no framework imports, no LLM — and is
@@ -140,27 +147,77 @@ tutoring, targeted diagnosis, and honest mastery accounting possible.
 Prerequisite edges encode genuine dependency, not curricular convention. The graph knows nothing
 about any national curriculum.
 
+**A cycle in hard edges is rejected, never repaired.** If A needs B and B needs A, neither can
+reach the frontier, so the cycle is a contradiction in the content rather than noise to smooth
+over. Breaking it automatically would mean deciding which dependency is false — or missing that
+the real fix is a shared prerequisite nobody has authored — and the graph has no information to
+make that call: edges carry no weights, and every hard edge is equally hard. So loading fails and
+names the path (`a → b → c → a`), leaving the judgement to the author; an assistant that proposes
+fixes is deferred (D11). Soft edges may form cycles, since they gate nothing.
+
 ```python
-Subject(id, name, default_verification)        # cas_symbolic | numeric_units | rubric
+Subject(id, name, default_verification)        # an opaque VerificationKind token
 Skill(id, subject_id, name, can_do_statement,
       verification_kind,                       # overrides subject default where needed
       concept_ids, misconception_ids)
 PrereqEdge(from_skill, to_skill, strength)     # hard | soft
 
-Concept(id, skill_id, kind, prompt, answer)    # definition | theorem | formula | procedure
-Misconception(id, skill_id, name, description, signature)
+Concept(id, subject_id, kind, prompt, answer, introduced_by)
+                                               # definition | claim | rule | procedure | fact
+Misconception(id, subject_id, name, description, signature)
 
 Course(id, name, curriculum_tag, level, skill_sequence, exam_blueprint)
 ```
 
 **`verification_kind` is the subject-extensibility seam.** It selects the `Verifier` adapter for
 an attempt. Adding chemistry means writing one adapter and authoring skills, not touching the
-engine.
+engine — and to keep that literally true it is an **opaque token**, not an enumeration of adapter
+kinds: each adapter declares its own, and the engine resolves skill → verifier through a registry.
+`ConceptKind` and `AnswerKind` stay closed enumerations because they name subject-neutral shapes
+(a claim, an unordered set of values), not subject-specific ones.
+
+**The default is declared by content, never by code.** Which checker grades a skill is a fact
+about the content, so the content states it: until subjects have a file of their own, a cluster
+declares `verification:` beside `subject:`, and a skill may override it. A fallback in the loader
+would quietly send any cluster that forgot the key to SymPy — a history cluster graded as algebra
+— and would couple the content adapter to one verifier adapter. The loader never interprets the
+token. Whether a verifier exists for it is the engine's check, made at construction so that a
+typo fails at startup rather than on some student's first attempt at the skill.
 
 **`Course` is a thin curricular overlay** — an ordered path through the graph plus metadata.
 "1º Bachillerato Matemáticas" and "AP Calculus AB" are two courses sharing most of the same
 skills in different orders. This is how the system stays curriculum-agnostic at its core while
 still presenting a student with *their* course in *their* sequence.
+
+**Concepts and misconceptions are shared, not owned.** Both are subject-scoped, and
+`Skill.concept_ids` / `Skill.misconception_ids` carry the relationship many-to-many. Giving either
+a single owning skill would be arbitrary and, worse, would force duplication: the
+Nyquist–Shannon theorem serves sampling-rate calculation, aliasing identification, reconstruction
+and filter choice, and `(a+b)² → a²+b²` afflicts both expanding a square and completing it.
+Duplicating a concept duplicates its **memory state**, so a student would rehearse one theorem on
+four independent schedules and be told they had forgotten something they demonstrably know.
+Content loading enforces that every catalogue entry is referenced by at least one skill, so
+sharing never becomes orphaning.
+
+`Concept.introduced_by` is an **override**, not the link: it names where a Learn session should
+first teach the concept, defaulting to the earliest referencing skill in topological order, and
+authors set it only when they want it taught somewhere else. Loading rejects an `introduced_by`
+that is not itself one of the referencing skills, which would otherwise be silently incoherent —
+and which also catches a mistyped skill id, since nothing reads the field until Slice 3.
+
+Because the link is authored on the skill side, the reverse direction is a **derived index built
+at load time** — `skills_for_concept: dict[ConceptId, frozenset[SkillId]]` — in exactly the way
+`SkillGraph` precomputes incoming and outgoing prerequisite edges from a flat list. Review mode
+needs it twice: to place a concept in the graph, and to decide eligibility, which is true when
+*any* referencing skill has reached the frontier. `introduced_by` cannot serve either purpose, as
+a student may reach a skill needing the concept by a route that never passes through the skill
+that introduces it. The index arrives in Slice 2 with its first consumer.
+
+The relationship is many-to-many, and gets the representation that suits each layer: an id list
+on the skill in YAML (how an author thinks), an adjacency tuple plus derived reverse index in the
+domain (how traversal reads), and a junction table with a composite key in Postgres (how
+integrity is enforced). A link becomes a first-class entity only when it carries data of its own
+— which is exactly why `PrereqEdge` is one and `concept_ids` is not.
 
 **Misconceptions are first-class objects**, not prose inside a prompt. Each carries a signature
 describing how it manifests in written work. They earn their place three times: the CAS step diff
@@ -168,6 +225,33 @@ plus a misconception match tells the tutor *what the student believes* rather th
 they are wrong*; feedback can address the belief; and generators can produce distractors by
 deliberately applying the misconception, turning multiple choice from guessing into diagnosis
 (an available item format, not one Slice 1 uses).
+
+**A skill need not list any.** Many honestly have none catalogued: a new skill before any
+student has made its errors, a recall skill where a wrong answer means not knowing rather than
+believing something false, a skill whose errors are slips rather than beliefs. Diagnosis already
+reports an unmatched error as novel and the tutor works from the step diff, so nothing depends on
+the list being non-empty — and requiring an entry would push authors to invent one to get past the
+loader. A coverage report can flag thin skills later; it is not a load error.
+
+**A misconception's `signature` keys its rule, and that rule should be a transform.** The
+signature is an opaque token — like `verification_kind` and form constraints — that the subject's
+matcher adapter resolves to code; the domain never interprets it. It is deliberately separate
+from the misconception's `id`, which is content identity an author may rename, whereas the
+signature is a contract with a registered rule.
+
+**Signatures are a flat, subject-wide namespace.** The matcher resolves a signature by name
+alone, so two clusters must never spend one string on two beliefs: the collision would silently
+share a rule. Name signatures for the belief, specifically enough to be unique across the
+subject — `square_distributes_over_sum`, not `sign_error` — and treat renaming one as a content
+migration, unlike an id. When a second cluster arrives, cross-cluster uniqueness belongs in the
+content tooling's checks.
+
+Rules start life as *predicates*: given the step before and the step after, does this transition
+exhibit the belief? That is all diagnosis needs. Distractor generation needs the other direction
+— given the correct expression, what would this belief produce? — and the transform is already
+written inside most predicates on their way to comparing. When distractors are built, rules
+should be defined as `transform(expr) -> Expr | None` with the predicate derived from it, so one
+definition serves both and a misconception can never diagnose one way and generate another.
 
 **Concepts are separate from skills.** Declarative knowledge — the statement of the chain rule,
 the definition of a limit — attaches to a skill but is retrieved differently. A student can know
@@ -184,13 +268,41 @@ Item(id, skill_id, provenance, statement, answer_spec,
 Card(id, concept_id, kind, prompt, answer)     # cloze | qa
 
 # provenance: Generated(template_id, seed) | Authored | LlmBatch(run_id)
-# vetting_level: cas_verified | human_reviewed | llm_only
+# vetting_level: machine_verified | human_reviewed | llm_only
 ```
+
+**Form constraints are opaque to the core.** `AnswerSpec.form_constraints` carries tokens the
+domain never interprets — `"fully_factored"`, later `"correct_units"` — and each `Verifier`
+adapter declares the vocabulary it can judge through `supported_constraints`. The CAS adapter
+owns the mathematical forms; a physics adapter will own units and significant figures without
+editing the core. Content is validated against the responsible verifier's vocabulary, so a token
+no adapter understands fails loudly rather than silently passing a wrongly-formed answer. Without
+this the form vocabulary would accumulate every subject's terms inside the shared domain, which
+is precisely the coupling `verification_kind` exists to prevent.
+
+**Answers arrive in fields shaped by their kind.** A `Submission` is one string per answer
+field. The domain owns the shape — a single value or a relation takes one field; a list of
+values takes any number, or an explicit claim that there are none — and never what a field
+contains, exactly as with form constraints: the CAS adapter parses a field as maths, a rubric
+adapter would judge it as prose. The input widget follows the kind: one field labelled with what
+is asked for ("x =", from the display-only `AnswerSpec.label` the generator sets), or one field per value with "add another" and a "none" option. A value
+list starts with a single field, since showing two would tell the student how many roots there
+are. Leaving every field blank is a decline; claiming there are no values is an answer. Answers
+are never extracted from chat: grading reads the fields with code (P1, P3).
+
+**Statements are blocks, and maths is written the way students type it.** An item's statement is a
+sequence of `Text` and `Formula` blocks, so prose and notation are never mixed and each is rendered
+by what understands it; a `Formula` is opaque to the core, like a form constraint. Every piece of
+maths a person reads — statement, key, worked step — is written in the notation the student types
+(`x^2 + 3x`, `(x - 4)(x - 1)`), never a CAS's own (`x**2 + 3*x`), so what a student is shown is what
+they can enter (P7). `Media` joins as a third block type (D19).
 
 A **generator** is code written once per skill, not a problem written once per problem. For
 "solve a quadratic by factoring" it samples integer roots in a constrained range, expands, and
 returns both the problem and the exact answer. The answer key is correct by construction, there
-are unlimited non-repeating variants, and serving costs nothing.
+are unlimited non-repeating variants, and serving costs nothing. Where the answers are few — "how
+many real roots?" — the generator chooses the answer first, so no answer is right by default; and
+an item exercises only the skill it is tagged with, since a miss is recorded against that skill.
 
 Generators cover the drillable core. LLM generation covers word problems, conceptual questions,
 and subjects with no CAS — produced offline via the Batch API, vetted, and stored. **Items are
@@ -218,6 +330,10 @@ human verifies, not deciding what a student knows.
 Two quantities per `(student, skill)`, because *"did they learn it"* and *"do they still have it"*
 are different questions.
 
+Every tuned parameter named in this section lives on an injected `MasteryParameters` value object
+rather than as a module constant, so `r_target` can genuinely vary per skill (§7.2), parameters can
+be fitted per skill (§7.8), and two configurations can be compared side by side.
+
 ```python
 SkillState(student_id, skill_id,
            strength,              # Elo-style competence
@@ -238,6 +354,10 @@ which supplies the empirical difficulty values §6.2 defers.
 p_expected = 1 / (1 + exp(-(strength - item.difficulty) / SCALE))
 strength'  = strength + K * w * (outcome - p_expected)
 ```
+
+`outcome` is 1 for a correct answer and 0 for a wrong one. It is a real number rather than a bit
+so that a decline can be scored at the format's guess baseline (§8.2), which is what makes
+honesty and guessing cost the same.
 
 **Units.** Strength and difficulty share one latent scale, and only their difference enters the
 formula, so the units are a free choice — and choosing them *is* choosing `SCALE`. Use **logits**
@@ -389,6 +509,11 @@ is_fresh(state, now) # retrievability(now) >= R_TARGET
 due_at(state)       # last_success_at + stability * log2(1 / R_TARGET)
 ```
 
+One caveat scales with item format: a lucky guess is a correct answer and does increment the
+count. On free response that is rare enough to be covered by the strength threshold; on
+four-option multiple choice it would not be, so diagnostic MCQ items will need a higher bar
+before they may gate mastery.
+
 **Mastery decays; achievement does not.** `is_learned` is a badge earned by proving it cold, and
 it never un-earns. `is_fresh` is a separate, quieter state meaning this one needs a tune-up. Same
 data, deliberately different psychology: a system that revokes an earned achievement reads as
@@ -417,8 +542,25 @@ scheduler (high confidence-but-wrong rates are re-checked sooner, because that i
 will hurt), and a shrinking gap over a term is a genuinely meaningful thing to show a student or
 a parent in a way that a problem count is not.
 
-Confidence levels map to probabilities; `calibration_gap` is an exponential moving average of
+Five levels, because "I have no idea" is not the same statement as a low-confidence guess:
+`no_idea` (the student declined to answer), `guessing`, `unsure`, `fairly_sure`, `certain`. Each
+maps to a probability, and `calibration_gap` is an exponential moving average of
 `stated_probability - outcome`. Positive means overconfident.
+
+Two properties of that mapping matter more than the numbers in it.
+
+**It is item-format specific.** P(correct | guessing) is around 0.03 on free response and 0.25 on
+four-option multiple choice. Borrowing multiple-choice values for free-response items records
+every honest guesser as overconfident, inverting the signal for exactly the students it should
+reassure. The defaults are free-response; the mapping is keyed by answer kind once diagnostic
+multiple choice exists.
+
+**It is fitted at population level and held fixed for individuals.** Fitting each student's
+mapping to their own observed rate makes every student perfectly calibrated by construction and
+the metric measures nothing. The statement the platform needs to be able to make is "when people
+say they are certain they are right 93% of the time, and you are right 40% of the time", which
+requires a shared reference. Collect from the first day; show a student their number only once
+the mapping has been fitted.
 
 ### 7.6 Scheduler priority
 
@@ -550,6 +692,25 @@ Attempt(task_id, steps, verdict, confidence, assistance_level, evidence_class, a
 HelpEvent(task_id, rung, at)
 ```
 
+**Declining is a first-class answer.** A student may answer "I don't know" instead of submitting
+work, and it is scored at the format's **guess baseline** rather than as a flat zero. That makes
+declining and guessing cost exactly the same in expectation, at any guess rate.
+
+Both alternatives teach something false. Scoring a decline as a wrong answer makes guessing
+marginally the better play — negligibly so on free response (about 0.012 logits) but around 0.1
+logits an item on four-option multiple choice, which is worth gaming — and a system that pays
+students to guess rather than admit they are stuck is training the exact habit this platform
+exists to break. Scoring a decline as free makes it cheaper than attempting, which trains
+disengagement instead. The guess baseline sits between them by construction rather than by a
+tuned compromise.
+
+A decline never increments unassisted-correct evidence, so it cannot contribute to mastery. It
+differs from a wrong answer in two further ways: the tutor opens with orientation rather than
+error diagnosis, there being no work to diagnose, and the calibration reading for an honest
+decline is near-perfect rather than a penalty. It also does not count toward the effort condition
+that unlocks a reveal — otherwise the cheapest route to the answer would be two declines and a
+walk up the hint ladder.
+
 `evidence_class ∈ {unassisted_cold, post_instruction, assisted, timed_exam}`.
 **Only `unassisted_cold` and `timed_exam` move mastery.** An attempt is `post_instruction` if the
 same skill was taught in the current session; `assisted` from the moment any help event lands on
@@ -580,8 +741,9 @@ When the CAS detects that equivalence broke at a step, the tutor stays quiet for
 lets the student meet the contradiction themselves, then walks back to where the error entered.
 This matches observed expert-tutor behaviour and preserves the productive-failure benefit.
 `intervention_timing` governs only **when the tutor speaks about a wrong step inside a problem**.
-It never ends a task or a session: a wrong answer closes the item, records the evidence, and the
-session proceeds to the next task.
+It never ends a task or a session: a wrong answer records its evidence and the task stays open —
+the student retries, takes a hint, or unlocks the full reveal; the session moves to the next task
+only once the current one is completed.
 
 Mock exam is `never` — no feedback of any kind during the exam, as in the real thing. Review is
 `immediate`, because review items are short, often single-step, and there is no later contradiction
@@ -628,6 +790,34 @@ TutorTurn(
 )
 ```
 
+**`step_diff` is one defect shape, not the only one.** It assumes work decomposes into ordered
+steps, that each step transforms the previous one, and that validity is a local property of
+consecutive pairs. That holds for algebra, calculus manipulation, stoichiometry, physics
+derivations and code refactoring. It does not hold for a geometry or induction proof, where each
+line *adds* a justified statement rather than transforming the last, nor for an essay, where the
+defect is an unsupported claim rather than a broken transition. The boundary is transformational
+versus non-transformational work — not mathematics versus other subjects, which is why a maths
+proof falls outside it.
+
+Nothing breaks in the meantime: a `Verifier` with no notion of steps returns `None`, and
+diagnosis degrades to a novel error. When proofs or rubric-judged subjects arrive, `TurnContext`
+gains a sibling field carrying that verifier's defect shape — `UnjustifiedStep(line, cited_rule)`
+for a proof, a rubric finding for an essay — rather than `StepDiff` being generalised. One
+example is too few to design an abstraction from; the second will say what it should be. See §14
+D10.
+
+**What "equivalent" means to the CAS verifier.** Two expressions are equivalent when they agree
+wherever both are defined. An isolated hole is ignored — simplifying `(x²−1)/(x−1)` to `x+1` is
+the exercise, not an error — but disagreement over a region is not: `log(x²)` and `2 log x`
+differ for every negative x. Two equations are equivalent when they have the same real
+solutions, holes respected, which is what flags the classic solving errors: dividing by
+something that can be zero loses a root, and multiplying through by it or squaring both sides
+admits one. Holes must be read from the student's *written* form, because SymPy's evaluation
+cancels them — `(x−1)²/(x−1)` is already `x−1` by the time any solver sees it — so the parser
+can return either form, and form constraints use the written one too. Where real solutions
+cannot be listed, the verifier falls back to proportionality (D12). Typed decimals are exact —
+`0.1` is one tenth — and notation the parser cannot read unambiguously is refused, not guessed.
+
 ### 9.1 Proposals
 
 The model may request: drop to a prerequisite, serve an easier item, switch to a worked example,
@@ -653,7 +843,9 @@ Every turn, before a character reaches the student:
 
 1. **Rung check** — `rung_used <= permitted_rung`.
 2. **LeakGuard** — extract mathematical expressions from the draft message and ask the CAS whether
-   any is equivalent to the item's answer. A leak above the permitted rung fails the turn. This
+   any would be marked correct if the student entered it — equivalent *and* in the required form — or
+   gives away one of several values. Plain equivalence would flag the tutor quoting the question,
+   which for a factoring item equals its answer. A leak above the permitted rung fails the turn. This
    also catches a "nudge" that quietly contains the next line of algebra.
 3. **Proposal validation** — is the proposed prerequisite actually a prerequisite, and is the
    student permitted there?
@@ -751,7 +943,10 @@ treadmill problem gets caught before a student feels it.
 **Layer 3 — Generator contract tests.**
 Per template, sample several hundred seeds and assert: the CAS answer is valid, no degenerate
 parameters (zero divisors, trivial answers, roots outside the intended range), difficulty within
-the declared band. This is what keeps a wrong answer key from ever reaching an unassisted check.
+the declared band, no single answer right for most items, and every formula readable by the
+student's own parser. A recorded snapshot pins what each `template#seed` generates, so an upgrade
+cannot silently rewrite the problem behind a student's history; a generator changes by adding a
+new template version. This is what keeps a wrong answer key from ever reaching an unassisted check.
 
 **Layer 4 — Adversarial LeakGuard corpus and a graded tutor eval set.**
 The first is unit tests over messages that leak the answer in non-obvious ways. The second is a
@@ -770,6 +965,16 @@ adapter requires live testing.
 
 **Cluster: quadratics** — 12–15 skills, rich in real misconceptions, strong prerequisite
 structure, entirely CAS-verifiable.
+
+**Execution.** Slice 1 is built as two plans, split at the hexagonal boundary so each produces
+working, testable software on its own.
+
+- `docs/superpowers/plans/2026-09-19-slice1-tutoring-engine.md` — deliverables 1–8 and 11 below:
+  the domain core plus the CAS and content adapters, driven by a fake tutor and a fake clock.
+  Runs with no API key, no database and no UI.
+- A second plan attaches the I/O: persistence, HTTP, the Anthropic tutor adapter with model
+  routing and caching, the graded eval set, and the web session UI — deliverables 9 and 10, plus
+  the durable half of 8.
 
 ### Deliverables
 
@@ -822,15 +1027,36 @@ content model are designed to accommodate all of them; none is built.
 
 These are recorded deliberately, each with the trigger that will force a decision.
 
+On answer kinds specifically: `AnswerKind` names a general *shape*, and each `Verifier` decides
+how to compare the elements of that shape — an ordered list of expressions by symbolic
+equivalence, an ordered list of historical causes by rubric. So a new subject never forces a new
+kind, and a new kind never forces every adapter to implement it: one that cannot judge a shape
+raises `UnsupportedAnswerKindError` rather than guessing. The trigger for adding a kind is an
+item that wants it, not a subject that arrives.
+
 | # | Decision | Status |
 |---|---|---|
-| D1 | **Math input library.** Needs a spike — step-by-step entry UX is load-bearing for Slice 1 and no library is obviously right. KaTeX handles rendering; input is the open part. | Spike before UI build |
-| D2 | **Step entry granularity.** Whether students must enter every step or may submit a final answer with optional work. Proposal: optional but encouraged; if a final-answer-only submission is wrong, the tutor asks for the work. | Settle during UI design |
-| D3 | **Session UI and layout.** Deliberately unspecified here; to be settled with mockups. | Next, before Slice 1 build |
+| D1 | **Math input library.** Needs a spike — step-by-step entry UX is load-bearing for Slice 1 and no library is obviously right. KaTeX handles rendering; input is the open part. A structured editor also removes plain-text ambiguity: `1 1/2` as a mixed number, `1/2x` as 1/(2x). Meanwhile the parser refuses a space between two numbers rather than guessing, but still reads `1/2x` as x/2. **This is the largest input-friction decision in the product (P7)**: typing fractions, roots and powers on a phone costs more than any field layout, so the spike must test on phones, with students. | Spike before UI build |
+| D2 | **Step entry granularity.** Whether students must enter every step or may submit a final answer with optional work. Proposal: optional but encouraged; if a final-answer-only submission is wrong, the tutor asks for the work — being made to type every step is a bigger friction cost than any widget (P7), and photographing paper working (the later photo-input milestone) is the fastest way to show it. The step reader accepts lists of alternatives (`x = 1 or 3`, `x = ±3`) and lines that open with `=`, but a line chaining several equals signs (`(x+1)(x+2) = x² + 2x + x + 2 = x² + 3x + 2`) is ambiguous — a chain of equal expressions when simplifying, an equation followed by arithmetic in `x = 6/2 = 3` — and is reported as unreadable; the editor can offer one claim per line with a "continue with =" line type. | Settle during UI design |
+| D3 | **Session UI and layout.** Deliberately unspecified here; to be settled with mockups. Settled so far (P7): a value list is entered like email recipients — the student types `1, 3`, `1 or 3` or `±3` and the values split into separate entries as they type, with locale-aware separators (`;` and `o` in Spanish, where the comma is a decimal point), and seeing `±3` become 3 and −3 confirms the reading; an unreadable entry gets "couldn't read this — did you mean …?", never "wrong", and changes nothing: it records no evidence, counts no attempt and keeps the cold attempt intact. **Readings are suggested deterministically first:** a `readings(text)` operation on the verifier offers candidate readings from what was typed alone — `2 3` → 23 or 2 × 3; `(x+1)(x+2` → close the bracket; `x = 6/2 = 3` → split into two lines; `0,5` → 0.5 in the Spanish locale. Candidates are computed without looking at the answer key and are never filtered or ranked by whether they are correct, since offering only the fix that happens to be right would announce that it is. The tutor proposes a reading only for a line of working the parser cannot help with, and its proposal passes the LeakGuard like any other text; it never proposes a reading of the answer itself, whose only sensible reading is often the answer. A reading becomes the student's only when they pick it or retype the line, and the log keeps both the original and the confirmed version (P6). `readings` is built in Plan 2, with the UI that shows it. Measured from the first real session: time from opening an item to submitting, the share of submissions and steps that come back unreadable, and where students abandon an item. A usability test with five students on phones precedes launch. | Next, before Slice 1 build |
 | D4 | **Orchestration adapter** — Tool Runner vs. manual loop. Domain is unaffected. | At `AnthropicTutor` implementation |
 | D5 | **Accounts, minors' data, and GDPR posture.** Minimal auth in Slice 1; a real compliance position is required before any public launch with minors. | Before launch, not before Slice 1 |
-| D6 | **UI language (Spanish/English).** Content is curriculum-agnostic; copy is not yet decided. | Before launch |
+| D6 | **UI language (Spanish/English).** Content is curriculum-agnostic; copy is not yet decided. Locale reaches the parser too: a Spanish student writes `0,5` for a half, which the parser currently refuses as malformed. | Before launch |
 | D7 | **Bring-your-own-problem mode.** Agreed in principle with a practice tail — the tutor helps under the strictest contract, then the engine queues generated variants of the skills involved for later cold practice. Deferred to Slice 6; the skill-identification hook is designed for now. | Slice 6 |
+| D8 | **`ORDERED_SEQUENCE` answer kind.** Reaction mechanisms, chronologies, algorithm steps — and, within mathematics, "list these steps in order". Cheap: the CAS comparison is `len(a) == len(b) and all(expressions_equivalent(x, y) for x, y in zip(a, b))`, reusing the element comparison, and taking one field per element as `VALUE_SET` does. Not added yet only because no item wants it and the input widget cannot be designed in the abstract. Adding the member without a branch would compare a list as one expression, which is why the verifier raises `UnsupportedAnswerKindError`. | First item that wants an ordered answer — plausibly in mathematics, not necessarily a new subject |
+| D8b | **`MAPPING` answer kind.** Matching terms to definitions. Genuinely more design than D8: delimiter and key normalisation, and whether a missing or extra pair is wrong or partially wrong — which drags in D9. Weak mathematics use case. | A subject built on matching items |
+| D9 | **Composite answers and partial credit — one change, not two.** Fill-three-blanks and tables need `AnswerSpec.parts: tuple[AnswerSpec, ...] = ()`, which is additive and migrates nothing. The real cost is that a composite answer is inherently partially correct, so `Verdict` stops being binary and `CheckResult` gains a score. The mastery half is already done: `update_strength` takes `outcome: float`. Until then, model each blank as its own item — usually fine, occasionally wrong. | When an item genuinely cannot be split |
+| D10 | **A sibling defect shape for non-transformational work.** `StepDiff` assumes each step transforms the previous one and that validity is local to consecutive pairs — true of algebra, stoichiometry and derivations, false of a geometry or induction proof (each line *adds* a justified statement) and of an essay (the defect is an unsupported claim, not a broken transition). See §9. `TurnContext` should gain a sibling field carrying that verifier's defect shape rather than `StepDiff` being generalised from a single example. Nothing breaks meanwhile: a verifier with no notion of steps returns `None` and diagnosis degrades to a novel error. | First proof-based or rubric-judged skill |
+| D11 | **Assisted cycle resolution.** When loading rejects a hard-prerequisite cycle (§6.1), an authoring-time step — plausibly LLM-assisted — could propose how to break it: soften one edge, merge two skills that are really one, or add the shared prerequisite whose absence created the loop. It proposes and the author decides; the result goes back through the same loader. Never an automatic repair at load time, for the reason §6.1 gives. Until then the error names the path and the author fixes it by hand. | When content is generated at volume (LLM batch generation of the long tail) or authoring tools are built |
+| D12 | **Equation equivalence where solutions cannot be listed.** "Same real solutions" (§9) is computed only for one-variable equations whose solutions form a finite list. Otherwise — several variables (`y = 2x + 1`), infinitely many solutions (`sin x = 0`), no closed form (`x = cos x`), or no real solutions on either side, where two empty sets would accept any slip between `x² + 1 = 0` and `x² + 4 = 0` — the verifier falls back to proportionality: one side a nonzero constant multiple of the other. Proportional equations share their solutions, holes aside, but the fallback rejects genuine rewrites such as `(x−1)² = 0 → x − 1 = 0` and cannot see holes. Quadratics reach it only on steps with no real solutions. | First skill whose worked steps are trigonometric, transcendental or multi-variable equations |
+| D13 | **Item assumptions.** An item cannot yet state its conventions, and SymPy's defaults differ from the classroom's: variables are complex, so `(−8)^(1/3)` is `1 + 1.73i` rather than −2 and `log(xy)` is not `log x + log y`; sampling uses fractions, so `sin(πn) = 0` for whole-number n is rejected; angles are radians; factoring is over the rationals, so `x² − 2` counts as fully factored; and `sin x = 1/2` has infinitely many solutions without an interval. One mechanism covers all of them: adapter-owned assumption tokens on the item — variable domain, angle unit, number field, solving interval — which the verifier honours when it builds symbols, samples and solves. Quadratics needs none. | First skill with logarithms, trigonometry, roots of negatives, or whole-number variables |
+| D14 | **Answers judged by their raw text.** Significant figures cannot be read from any SymPy tree — `2.50` loses its trailing zero even in the written form — so a sig-fig constraint needs the submitted text. Units need dimensional analysis, which is a verifier of its own. | First physics or chemistry skill |
+| D15 | **Calculus answer checking.** Grade by verification, not comparison: an antiderivative is right when its derivative equals the integrand, whatever constant it carries; an ODE solution is right when it satisfies the equation. Generators build problems backwards — choose F, differentiate it for the question — so the limits of symbolic *integration* never limit grading. | First calculus skill |
+| D16 | **Inequalities and interval answers.** Sign flips on multiplying by a negative, and answers such as `x > 2` or `(2, ∞)`. The parser rejects `<` today, and interval answers need an answer kind of their own. | First item that wants an inequality or interval answer |
+| D17 | **A time budget for CAS work.** `simplify`, `factor` and `solveset` are heuristic searches with no upper bound on time; the parser's power bound removes the pathological inputs, not the merely slow ones. The API must run each check under a time limit and treat a timeout as an incident to log, never as a wrong answer. | Plan 2, before real students |
+| D18 | **Step-by-step solutions for problems no generator wrote.** Generator items get exact steps from the generator itself, which built the problem backwards — though today's quadratics generators give steps only where the working is a chain of equivalent lines the verifier can check, and none for the discriminant, vertex or word problem. Bring-your-own problems (D7) and LLM-written long-tail items need another source: an LLM whose every step the CAS verifies, or the Wolfram\|Alpha API, possibly as a paid tier. Whatever the source, steps pass the `Verifier` before a student sees them (P3), and a step-by-step solution is a full reveal, gated like one. Open design question: steps offered only at chosen moments — after documented effort, in a Learn worked example, in a post-session review of a missed item — are teaching; steps on demand are a solver. Which moments, and whether a paid tier changes them, is undecided. Options, costs, billing and open questions for Wolfram: `docs/superpowers/notes/2026-09-26-cas-libraries-and-step-by-step.md`. | Learn mode (Slice 3) or bring-your-own problems (D7), whichever first needs steps for a problem no generator wrote |
+| D19 | **Media in content: one block type, many adapters.** Question text is a sequence of blocks — `Text`, `Formula`, `Media` — and `Text`/`Formula` landed with Task 7's notation fix (§6.2), so adding media later is one more block type rather than a format change. A `Media(kind, data, description)` block is a container the domain never opens: `kind` is an opaque token, like `verification_kind`, resolved through a registry to an adapter — function plots, geometry figures, stored images, video, streams — and content naming a kind no adapter serves fails at load. The port is task-shaped, not a media framework (§5.2), with two operations: `validate(block)`, run when content loads, so a malformed plot spec fails for the author rather than in front of a student — the counterpart of a verifier declaring its `supported_constraints`; and `resolve(block) -> Rendition`, where a rendition is inline SVG or bytes with a media type, or a URL. **Scope:** media is output only — anything that takes the student's input, such as a draggable explorer or a simulation whose use matters, is an answer kind with a widget and a verifier, not media; and streaming is a way an adapter delivers a video, not a kind of content, so a live class is a product feature outside this container. Rules every adapter follows: (1) two descriptions are mandatory — a *student-facing* one, which describes without giving the answer away ("a parabola opening upwards, crossing the x-axis twice") and passes the LeakGuard like any other text, and a *full* one for the tutor and reviewers ("vertex at (2, −1)"); video carries captions; (2) rendering is server-side by default, so a rendition sent to the student is pixels or shapes, never the data behind them — a "read the vertex off this graph" plot never reaches a browser as its formula — and client-side rendering is an opt-in for media that does not depend on the answer, because only the item knows whether a figure reveals it; (3) the tutor refers to media only through the registry, never by a raw URL, and media the tutor asks for mid-turn — "let me sketch that" — passes the same validation pipeline as its text before the student sees it; (4) watching or reading media is instruction, never evidence (P5). Generated figures are specs rebuilt from template and seed, so nothing is stored; authored assets sit behind an `AssetStore` port. Visual *answers* — drawing a graph, building a construction — are a separate question needing a new answer kind, widget and verifier. | The first skill that needs a figure, or Learn mode (Slice 3) for video |
+| D20 | **Items that exercise several skills.** An item carries one `skill_id`, so a prompt that needs a second skill first — `36x^2 − 9`, where the common factor 9 comes out before the difference of squares — records a miss against the wrong skill. Today's generators avoid such prompts, and a contract test holds them to it. Mixed items are valuable, especially in Review, where interleaving is the point: they need an item to name every skill it exercises, and evidence split between them — a miss localised by the step diff to the skill whose step broke, rather than charged to all of them. | Review mode, or the first template that deliberately mixes skills |
 
 ---
 
@@ -847,6 +1073,28 @@ These are recorded deliberately, each with the trigger that will force a decisio
 | Answer-withholding enforcement | CAS LeakGuard | A prompt instruction is a hope; a deterministic check is a fact |
 | Content | Generators + CAS, LLM for the long tail | Ground-truth answers, unlimited variants, zero serve cost, where it matters most |
 | Curriculum | Dependency graph with course overlays | Curriculum-agnostic core, curriculum-specific presentation |
+| Verification kind | Opaque token plus a registry | Enumerating adapter kinds in the core would mean every new subject edits the engine, contradicting the seam it names |
+| Tuned parameters | Injected value object | Module constants cannot be varied per skill or A/B compared, which §7.2 and §7.8 both require |
+| Concepts and misconceptions | Subject-scoped, shared many-to-many | A single owning skill is arbitrary and forces duplication, and duplicating a concept duplicates its memory state |
+| Default verification kind | Declared by content; no fallback in code | Which checker grades a skill is a fact about the content; a code default grades any cluster that forgets the key with SymPy, silently |
+| Misconceptions per skill | Optional | Diagnosis already handles no match as a novel error; a mandatory entry invites invented ones |
+| Hard-prerequisite cycles | Rejected with the path named, never auto-repaired | Breaking a cycle means deciding which dependency is false, a judgement the graph has no information to make |
+| Mathematical equivalence | Expressions agree wherever both are defined; equations share their real solutions, holes respected | Accepts the simplifications school teaches while catching lost and extraneous roots, the errors that matter most in solving |
+| Input friction | Treated as extraneous load (P7): type freely, structure behind the scenes, unreadable is never wrong | Operating the input competes with the mathematics for attention and costs motivation; a correct line marked wrong costs trust |
+| Unreadable answers | Change nothing: no evidence, no attempt counted, cold attempt kept; the parser suggests readings, never filtered by correctness | A missing bracket is notation, not competence; charging for it would spend the one cold attempt on a typo |
+| Answer input | Structured fields shaped by the answer kind; the domain owns the shape, adapters the meaning | Removes separator and notation guessing at the source, gives "no solutions" a representation, and keeps grading out of the model's hands |
+| What counts as a leak | Text that would be marked correct if entered, or one of several values | Plain equivalence flags the tutor quoting a problem whose question and answer are equal in value |
+| Typed decimals | Exact: `0.1` is one tenth | Binary floats make `0.1 + 0.2 ≠ 0.3` and mark correct decimal work wrong |
+| Ambiguous notation | Refused, not guessed | A guessed reading grades an answer the student did not mean, silently |
+| Maths shown to people | Written in the notation students type; statements are `Text` and `Formula` blocks | What a student is shown is what they can enter, the tutor copies the notation it reads, and prose never has to be untangled from notation |
+| `exact_not_decimal` | Only on items that ask for a fraction or surd | Decimals compare exactly, so on "give an exact value" it would reject only right answers: `-0.25` for `-1/4` |
+| Generated answers | Chosen first where they are few; one skill per item | Random coefficients made "two roots" right 72% of the time, and a hidden common factor charged a miss to a skill the item was not about |
+| Item ids | `template#seed`, pinned by a recorded snapshot; a change is a new template version | Evidence names items by id, so regenerating a different problem would rewrite a student's history silently |
+| SymPy version | Pinned | Grading depends on its evaluation rules, which change between releases |
+| Parsing untrusted maths | Safety by construction (alphabet, resolved names, bounded powers), no blocklist | `eval` inserts every builtin into the namespace it is given, so a blocklist is the only barrier and blocklists leak |
+| Declining to answer | Scored at the guess baseline | Makes honesty and guessing cost the same in expectation; zero would pay students to guess, free would pay them to disengage |
+| Confidence mapping | Population-fitted, per item format | Per-student fitting makes everyone calibrated by construction; MCQ priors libel honest free-response guessers |
+| Form vocabulary | Opaque tokens, adapter-owned | An enum of math forms in the domain core would grow a union of every subject's vocabulary and break the `verification_kind` seam |
 | Provider abstraction | Task-level ports only | A generic `LLMClient` forfeits caching, thinking, structured outputs, and Batch — the features carrying the economics |
 | Persistence | Append-only evidence log with projection | The mastery algorithm will change; student history must survive it |
 | First slice | Quadratics, Practice only | Proves or kills the thesis with the smallest honest end-to-end system |
@@ -861,3 +1109,6 @@ tutor explanation; Sweller and Renkl on worked examples, fading, and expertise r
 productive failure; Bjork on desirable difficulties and the performance/learning distinction;
 Koedinger & Aleven on the assistance dilemma; and the Cognitive Tutor literature on gaming
 hint systems.
+
+Tooling notes — what SymPy covers by level, other CAS engines, and where step-by-step solutions
+can come from — are in `docs/superpowers/notes/2026-09-26-cas-libraries-and-step-by-step.md`.
