@@ -129,6 +129,11 @@ def test_a_duplicate_misconception_id_is_rejected():
         parse_cluster(cluster(misconceptions=[MC, dict(MC)]))
 
 
+def test_a_duplicate_skill_id_is_rejected():
+    with pytest.raises(ContentError, match="duplicate skill id: a"):
+        parse_cluster(cluster(skills=[SKILL_A, dict(SKILL_A)]))
+
+
 def test_introduced_by_may_name_any_skill_that_uses_the_concept():
     """An override, not "the first user": b may introduce it even though a also uses it."""
     loaded = parse_cluster(

@@ -81,9 +81,15 @@ def parse_cluster(raw: Mapping[str, Any]) -> LoadedCluster:
     referenced_mcs: set[MisconceptionId] = set()
     # The skills_for_concept index Slice 2 will expose; here it only validates.
     concept_users: dict[ConceptId, set[SkillId]] = defaultdict(set)
+    seen_skills: set[SkillId] = set()
 
     for entry in raw.get("skills", []):
         sid = SkillId(entry["id"])
+        # SkillGraph.build collapses duplicates last-wins (domain/graph.py), so
+        # catch them here: a silent loss of a skill would corrupt the graph.
+        if sid in seen_skills:
+            raise ContentError(f"duplicate skill id: {sid}")
+        seen_skills.add(sid)
         # May be empty: a new skill has no catalogued errors yet, and a recall
         # skill's wrong answer is not knowing rather than a false belief.
         # Diagnosis reports an unmatched error as novel (Task 8).
