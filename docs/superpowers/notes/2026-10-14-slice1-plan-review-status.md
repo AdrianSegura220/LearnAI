@@ -1,10 +1,10 @@
 # Slice 1 plan review — status & resume note
 
 **Date:** 2026-10-15 (started 2026-10-14)
-**Purpose:** handoff so a fresh session can resume the task-by-task review of
-`docs/superpowers/plans/2026-09-19-slice1-tutoring-engine.md` after a context compaction.
-All corrections — task-by-task and final-pass — are applied to the plan and spec on disk and
-verified (uncommitted). Nothing is committed yet.
+**Purpose:** record of the task-by-task review of
+`docs/superpowers/plans/2026-09-19-slice1-tutoring-engine.md` and its final full-diff pass.
+All corrections — task-by-task and final-pass — are applied, verified, committed (`405ba84`
+plan + spec, `3e7f0e7` notes), pushed, and open as PR #1 against `main`.
 
 ## How the review works
 
@@ -23,7 +23,7 @@ verified (uncommitted). Nothing is committed yet.
 - **Reviewed, corrections applied and verified:** Tasks 8–18. The task-by-task review is complete.
 - **Final full-diff pass:** complete, including executable checks of all 18 tasks. All findings
   fixed and verified — the reconstructed plan now passes **479 / 479** tests.
-- **Remaining:** decide about committing (nothing is committed yet).
+- **Remaining:** merge PR #1, then execute the plan (Task 1 onward).
 
 ## Final full-diff pass — 2026-10-15
 
@@ -174,11 +174,12 @@ New tests: +3 engine (24 total), +1 projection (11), +1 help ladder (10).
 
 - Interactive visual (strength Elo + stability/forgetting):
   `docs/superpowers/notes/2026-10-14-mastery-explorer.html` — open with `open`.
-- All review edits are uncommitted; `git diff` on the plan is the review's product.
+- Review product: commits `405ba84` (plan + spec) and `3e7f0e7` (notes) on
+  `worktree-plan-task2-content-rules` — PR #1: https://github.com/AdrianSegura220/LearnAI/pull/1
 
 ## To resume
 
 1. Read this note.
-2. Nothing is pending: the task-by-task and final-pass reviews are complete, all findings are
-   fixed and verified (479/479 on the reconstructed plan). The remaining decision is whether
-   and how to commit the plan, spec, and explorer changes.
+2. Nothing is pending: reviews complete, findings fixed and verified (479/479), committed,
+   pushed, and open as PR #1. Next: merge, then execute the plan task by task — start at
+   Task 1 in a fresh worktree, via subagent-driven development.
