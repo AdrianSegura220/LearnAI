@@ -1,0 +1,121 @@
+# content/quadratics/skills.yaml
+subject: math
+# Which Verifier grades these skills. Required, with no fallback in code; a
+# skill may override it with its own `verification:` key.
+verification: cas_symbolic
+
+# One catalogue, referenced by id. A belief that afflicts several skills is
+# authored once — see mc.square.distributes below, which two skills share.
+# On a skill, the list order is diagnosis priority: the first rule that fires
+# wins, so list the most specific belief first.
+misconceptions:
+  - id: mc.foil.drops.cross
+    name: Drops the cross terms
+    description: Multiplies first and last terms only, ignoring the inner and outer products.
+    signature: product_of_sums_drops_cross
+  - id: mc.square.distributes
+    name: Square distributes over a sum
+    description: Believes (a + b)^2 equals a^2 + b^2.
+    signature: square_distributes_over_sum
+  - id: mc.gcf.partial
+    name: Factors out only part of the common factor
+    description: Extracts a common factor but leaves a further common factor behind.
+    signature: incomplete_common_factor
+  - id: mc.factor.sign
+    name: Sign error in the factors
+    description: Chooses roots of the right magnitude but the wrong sign.
+    signature: factor_sign_flip
+  - id: mc.diffsquares.sum
+    name: Factors a sum of squares
+    description: Applies the difference-of-squares pattern to a^2 + b^2.
+    signature: sum_of_squares_factored
+  - id: mc.nonmonic.ignores.lead
+    name: Ignores the leading coefficient
+    description: Factors as though the leading coefficient were 1.
+    signature: ignores_leading_coefficient
+  - id: mc.zeroproduct.misapplied
+    name: Applies zero-product to a non-zero right side
+    description: Sets each factor equal to the right-hand side instead of first moving it to zero.
+    signature: zero_product_without_zero
+  - id: mc.complete.forgets.subtract
+    name: Adds the square without compensating
+    description: Adds (b/2)^2 without subtracting it again.
+    signature: completes_without_compensating
+  - id: mc.formula.sign.b
+    name: Drops the negation of b
+    description: Uses b instead of -b in the numerator.
+    signature: formula_b_not_negated
+  - id: mc.discriminant.sign
+    name: Reverses the discriminant cases
+    description: Reads a negative discriminant as two real roots.
+    signature: discriminant_cases_reversed
+  - id: mc.vertex.sign
+    name: Sign error reading the vertex
+    description: Reads (x - h)^2 + k as having vertex (-h, k).
+    signature: vertex_sign_flip
+  - id: mc.word.keeps.negative
+    name: Keeps a negative length
+    description: Reports a negative root as a valid physical dimension.
+    signature: negative_root_kept
+
+skills:
+  - id: quad.expand.binomial
+    name: Expand a product of two binomials
+    can_do: Expand (x + a)(x + b) into standard form.
+    misconceptions: [mc.foil.drops.cross]
+  - id: quad.expand.square
+    name: Expand a squared binomial
+    can_do: Expand (x + a)^2 into standard form.
+    prereqs: [{skill: quad.expand.binomial, strength: hard}]
+    misconceptions: [mc.square.distributes]
+  - id: quad.factor.common
+    name: Factor out a common monomial
+    can_do: Factor the greatest common monomial from a polynomial.
+    misconceptions: [mc.gcf.partial]
+  - id: quad.factor.monic
+    name: Factor a monic quadratic
+    can_do: Factor x^2 + bx + c into two binomials.
+    prereqs:
+      - {skill: quad.expand.binomial, strength: hard}
+      - {skill: quad.factor.common, strength: soft}
+    misconceptions: [mc.factor.sign]
+  - id: quad.factor.diffsquares
+    name: Factor a difference of squares
+    can_do: Factor a^2 - b^2 as (a - b)(a + b).
+    prereqs: [{skill: quad.expand.binomial, strength: hard}]
+    misconceptions: [mc.diffsquares.sum]
+  - id: quad.factor.nonmonic
+    name: Factor a non-monic quadratic
+    can_do: Factor ax^2 + bx + c where a is not 1.
+    prereqs: [{skill: quad.factor.monic, strength: hard}]
+    misconceptions: [mc.nonmonic.ignores.lead]
+  - id: quad.solve.factoring
+    name: Solve a quadratic by factoring
+    can_do: Solve a quadratic equation using the zero-product property.
+    prereqs: [{skill: quad.factor.monic, strength: hard}]
+    misconceptions: [mc.zeroproduct.misapplied]
+  - id: quad.completesquare
+    name: Complete the square
+    can_do: Rewrite x^2 + bx + c in the form (x + p)^2 + q.
+    prereqs: [{skill: quad.expand.square, strength: hard}]
+    misconceptions: [mc.complete.forgets.subtract, mc.square.distributes]
+  - id: quad.formula.apply
+    name: Apply the quadratic formula
+    can_do: Solve any quadratic using the quadratic formula.
+    prereqs: [{skill: quad.completesquare, strength: soft}, {skill: quad.solve.factoring, strength: hard}]
+    misconceptions: [mc.formula.sign.b]
+  - id: quad.discriminant
+    name: Interpret the discriminant
+    can_do: Determine the number and nature of roots from b^2 - 4ac.
+    prereqs: [{skill: quad.formula.apply, strength: hard}]
+    misconceptions: [mc.discriminant.sign]
+  - id: quad.vertex
+    name: Find the vertex of a parabola
+    can_do: Find the vertex of a quadratic from its equation.
+    prereqs: [{skill: quad.completesquare, strength: hard}]
+    misconceptions: [mc.vertex.sign]
+  - id: quad.word.area
+    name: Solve an area word problem with a quadratic
+    can_do: Model and solve an area problem that reduces to a quadratic.
+    prereqs: [{skill: quad.solve.factoring, strength: hard}]
+    misconceptions: [mc.word.keeps.negative]
