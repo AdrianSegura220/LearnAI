@@ -31,7 +31,11 @@ from learnai.domain.ids import (
 from learnai.domain.items import StepDiff, Submission
 from learnai.domain.mastery import SkillState, is_fresh
 from learnai.domain.misconceptions import MisconceptionMatcher, diagnose
-from learnai.domain.parameters import DEFAULT_PARAMETERS, MasteryParameters
+from learnai.domain.parameters import (
+    DEFAULT_PARAMETERS,
+    MasteryParameters,
+    resolve_parameters,
+)
 from learnai.domain.planner import plan_session
 from learnai.domain.ports import Clock, EvidenceLog, ItemSource, Tutor, Verifier
 from learnai.domain.projection import apply_event
@@ -222,7 +226,9 @@ class PracticeEngine:
             contract_weight=self.contract.evidence_weight,
         )
         self.evidence_log.append(event)
-        states = apply_event(states, event, self.graph, params)
+        states = apply_event(
+            states, event, self.graph, self.parameters, self.parameter_overrides
+        )
 
         task = replace(task, help_state=record_submission(task.help_state))
         if not declined:
@@ -314,7 +320,7 @@ class PracticeEngine:
         return self.verifiers[self.graph.skills[skill_id].verification_kind]
 
     def _params_for(self, skill_id: SkillId) -> MasteryParameters:
-        return self.parameter_overrides.get(skill_id, self.parameters)
+        return resolve_parameters(skill_id, self.parameters, self.parameter_overrides)
 
     def _should_intervene(
         self, *, diagnosis: MisconceptionId | None, has_work: bool, attempts: int

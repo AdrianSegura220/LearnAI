@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from learnai.domain.enums import AnswerKind, Confidence
+from learnai.domain.ids import SkillId
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,3 +76,20 @@ class MasteryParameters:
 
 
 DEFAULT_PARAMETERS = MasteryParameters()
+
+
+def resolve_parameters(
+    skill_id: SkillId,
+    params: MasteryParameters,
+    parameter_overrides: Mapping[SkillId, MasteryParameters] | None = None,
+) -> MasteryParameters:
+    """The parameters a skill's own state update runs under.
+
+    A skill may carry its own tuned model; when it does, its strength, stability,
+    calibration, and learned-bar updates all use those values, and so does a
+    stability nudge it receives as a propagation target. Overrides are part of
+    the model, so replay must pass the same mapping the live path used (P6).
+    """
+    if parameter_overrides is None:
+        return params
+    return parameter_overrides.get(skill_id, params)

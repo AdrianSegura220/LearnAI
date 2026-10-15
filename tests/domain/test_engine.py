@@ -1,5 +1,6 @@
 # tests/domain/test_engine.py
 import pathlib
+from collections.abc import Mapping
 from dataclasses import replace
 
 import pytest
@@ -19,6 +20,8 @@ from learnai.domain.enums import Confidence, EvidenceClass, HelpRung, Interventi
 from learnai.domain.ids import CourseId, SessionId, SkillId, StudentId
 from learnai.domain.items import AnswerSpec, Formula, Submission, Text
 from learnai.domain.mastery import is_learned
+from learnai.domain.parameters import DEFAULT_PARAMETERS, MasteryParameters
+from learnai.domain.projection import project
 from learnai.domain.session import replace_task
 
 CLUSTER = load_cluster(
@@ -36,6 +39,7 @@ def build(
     tutor: FakeTutor | None = None,
     clock: FakeClock | None = None,
     contract: ModeContract = PRACTICE,
+    parameter_overrides: Mapping[SkillId, MasteryParameters] | None = None,
 ):
     clock = clock or FakeClock()
     verifier = SympyVerifier()
@@ -49,6 +53,7 @@ def build(
         evidence_log=InMemoryEvidenceLog(),
         clock=clock,
         contract=contract,
+        parameter_overrides=parameter_overrides,
     )
     session = engine.start_session(
         student_id=StudentId("stu"),
@@ -379,3 +384,48 @@ def test_every_attempt_lands_in_the_append_only_log():
     engine.submit(session, {}, steps=[], answer=right(task),
                   confidence=Confidence.CERTAIN)
     assert len(engine.evidence_log.events()) == 1
+
+
+def test_each_skill_evolves_under_its_own_parameters_and_replays_from_the_log():
+    """P6 with per-skill models: the prereq latches under its own threshold and
+    takes its propagation nudge under its own weight, and the log rebuilds the
+    live states exactly."""
+    clock = FakeClock()
+    prereq = SkillId("quad.expand.binomial")
+    downstream = SkillId("quad.factor.monic")
+    overrides = {
+        prereq: replace(
+            DEFAULT_PARAMETERS,
+            strength_threshold=0.05,
+            min_unassisted_correct=1,
+            prereq_propagation_weight=5.0,
+        )
+    }
+    engine, session, clock = build(clock=clock, parameter_overrides=overrides)
+    first = session.current_task
+    assert first.skill_id == prereq, "the frontier the plan opens on"
+    session, live, _ = engine.submit(
+        session, {}, steps=[], answer=right(first), confidence=Confidence.FAIRLY_SURE
+    )
+    assert live[prereq].ever_learned, "the prereq's own threshold governed its latch"
+
+    task = replace(session.current_task, skill_id=downstream)
+    session = replace_task(session, task)
+    clock.advance(20.0)
+    session, live, _ = engine.submit(
+        session, live, steps=[], answer=right(task), confidence=Confidence.FAIRLY_SURE
+    )
+
+    events = engine.evidence_log.events()
+    replayed = project(
+        events,
+        engine.graph,
+        StudentId("stu"),
+        params=engine.parameters,
+        parameter_overrides=engine.parameter_overrides,
+    )
+    assert replayed == live, "P6: the log must rebuild the live states exactly"
+    default = project(events, engine.graph, StudentId("stu"))
+    assert live[prereq].stability > default[prereq].stability, (
+        "the prereq's own propagation weight governed its nudge"
+    )

@@ -1,4 +1,6 @@
 # tests/domain/test_projection.py
+from dataclasses import replace
+
 from hypothesis import given
 from hypothesis import strategies as st
 
@@ -110,6 +112,50 @@ def test_rebuilding_from_the_log_reproduces_the_live_projection():
         live = apply_event(live, event, GRAPH)
         clock.advance(3.0)
     assert project(log.events(), GRAPH, STUDENT) == live
+
+
+def test_each_updated_skills_own_parameters_govern_its_state():
+    """P6 with per-skill models: a skill's own parameters price its strength,
+    its latch, and the nudge it receives as a propagation target."""
+    clock = FakeClock()
+    overrides = {
+        SKILL: replace(DEFAULT_PARAMETERS, k0=1.6),
+        PREREQ: replace(DEFAULT_PARAMETERS, prereq_propagation_weight=5.0),
+    }
+    events = [attempt(clock, skill=PREREQ, difficulty=2.0) for _ in range(6)]
+    clock.advance(20.0)
+    events.append(attempt(clock, skill=SKILL))
+
+    live: dict[SkillId, object] = {}
+    for event in events:
+        live = apply_event(live, event, GRAPH, DEFAULT_PARAMETERS, overrides)
+
+    replayed = project(
+        events, GRAPH, STUDENT, params=DEFAULT_PARAMETERS, parameter_overrides=overrides
+    )
+    assert replayed == live
+
+    default = project(events, GRAPH, STUDENT)
+    assert (
+        replayed[SKILL].strength != default[SKILL].strength
+    ), "the event skill's own k0 must govern its strength"
+    assert (
+        replayed[PREREQ].stability != default[PREREQ].stability
+    ), "the propagation target's own weight must govern its nudge"
+
+
+def test_a_skills_own_parameters_govern_its_ever_learned_latch():
+    clock = FakeClock()
+    overrides = {
+        SKILL: replace(
+            DEFAULT_PARAMETERS, strength_threshold=0.05, min_unassisted_correct=1
+        )
+    }
+    event = attempt(clock)
+    assert apply_event({}, event, GRAPH, DEFAULT_PARAMETERS, overrides)[
+        SKILL
+    ].ever_learned
+    assert not apply_event({}, event, GRAPH)[SKILL].ever_learned
 
 
 def test_a_decline_never_counts_toward_the_mastery_gate():
