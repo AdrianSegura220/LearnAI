@@ -1,7 +1,7 @@
 # src/learnai/domain/mastery.py
 import math
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from learnai.domain.ids import MisconceptionId, SkillId, StudentId
 from learnai.domain.parameters import DEFAULT_PARAMETERS, MasteryParameters
@@ -63,4 +63,78 @@ def update_strength(
         # scored near the guess baseline must never mint evidence of competence.
         unassisted_correct_count=state.unassisted_correct_count
         + (1 if outcome >= 1.0 and weight > 0.0 else 0),
+    )
+
+
+def elapsed_days(earlier: datetime, later: datetime) -> float:
+    """Wall-clock days as a float. Never quantise to calendar days."""
+    return (later - earlier).total_seconds() / 86400.0
+
+
+def retrievability(state: SkillState, now: datetime) -> float:
+    """Probability the student could do this right now: 2 ** (-elapsed / half-life)."""
+    if state.last_success_at is None or state.stability <= 0.0:
+        return 0.0
+    return 2.0 ** (-elapsed_days(state.last_success_at, now) / state.stability)
+
+
+def update_stability(
+    state: SkillState,
+    correct: bool,
+    now: datetime,
+    params: MasteryParameters = DEFAULT_PARAMETERS,
+) -> SkillState:
+    """Grow the half-life on a successful retrieval; collapse it on a lapse.
+
+    Growth scales with 1 - retrievability, so a retrieval made when the memory
+    had decayed further is worth more. That is the spacing effect, and it is why
+    an immediate re-test earns almost nothing.
+    """
+    if not correct:
+        collapsed = max(params.min_stability_days, state.stability * params.failure_multiplier_f)
+        return replace(state, stability=collapsed, last_reviewed_at=now)
+
+    if state.last_success_at is None or state.stability <= 0.0:
+        return replace(
+            state,
+            stability=params.initial_stability_days,
+            last_success_at=now,
+            last_reviewed_at=now,
+        )
+
+    r = retrievability(state, now)
+    grown = state.stability * (1.0 + params.stability_growth_a * (1.0 - r))
+    return replace(state, stability=grown, last_success_at=now, last_reviewed_at=now)
+
+
+def due_at(
+    state: SkillState, params: MasteryParameters = DEFAULT_PARAMETERS
+) -> datetime | None:
+    """When retrievability will fall to r_target — roughly 0.152 half-lives.
+
+    The microsecond nudge keeps the instant itself 'fresh': datetime arithmetic
+    quantises to microseconds, and without it `is_fresh(state, due_at(state))`
+    can land just below the target when the quantisation rounds the other way.
+    """
+    if state.last_success_at is None or state.stability <= 0.0:
+        return None
+    gap = state.stability * math.log2(1.0 / params.r_target)
+    return state.last_success_at + timedelta(days=gap) - timedelta.resolution
+
+
+def is_fresh(
+    state: SkillState, now: datetime, params: MasteryParameters = DEFAULT_PARAMETERS
+) -> bool:
+    return retrievability(state, now) >= params.r_target
+
+
+def is_learned(state: SkillState, params: MasteryParameters = DEFAULT_PARAMETERS) -> bool:
+    """An achievement, not a freshness reading: once earned it never un-earns.
+
+    A later failure may drop strength below the bar; the projection set
+    `ever_learned` the moment it was first crossed, and this predicate honours
+    it (spec §7.3)."""
+    return state.ever_learned or (
+        state.strength >= params.strength_threshold
+        and state.unassisted_correct_count >= params.min_unassisted_correct
     )
