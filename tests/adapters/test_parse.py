@@ -103,6 +103,27 @@ def test_a_space_before_a_letter_is_still_multiplication():
     assert parse_math("2 x") == 2 * x
 
 
+@pytest.mark.parametrize("literal", ["0x10", "0b101", "0o17", "0X10", "0B101", "0O17"])
+def test_python_style_base_literals_are_refused(literal):
+    """0x10 reads as hexadecimal 16; a student writing it can only mean 0 times 10."""
+    with pytest.raises(ParseError):
+        parse_math(literal)
+
+
+def test_scientific_notation_is_still_accepted():
+    """1e5 is a number a student may reasonably type, unlike a 0x prefix."""
+    assert parse_math("1e5") == sp.Float(100000)
+
+
+@pytest.mark.parametrize(
+    ("expr", "text"),
+    [(10 * x, "10x"), (20 * sp.Symbol("b"), "20b"), (20 * sp.Symbol("o"), "20o")],
+)
+def test_a_zero_inside_a_product_is_not_a_base_prefix(expr, text):
+    """A literal prefix must start a number: "10x" is ten times x, not hexadecimal."""
+    assert parse_math(text) == expr
+
+
 def test_typed_decimals_stay_visible_to_form_checks():
     """Equivalence reads 0.5 exactly; a form constraint must still see a decimal was typed."""
     assert parse_math("0.5").atoms(sp.Float)

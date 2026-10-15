@@ -26,6 +26,7 @@ five characters, evaluates for longer than any request may take.
 
 _ALLOWED = re.compile(r"[0-9A-Za-z\s.+\-*/^()=]*")
 _DOT_NOT_BEFORE_DIGIT = re.compile(r"\.(?!\d)")
+_BASE_PREFIXED_NUMBER = re.compile(r"(?<![0-9A-Za-z.])0[xXbBoO]")
 _NUMBER_SPACE_NUMBER = re.compile(r"[\d.]\s+[\d.]")
 _LETTER_RUN = re.compile(r"[A-Za-z]+")
 _TIMES_BEFORE_LETTER_OR_BRACKET = re.compile(r"(?<=[0-9)])\*(?=[A-Za-z(])")
@@ -76,6 +77,11 @@ def parse_math(text: str, *, allow_equation: bool = False, as_written: bool = Fa
         raise ParseError("input contains a character outside the maths alphabet")
     if _DOT_NOT_BEFORE_DIGIT.search(stripped):
         raise ParseError("a dot may only appear inside a decimal number")
+    # "0x10" is Python syntax that eval would read as hexadecimal 16; a student
+    # can only mean 0 times 10. The lookbehind spares a zero inside an ordinary
+    # product: "10x" is ten times x, not a prefixed literal.
+    if _BASE_PREFIXED_NUMBER.search(stripped):
+        raise ParseError("a 0x, 0b or 0o prefix is not mathematical notation")
     # Refuse rather than guess: "2 3" may be 23 or 2*3, and "1 1/2" is a mixed
     # number that implicit multiplication would read as 1/2. A structured maths
     # editor removes the ambiguity at the source (spec D1).
