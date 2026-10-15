@@ -36,6 +36,14 @@ def test_the_default_response_always_passes_validation():
         assert validate_turn(turn, ctx(), GRAPH, verifier).accepted
 
 
+def test_a_none_permitted_context_yields_a_none_rung_turn_that_is_accepted():
+    tutor = FakeTutor()
+    context = ctx(HelpRung.NONE)
+    turn = tutor.respond(context)
+    assert turn.rung_used is HelpRung.NONE
+    assert validate_turn(turn, context, GRAPH, SympyVerifier()).accepted
+
+
 def test_the_script_is_played_in_order_then_falls_back():
     scripted = TutorTurn("scripted", HelpRung.NUDGE)
     tutor = FakeTutor([scripted])

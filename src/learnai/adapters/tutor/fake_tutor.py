@@ -1,7 +1,6 @@
 # src/learnai/adapters/tutor/fake_tutor.py
 from collections.abc import Sequence
 
-from learnai.domain.enums import HelpRung
 from learnai.domain.turn import TurnContext, TutorTurn
 
 _GENERIC_NUDGES = (
@@ -30,5 +29,5 @@ class FakeTutor:
             self._index += 1
             return turn
         message = _GENERIC_NUDGES[len(self.contexts_seen) % len(_GENERIC_NUDGES)]
-        rung = context.permitted_rung if context.permitted_rung > HelpRung.NONE else HelpRung.NUDGE
+        rung = context.permitted_rung
         return TutorTurn(message=message, rung_used=rung, diagnosis=context.diagnosis)
