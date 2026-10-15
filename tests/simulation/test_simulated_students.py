@@ -3,9 +3,13 @@ from learnai.adapters.cas.misconception_rules import SympyMisconceptionRules
 from learnai.adapters.cas.sympy_verifier import SympyVerifier
 from learnai.adapters.content.generators.quadratics import QUADRATICS_TEMPLATES
 from learnai.adapters.content.registry import GeneratorRegistry
-from learnai.domain.ids import SessionId, SkillId, TaskId
+from learnai.domain.enums import Confidence, EvidenceClass
+from learnai.domain.events import AttemptRecorded
+from learnai.domain.ids import ItemId, SessionId, SkillId, StudentId, TaskId
 from learnai.domain.mastery import is_fresh, is_learned, retrievability
 from learnai.domain.misconceptions import diagnose
+from learnai.domain.parameters import DEFAULT_PARAMETERS
+from learnai.domain.projection import project
 from learnai.domain.session import Task
 
 from tests.simulation.personas import (
@@ -16,6 +20,9 @@ from tests.simulation.personas import (
     Overconfident,
     run_term,
 )
+
+_ADVERSE_CAP = 500
+"""Bounded worst case for the badge test: strength must cross the bar long before this."""
 
 
 def test_a_diligent_student_learns_the_cluster_over_a_term():
@@ -77,9 +84,49 @@ def test_memory_decays_across_a_long_absence():
 
 
 def test_an_earned_achievement_survives_the_decay():
-    """is_learned is a badge, is_fresh is a reading. Decay must not revoke the badge."""
+    """The badge is latched at its first crossing, not recomputed on read.
+
+    `ever_learned` is set by the projection the moment the strength bar is
+    first cleared, and `is_learned` honours it forever. A later cold failure
+    drops strength back below the bar — the raw criterion goes false while the
+    unassisted count stays — and the badge must survive that, or "learned"
+    would be a momentary reading rather than an achievement. Time plays no
+    part: nothing in the projection reads the clock.
+    """
     result = run_term(Diligent(), days=30)
-    learned_before = {sid for sid, s in result.states.items() if is_learned(s)}
-    result.clock.advance(365.0)
-    learned_after = {sid for sid, s in result.states.items() if is_learned(s)}
-    assert learned_before == learned_after
+    student_id = StudentId(Diligent.name)
+    learned = {sid: state for sid, state in result.states.items() if is_learned(state)}
+    assert learned, "a 30-day diligent term must earn at least one badge"
+    skill_id, fragile = min(learned.items(), key=lambda pair: pair[1].strength)
+    difficulty = fragile.strength - DEFAULT_PARAMETERS.target_logit_margin
+
+    crossed = False
+    for attempt in range(_ADVERSE_CAP):
+        result.log.append(
+            AttemptRecorded(
+                at=result.clock.advance(0.01),
+                student_id=student_id,
+                skill_id=skill_id,
+                item_id=ItemId(f"post-term-{attempt}"),
+                task_id=TaskId(f"post-term-{attempt}"),
+                item_difficulty=difficulty,
+                outcome=0.0,
+                evidence_class=EvidenceClass.UNASSISTED_COLD,
+                confidence=Confidence.CERTAIN,
+                contract_weight=1.0,
+            )
+        )
+        replayed = project(result.log.events(), CLUSTER.graph, student_id)
+        if replayed[skill_id].strength < DEFAULT_PARAMETERS.strength_threshold:
+            crossed = True
+            break
+    assert crossed, (
+        f"strength never fell below {DEFAULT_PARAMETERS.strength_threshold} "
+        f"after {_ADVERSE_CAP} cold failures"
+    )
+
+    state = replayed[skill_id]
+    assert state.strength < DEFAULT_PARAMETERS.strength_threshold, "raw criterion must now be false"
+    assert state.unassisted_correct_count >= DEFAULT_PARAMETERS.min_unassisted_correct
+    assert state.ever_learned
+    assert is_learned(state), "a latch-less implementation would lose the badge here"
