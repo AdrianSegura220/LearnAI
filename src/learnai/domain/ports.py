@@ -3,7 +3,8 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Protocol
 
-from learnai.domain.items import AnswerSpec, FormConstraint, StepDiff, Submission
+from learnai.domain.ids import SkillId
+from learnai.domain.items import AnswerSpec, FormConstraint, Item, StepDiff, Submission
 from learnai.domain.verification import CheckResult
 
 
@@ -44,3 +45,7 @@ class Verifier(Protocol):
 
 class Clock(Protocol):
     def now(self) -> datetime: ...
+
+
+class ItemSource(Protocol):
+    def next_item(self, skill_id: SkillId, target_difficulty: float, seed: int) -> Item: ...

@@ -1,0 +1,827 @@
+{
+  "quad.completesquare.v1#0": {
+    "answer": "(x - 4)^2 - 1",
+    "form_constraints": [
+      "completed_square"
+    ],
+    "label": null,
+    "statement": [
+      "Text(text='Rewrite by completing the square: ')",
+      "Formula(source='x^2 - 8x + 15')"
+    ],
+    "worked_steps": [
+      "x^2 - 8x + 15",
+      "(x - 4)^2 - 16 + 15",
+      "(x - 4)^2 - 1"
+    ]
+  },
+  "quad.completesquare.v1#1": {
+    "answer": "(x - 4)^2 + 18",
+    "form_constraints": [
+      "completed_square"
+    ],
+    "label": null,
+    "statement": [
+      "Text(text='Rewrite by completing the square: ')",
+      "Formula(source='x^2 - 8x + 34')"
+    ],
+    "worked_steps": [
+      "x^2 - 8x + 34",
+      "(x - 4)^2 - 16 + 34",
+      "(x - 4)^2 + 18"
+    ]
+  },
+  "quad.completesquare.v1#2": {
+    "answer": "(x + 2)^2 - 3",
+    "form_constraints": [
+      "completed_square"
+    ],
+    "label": null,
+    "statement": [
+      "Text(text='Rewrite by completing the square: ')",
+      "Formula(source='x^2 + 4x + 1')"
+    ],
+    "worked_steps": [
+      "x^2 + 4x + 1",
+      "(x + 2)^2 - 4 + 1",
+      "(x + 2)^2 - 3"
+    ]
+  },
+  "quad.completesquare.v1#3": {
+    "answer": "(x - 1)^2 - 1",
+    "form_constraints": [
+      "completed_square"
+    ],
+    "label": null,
+    "statement": [
+      "Text(text='Rewrite by completing the square: ')",
+      "Formula(source='x^2 - 2x')"
+    ],
+    "worked_steps": [
+      "x^2 - 2x",
+      "(x - 1)^2 - 1 + 0",
+      "(x - 1)^2 - 1"
+    ]
+  },
+  "quad.completesquare.v1#4": {
+    "answer": "(x - 3)^2 - 11",
+    "form_constraints": [
+      "completed_square"
+    ],
+    "label": null,
+    "statement": [
+      "Text(text='Rewrite by completing the square: ')",
+      "Formula(source='x^2 - 6x - 2')"
+    ],
+    "worked_steps": [
+      "x^2 - 6x - 2",
+      "(x - 3)^2 - 9 - 2",
+      "(x - 3)^2 - 11"
+    ]
+  },
+  "quad.discriminant.v1#0": {
+    "answer": "0",
+    "form_constraints": [],
+    "label": "Number of real roots:",
+    "statement": [
+      "Text(text='How many distinct real roots does ')",
+      "Formula(source='2x^2 - 12x + 24 = 0')",
+      "Text(text=' have? Answer 0, 1, or 2.')"
+    ],
+    "worked_steps": []
+  },
+  "quad.discriminant.v1#1": {
+    "answer": "0",
+    "form_constraints": [],
+    "label": "Number of real roots:",
+    "statement": [
+      "Text(text='How many distinct real roots does ')",
+      "Formula(source='2x^2 + 20x + 54 = 0')",
+      "Text(text=' have? Answer 0, 1, or 2.')"
+    ],
+    "worked_steps": []
+  },
+  "quad.discriminant.v1#2": {
+    "answer": "1",
+    "form_constraints": [],
+    "label": "Number of real roots:",
+    "statement": [
+      "Text(text='How many distinct real roots does ')",
+      "Formula(source='2x^2 + 16x + 32 = 0')",
+      "Text(text=' have? Answer 0, 1, or 2.')"
+    ],
+    "worked_steps": []
+  },
+  "quad.discriminant.v1#3": {
+    "answer": "1",
+    "form_constraints": [],
+    "label": "Number of real roots:",
+    "statement": [
+      "Text(text='How many distinct real roots does ')",
+      "Formula(source='2x^2 + 12x + 18 = 0')",
+      "Text(text=' have? Answer 0, 1, or 2.')"
+    ],
+    "worked_steps": []
+  },
+  "quad.discriminant.v1#4": {
+    "answer": "2",
+    "form_constraints": [],
+    "label": "Number of real roots:",
+    "statement": [
+      "Text(text='How many distinct real roots does ')",
+      "Formula(source='2x^2 + 8x + 4 = 0')",
+      "Text(text=' have? Answer 0, 1, or 2.')"
+    ],
+    "worked_steps": []
+  },
+  "quad.expand.binomial.v1#0": {
+    "answer": "x^2 - 5x + 4",
+    "form_constraints": [
+      "expanded"
+    ],
+    "label": null,
+    "statement": [
+      "Text(text='Expand and simplify: ')",
+      "Formula(source='(x - 4)(x - 1)')"
+    ],
+    "worked_steps": [
+      "(x - 4)(x - 1)",
+      "x^2 - 5x + 4"
+    ]
+  },
+  "quad.expand.binomial.v1#1": {
+    "answer": "x^2 - 14x + 48",
+    "form_constraints": [
+      "expanded"
+    ],
+    "label": null,
+    "statement": [
+      "Text(text='Expand and simplify: ')",
+      "Formula(source='(x - 8)(x - 6)')"
+    ],
+    "worked_steps": [
+      "(x - 8)(x - 6)",
+      "x^2 - 14x + 48"
+    ]
+  },
+  "quad.expand.binomial.v1#2": {
+    "answer": "x^2 + 7x + 10",
+    "form_constraints": [
+      "expanded"
+    ],
+    "label": null,
+    "statement": [
+      "Text(text='Expand and simplify: ')",
+      "Formula(source='(x + 2)(x + 5)')"
+    ],
+    "worked_steps": [
+      "(x + 2)(x + 5)",
+      "x^2 + 7x + 10"
+    ]
+  },
+  "quad.expand.binomial.v1#3": {
+    "answer": "x^2 - 9x + 8",
+    "form_constraints": [
+      "expanded"
+    ],
+    "label": null,
+    "statement": [
+      "Text(text='Expand and simplify: ')",
+      "Formula(source='(x - 8)(x - 1)')"
+    ],
+    "worked_steps": [
+      "(x - 8)(x - 1)",
+      "x^2 - 9x + 8"
+    ]
+  },
+  "quad.expand.binomial.v1#4": {
+    "answer": "x^2 - 16",
+    "form_constraints": [
+      "expanded"
+    ],
+    "label": null,
+    "statement": [
+      "Text(text='Expand and simplify: ')",
+      "Formula(source='(x - 4)(x + 4)')"
+    ],
+    "worked_steps": [
+      "(x - 4)(x + 4)",
+      "x^2 - 16"
+    ]
+  },
+  "quad.expand.square.v1#0": {
+    "answer": "x^2 + 4x + 4",
+    "form_constraints": [
+      "expanded"
+    ],
+    "label": null,
+    "statement": [
+      "Text(text='Expand and simplify: ')",
+      "Formula(source='(x + 2)^2')"
+    ],
+    "worked_steps": [
+      "(x + 2)^2",
+      "x^2 + 4x + 4"
+    ]
+  },
+  "quad.expand.square.v1#1": {
+    "answer": "x^2 + 12x + 36",
+    "form_constraints": [
+      "expanded"
+    ],
+    "label": null,
+    "statement": [
+      "Text(text='Expand and simplify: ')",
+      "Formula(source='(x + 6)^2')"
+    ],
+    "worked_steps": [
+      "(x + 6)^2",
+      "x^2 + 12x + 36"
+    ]
+  },
+  "quad.expand.square.v1#2": {
+    "answer": "x^2 + 18x + 81",
+    "form_constraints": [
+      "expanded"
+    ],
+    "label": null,
+    "statement": [
+      "Text(text='Expand and simplify: ')",
+      "Formula(source='(x + 9)^2')"
+    ],
+    "worked_steps": [
+      "(x + 9)^2",
+      "x^2 + 18x + 81"
+    ]
+  },
+  "quad.expand.square.v1#3": {
+    "answer": "x^2 - 8x + 16",
+    "form_constraints": [
+      "expanded"
+    ],
+    "label": null,
+    "statement": [
+      "Text(text='Expand and simplify: ')",
+      "Formula(source='(x - 4)^2')"
+    ],
+    "worked_steps": [
+      "(x - 4)^2",
+      "x^2 - 8x + 16"
+    ]
+  },
+  "quad.expand.square.v1#4": {
+    "answer": "x^2 - 10x + 25",
+    "form_constraints": [
+      "expanded"
+    ],
+    "label": null,
+    "statement": [
+      "Text(text='Expand and simplify: ')",
+      "Formula(source='(x - 5)^2')"
+    ],
+    "worked_steps": [
+      "(x - 5)^2",
+      "x^2 - 10x + 25"
+    ]
+  },
+  "quad.factor.common.v1#0": {
+    "answer": "2(2x + 7)",
+    "form_constraints": [
+      "fully_factored"
+    ],
+    "label": null,
+    "statement": [
+      "Text(text='Factor completely: ')",
+      "Formula(source='4x + 14')"
+    ],
+    "worked_steps": [
+      "4x + 14",
+      "2(2x + 7)"
+    ]
+  },
+  "quad.factor.common.v1#1": {
+    "answer": "5x(6x - 5)",
+    "form_constraints": [
+      "fully_factored"
+    ],
+    "label": null,
+    "statement": [
+      "Text(text='Factor completely: ')",
+      "Formula(source='30x^2 - 25x')"
+    ],
+    "worked_steps": [
+      "30x^2 - 25x",
+      "5x(6x - 5)"
+    ]
+  },
+  "quad.factor.common.v1#2": {
+    "answer": "6(5x + 7)",
+    "form_constraints": [
+      "fully_factored"
+    ],
+    "label": null,
+    "statement": [
+      "Text(text='Factor completely: ')",
+      "Formula(source='30x + 42')"
+    ],
+    "worked_steps": [
+      "30x + 42",
+      "6(5x + 7)"
+    ]
+  },
+  "quad.factor.common.v1#3": {
+    "answer": "2x(6x + 5)",
+    "form_constraints": [
+      "fully_factored"
+    ],
+    "label": null,
+    "statement": [
+      "Text(text='Factor completely: ')",
+      "Formula(source='12x^2 + 10x')"
+    ],
+    "worked_steps": [
+      "12x^2 + 10x",
+      "2x(6x + 5)"
+    ]
+  },
+  "quad.factor.common.v1#4": {
+    "answer": "5x(2x + 3)",
+    "form_constraints": [
+      "fully_factored"
+    ],
+    "label": null,
+    "statement": [
+      "Text(text='Factor completely: ')",
+      "Formula(source='10x^2 + 15x')"
+    ],
+    "worked_steps": [
+      "10x^2 + 15x",
+      "5x(2x + 3)"
+    ]
+  },
+  "quad.factor.diffsquares.v1#0": {
+    "answer": "(4x - 7)(4x + 7)",
+    "form_constraints": [
+      "fully_factored"
+    ],
+    "label": null,
+    "statement": [
+      "Text(text='Factor: ')",
+      "Formula(source='16x^2 - 49')"
+    ],
+    "worked_steps": [
+      "16x^2 - 49",
+      "(4x - 7)(4x + 7)"
+    ]
+  },
+  "quad.factor.diffsquares.v1#1": {
+    "answer": "(5x - 4)(5x + 4)",
+    "form_constraints": [
+      "fully_factored"
+    ],
+    "label": null,
+    "statement": [
+      "Text(text='Factor: ')",
+      "Formula(source='25x^2 - 16')"
+    ],
+    "worked_steps": [
+      "25x^2 - 16",
+      "(5x - 4)(5x + 4)"
+    ]
+  },
+  "quad.factor.diffsquares.v1#2": {
+    "answer": "(6x - 5)(6x + 5)",
+    "form_constraints": [
+      "fully_factored"
+    ],
+    "label": null,
+    "statement": [
+      "Text(text='Factor: ')",
+      "Formula(source='36x^2 - 25')"
+    ],
+    "worked_steps": [
+      "36x^2 - 25",
+      "(6x - 5)(6x + 5)"
+    ]
+  },
+  "quad.factor.diffsquares.v1#3": {
+    "answer": "(6x - 1)(6x + 1)",
+    "form_constraints": [
+      "fully_factored"
+    ],
+    "label": null,
+    "statement": [
+      "Text(text='Factor: ')",
+      "Formula(source='36x^2 - 1')"
+    ],
+    "worked_steps": [
+      "36x^2 - 1",
+      "(6x - 1)(6x + 1)"
+    ]
+  },
+  "quad.factor.diffsquares.v1#4": {
+    "answer": "(5x - 8)(5x + 8)",
+    "form_constraints": [
+      "fully_factored"
+    ],
+    "label": null,
+    "statement": [
+      "Text(text='Factor: ')",
+      "Formula(source='25x^2 - 64')"
+    ],
+    "worked_steps": [
+      "25x^2 - 64",
+      "(5x - 8)(5x + 8)"
+    ]
+  },
+  "quad.factor.monic.v1#0": {
+    "answer": "(x - 4)(x - 3)",
+    "form_constraints": [
+      "fully_factored"
+    ],
+    "label": null,
+    "statement": [
+      "Text(text='Factor: ')",
+      "Formula(source='x^2 - 7x + 12')"
+    ],
+    "worked_steps": [
+      "x^2 - 7x + 12",
+      "(x - 4)(x - 3)"
+    ]
+  },
+  "quad.factor.monic.v1#1": {
+    "answer": "(x - 2)(x + 8)",
+    "form_constraints": [
+      "fully_factored"
+    ],
+    "label": null,
+    "statement": [
+      "Text(text='Factor: ')",
+      "Formula(source='x^2 + 6x - 16')"
+    ],
+    "worked_steps": [
+      "x^2 + 6x - 16",
+      "(x - 2)(x + 8)"
+    ]
+  },
+  "quad.factor.monic.v1#2": {
+    "answer": "(x - 9)(x + 8)",
+    "form_constraints": [
+      "fully_factored"
+    ],
+    "label": null,
+    "statement": [
+      "Text(text='Factor: ')",
+      "Formula(source='x^2 - x - 72')"
+    ],
+    "worked_steps": [
+      "x^2 - x - 72",
+      "(x - 9)(x + 8)"
+    ]
+  },
+  "quad.factor.monic.v1#3": {
+    "answer": "(x + 3)(x + 6)",
+    "form_constraints": [
+      "fully_factored"
+    ],
+    "label": null,
+    "statement": [
+      "Text(text='Factor: ')",
+      "Formula(source='x^2 + 9x + 18')"
+    ],
+    "worked_steps": [
+      "x^2 + 9x + 18",
+      "(x + 3)(x + 6)"
+    ]
+  },
+  "quad.factor.monic.v1#4": {
+    "answer": "(x + 3)(x + 4)",
+    "form_constraints": [
+      "fully_factored"
+    ],
+    "label": null,
+    "statement": [
+      "Text(text='Factor: ')",
+      "Formula(source='x^2 + 7x + 12')"
+    ],
+    "worked_steps": [
+      "x^2 + 7x + 12",
+      "(x + 3)(x + 4)"
+    ]
+  },
+  "quad.factor.nonmonic.v1#0": {
+    "answer": "(2x + 7)(5x - 6)",
+    "form_constraints": [
+      "fully_factored"
+    ],
+    "label": null,
+    "statement": [
+      "Text(text='Factor: ')",
+      "Formula(source='10x^2 + 23x - 42')"
+    ],
+    "worked_steps": [
+      "10x^2 + 23x - 42",
+      "(2x + 7)(5x - 6)"
+    ]
+  },
+  "quad.factor.nonmonic.v1#1": {
+    "answer": "(2x + 5)(4x + 1)",
+    "form_constraints": [
+      "fully_factored"
+    ],
+    "label": null,
+    "statement": [
+      "Text(text='Factor: ')",
+      "Formula(source='8x^2 + 22x + 5')"
+    ],
+    "worked_steps": [
+      "8x^2 + 22x + 5",
+      "(2x + 5)(4x + 1)"
+    ]
+  },
+  "quad.factor.nonmonic.v1#2": {
+    "answer": "(2x + 5)(4x + 7)",
+    "form_constraints": [
+      "fully_factored"
+    ],
+    "label": null,
+    "statement": [
+      "Text(text='Factor: ')",
+      "Formula(source='8x^2 + 34x + 35')"
+    ],
+    "worked_steps": [
+      "8x^2 + 34x + 35",
+      "(2x + 5)(4x + 7)"
+    ]
+  },
+  "quad.factor.nonmonic.v1#3": {
+    "answer": "(2x - 1)^2",
+    "form_constraints": [
+      "fully_factored"
+    ],
+    "label": null,
+    "statement": [
+      "Text(text='Factor: ')",
+      "Formula(source='4x^2 - 4x + 1')"
+    ],
+    "worked_steps": [
+      "4x^2 - 4x + 1",
+      "(2x - 1)^2"
+    ]
+  },
+  "quad.factor.nonmonic.v1#4": {
+    "answer": "(3x + 4)(5x + 7)",
+    "form_constraints": [
+      "fully_factored"
+    ],
+    "label": null,
+    "statement": [
+      "Text(text='Factor: ')",
+      "Formula(source='15x^2 + 41x + 28')"
+    ],
+    "worked_steps": [
+      "15x^2 + 41x + 28",
+      "(3x + 4)(5x + 7)"
+    ]
+  },
+  "quad.formula.apply.v1#0": {
+    "answer": "-3 - sqrt(5), -3 + sqrt(5)",
+    "form_constraints": [],
+    "label": "x =",
+    "statement": [
+      "Text(text='Solve exactly using the quadratic formula: ')",
+      "Formula(source='x^2 + 6x + 4 = 0')"
+    ],
+    "worked_steps": [
+      "x^2 + 6x + 4 = 0",
+      "x = (-6 ± sqrt(20))/2",
+      "x = -3 - sqrt(5) or x = -3 + sqrt(5)"
+    ]
+  },
+  "quad.formula.apply.v1#1": {
+    "answer": "3 - sqrt(5), sqrt(5) + 3",
+    "form_constraints": [],
+    "label": "x =",
+    "statement": [
+      "Text(text='Solve exactly using the quadratic formula: ')",
+      "Formula(source='x^2 - 6x + 4 = 0')"
+    ],
+    "worked_steps": [
+      "x^2 - 6x + 4 = 0",
+      "x = (6 ± sqrt(20))/2",
+      "x = 3 - sqrt(5) or x = sqrt(5) + 3"
+    ]
+  },
+  "quad.formula.apply.v1#2": {
+    "answer": "3/2 - sqrt(3)/2, sqrt(3)/2 + 3/2",
+    "form_constraints": [],
+    "label": "x =",
+    "statement": [
+      "Text(text='Solve exactly using the quadratic formula: ')",
+      "Formula(source='2x^2 - 6x + 3 = 0')"
+    ],
+    "worked_steps": [
+      "2x^2 - 6x + 3 = 0",
+      "x = (6 ± sqrt(12))/4",
+      "x = 3/2 - sqrt(3)/2 or x = sqrt(3)/2 + 3/2"
+    ]
+  },
+  "quad.formula.apply.v1#3": {
+    "answer": "-1/4 + sqrt(73)/4, -sqrt(73)/4 - 1/4",
+    "form_constraints": [],
+    "label": "x =",
+    "statement": [
+      "Text(text='Solve exactly using the quadratic formula: ')",
+      "Formula(source='2x^2 + x - 9 = 0')"
+    ],
+    "worked_steps": [
+      "2x^2 + x - 9 = 0",
+      "x = (-1 ± sqrt(73))/4",
+      "x = -1/4 + sqrt(73)/4 or x = -sqrt(73)/4 - 1/4"
+    ]
+  },
+  "quad.formula.apply.v1#4": {
+    "answer": "7/2 - sqrt(33)/2, sqrt(33)/2 + 7/2",
+    "form_constraints": [],
+    "label": "x =",
+    "statement": [
+      "Text(text='Solve exactly using the quadratic formula: ')",
+      "Formula(source='x^2 - 7x + 4 = 0')"
+    ],
+    "worked_steps": [
+      "x^2 - 7x + 4 = 0",
+      "x = (7 ± sqrt(33))/2",
+      "x = 7/2 - sqrt(33)/2 or x = sqrt(33)/2 + 7/2"
+    ]
+  },
+  "quad.solve.factoring.v1#0": {
+    "answer": "-7, 6",
+    "form_constraints": [],
+    "label": "x =",
+    "statement": [
+      "Text(text='Solve for x: ')",
+      "Formula(source='x^2 + x - 42 = 0')"
+    ],
+    "worked_steps": [
+      "x^2 + x - 42 = 0",
+      "(x - 6)(x + 7) = 0",
+      "x = -7 or x = 6"
+    ]
+  },
+  "quad.solve.factoring.v1#1": {
+    "answer": "-7, 9",
+    "form_constraints": [],
+    "label": "x =",
+    "statement": [
+      "Text(text='Solve for x: ')",
+      "Formula(source='x^2 - 2x - 63 = 0')"
+    ],
+    "worked_steps": [
+      "x^2 - 2x - 63 = 0",
+      "(x - 9)(x + 7) = 0",
+      "x = -7 or x = 9"
+    ]
+  },
+  "quad.solve.factoring.v1#2": {
+    "answer": "-8, -2",
+    "form_constraints": [],
+    "label": "x =",
+    "statement": [
+      "Text(text='Solve for x: ')",
+      "Formula(source='x^2 + 10x + 16 = 0')"
+    ],
+    "worked_steps": [
+      "x^2 + 10x + 16 = 0",
+      "(x + 2)(x + 8) = 0",
+      "x = -8 or x = -2"
+    ]
+  },
+  "quad.solve.factoring.v1#3": {
+    "answer": "5, 8",
+    "form_constraints": [],
+    "label": "x =",
+    "statement": [
+      "Text(text='Solve for x: ')",
+      "Formula(source='x^2 - 13x + 40 = 0')"
+    ],
+    "worked_steps": [
+      "x^2 - 13x + 40 = 0",
+      "(x - 8)(x - 5) = 0",
+      "x = 5 or x = 8"
+    ]
+  },
+  "quad.solve.factoring.v1#4": {
+    "answer": "7",
+    "form_constraints": [],
+    "label": "x =",
+    "statement": [
+      "Text(text='Solve for x: ')",
+      "Formula(source='x^2 - 14x + 49 = 0')"
+    ],
+    "worked_steps": [
+      "x^2 - 14x + 49 = 0",
+      "(x - 7)^2 = 0",
+      "x = 7"
+    ]
+  },
+  "quad.vertex.v1#0": {
+    "answer": "-1/4",
+    "form_constraints": [],
+    "label": "x =",
+    "statement": [
+      "Text(text='Find the x-coordinate of the vertex of ')",
+      "Formula(source='y = -2x^2 - x + 1')",
+      "Text(text='. Give an exact value.')"
+    ],
+    "worked_steps": []
+  },
+  "quad.vertex.v1#1": {
+    "answer": "-7/2",
+    "form_constraints": [],
+    "label": "x =",
+    "statement": [
+      "Text(text='Find the x-coordinate of the vertex of ')",
+      "Formula(source='y = x^2 + 7x - 8')",
+      "Text(text='. Give an exact value.')"
+    ],
+    "worked_steps": []
+  },
+  "quad.vertex.v1#2": {
+    "answer": "1/2",
+    "form_constraints": [],
+    "label": "x =",
+    "statement": [
+      "Text(text='Find the x-coordinate of the vertex of ')",
+      "Formula(source='y = -2x^2 + 2x - 1')",
+      "Text(text='. Give an exact value.')"
+    ],
+    "worked_steps": []
+  },
+  "quad.vertex.v1#3": {
+    "answer": "1/2",
+    "form_constraints": [],
+    "label": "x =",
+    "statement": [
+      "Text(text='Find the x-coordinate of the vertex of ')",
+      "Formula(source='y = -4x^2 + 4x - 2')",
+      "Text(text='. Give an exact value.')"
+    ],
+    "worked_steps": []
+  },
+  "quad.vertex.v1#4": {
+    "answer": "-4/3",
+    "form_constraints": [],
+    "label": "x =",
+    "statement": [
+      "Text(text='Find the x-coordinate of the vertex of ')",
+      "Formula(source='y = -3x^2 - 8x - 3')",
+      "Text(text='. Give an exact value.')"
+    ],
+    "worked_steps": []
+  },
+  "quad.word.area.v1#0": {
+    "answer": "5",
+    "form_constraints": [],
+    "label": "Width (cm):",
+    "statement": [
+      "Text(text='A rectangle is 7 cm longer than it is wide. Its area is 60 cm². Find its width in cm.')"
+    ],
+    "worked_steps": []
+  },
+  "quad.word.area.v1#1": {
+    "answer": "12",
+    "form_constraints": [],
+    "label": "Width (cm):",
+    "statement": [
+      "Text(text='A rectangle is 4 cm longer than it is wide. Its area is 192 cm². Find its width in cm.')"
+    ],
+    "worked_steps": []
+  },
+  "quad.word.area.v1#2": {
+    "answer": "3",
+    "form_constraints": [],
+    "label": "Width (cm):",
+    "statement": [
+      "Text(text='A rectangle is 9 cm longer than it is wide. Its area is 36 cm². Find its width in cm.')"
+    ],
+    "worked_steps": []
+  },
+  "quad.word.area.v1#3": {
+    "answer": "12",
+    "form_constraints": [],
+    "label": "Width (cm):",
+    "statement": [
+      "Text(text='A rectangle is 2 cm longer than it is wide. Its area is 168 cm². Find its width in cm.')"
+    ],
+    "worked_steps": []
+  },
+  "quad.word.area.v1#4": {
+    "answer": "12",
+    "form_constraints": [],
+    "label": "Width (cm):",
+    "statement": [
+      "Text(text='A rectangle is 3 cm longer than it is wide. Its area is 180 cm². Find its width in cm.')"
+    ],
+    "worked_steps": []
+  }
+}
