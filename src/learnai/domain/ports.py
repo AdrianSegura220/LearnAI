@@ -8,6 +8,7 @@ from learnai.domain.items import AnswerSpec, FormConstraint, Item, StepDiff, Sub
 from learnai.domain.verification import CheckResult
 
 if TYPE_CHECKING:
+    from learnai.domain.events import EvidenceEvent
     from learnai.domain.turn import TutorTurn, TurnContext
 
 
@@ -56,3 +57,9 @@ class ItemSource(Protocol):
 
 class Tutor(Protocol):
     def respond(self, context: "TurnContext") -> "TutorTurn": ...
+
+
+class EvidenceLog(Protocol):
+    def append(self, event: "EvidenceEvent") -> None: ...
+
+    def events(self) -> tuple["EvidenceEvent", ...]: ...
