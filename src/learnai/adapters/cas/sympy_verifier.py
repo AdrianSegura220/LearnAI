@@ -2,12 +2,14 @@
 import itertools
 import re
 from collections.abc import Callable, Iterator, Sequence
+from dataclasses import dataclass
 
 import sympy as sp
 
 from learnai.adapters.cas.equivalence import (
     equations_equivalent,
     expressions_equivalent,
+    real_solutions,
     solution_sets_equivalent,
 )
 from learnai.adapters.cas.parse import KNOWN_NAMES, ParseError, evaluated, parse_math
@@ -70,7 +72,24 @@ class SympyVerifier:
         return Submission.of(spec.expression)
 
     def diff_steps(self, steps: Sequence[str]) -> StepDiff | None:
-        return None  # implemented in Task 6
+        """The first step that does not follow from the one before, or None."""
+        if len(steps) < 2:
+            return None
+
+        parsed: list[Step | None] = []
+        for raw in steps:
+            try:
+                parsed.append(parse_step(raw))
+            except ParseError:
+                parsed.append(None)
+
+        for i, step in enumerate(parsed):
+            previous = steps[i - 1] if i else ""
+            if step is None:
+                return StepDiff(index=i, previous=previous, current=steps[i], unreadable=True)
+            if i and not _steps_equivalent(parsed[i - 1], step):
+                return StepDiff(index=i, previous=previous, current=steps[i])
+        return None
 
     def extract_candidate_expressions(self, text: str) -> tuple[str, ...]:
         """Every stretch of maths in a piece of prose, and its parts.
@@ -309,3 +328,99 @@ def _satisfies(written: sp.Expr, constraint: FormConstraint) -> bool:
     if check is None:
         raise UnknownConstraintError(constraint)
     return check(written)
+
+
+@dataclass(frozen=True)
+class Alternatives:
+    """A step listing equations any of which may hold: "x = 1 or x = 3", "x = ±3"."""
+
+    parts: tuple[sp.Eq, ...]
+
+    @property
+    def free_symbols(self) -> set[sp.Symbol]:
+        return set().union(*(part.free_symbols for part in self.parts))
+
+
+Step = sp.Basic | Alternatives
+
+_OR = re.compile(r"\s+or\s+", re.IGNORECASE)
+
+
+def parse_step(text: str) -> Step:
+    """Read one line of working, in the notations students actually use.
+
+    Public: the one reader for a line of student working. Task 8's rules read
+    steps through it too, so a belief fires on exactly the notations the
+    differ accepts and the comma policy lives in one place.
+
+    A line opening with "=" continues the previous expression. A line listing
+    alternatives — joined by "or", written with "±" or "+/-", or separated by
+    commas when every part is an equation — is the set of its equations, and a
+    bare value inherits the letter before it: "x = 1 or 3" is "x = 1 or x = 3".
+    """
+    text = text.strip()
+    if text.startswith("="):
+        return parse_math(text[1:], as_written=True)
+
+    parts = [part.strip() for part in _OR.split(text)]
+    if len(parts) == 1 and "," in text:
+        pieces = [piece.strip() for piece in text.split(",")]
+        if all("=" in piece for piece in pieces):  # never split a decimal comma
+            parts = pieces
+    if len(parts) == 1 and not _PLUS_MINUS.search(text):
+        return parse_math(text, allow_equation=True, as_written=True)
+
+    named = _NAMED_VALUE.fullmatch(parts[0])
+    equations: list[sp.Eq] = []
+    for part in parts:
+        if "=" not in part and named is not None:
+            part = f"{named.group(1)} = {part}"
+        for variant in _expand_plus_minus(part):
+            equation = parse_math(variant, allow_equation=True, as_written=True)
+            if not isinstance(equation, sp.Eq):
+                raise ParseError(f"{part!r} is not an equation")
+            equations.append(equation)
+    return Alternatives(tuple(equations)) if len(equations) > 1 else equations[0]
+
+
+def _is_claim(step: Step) -> bool:
+    return isinstance(step, (sp.Eq, Alternatives))
+
+
+def _equations(step: Step) -> tuple[sp.Eq, ...]:
+    return step.parts if isinstance(step, Alternatives) else (step,)
+
+
+def _solutions(step: Step, var: sp.Symbol) -> frozenset[sp.Expr] | None:
+    found = [real_solutions(equation, var) for equation in _equations(step)]
+    if any(f is None for f in found):
+        return None
+    return frozenset().union(*found)
+
+
+def _steps_equivalent(a: Step, b: Step) -> bool:
+    """Expressions compare by value; equations and lists by their real solutions.
+
+    A move between an expression and an equation changes what is claimed, so
+    it is never a valid step.
+    """
+    if _is_claim(a) != _is_claim(b):
+        return False
+    if not _is_claim(a):
+        return expressions_equivalent(a, b)
+    if isinstance(a, sp.Eq) and isinstance(b, sp.Eq):
+        return equations_equivalent(a, b)
+    variables = a.free_symbols | b.free_symbols
+    if len(variables) == 1:
+        (var,) = variables
+        sa, sb = _solutions(a, var), _solutions(b, var)
+        if sa is not None and sb is not None and (sa or sb):
+            return solution_sets_equivalent(list(sa), list(sb))
+    # Solutions cannot be listed: fall back to matching the equations pairwise.
+    remaining = list(_equations(b))
+    for equation in _equations(a):
+        match = next((r for r in remaining if equations_equivalent(equation, r)), None)
+        if match is None:
+            return False
+        remaining.remove(match)
+    return not remaining
