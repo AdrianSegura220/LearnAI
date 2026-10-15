@@ -87,7 +87,16 @@ class SympyVerifier:
             previous = steps[i - 1] if i else ""
             if step is None:
                 return StepDiff(index=i, previous=previous, current=steps[i], unreadable=True)
-            if i and not _steps_equivalent(parsed[i - 1], step):
+            if not i:
+                continue
+            try:
+                follows = _steps_equivalent(parsed[i - 1], step)
+            except Exception:
+                # Deliberate broad catch: SymPy's solvers raise a zoo of exception
+                # types, and unreadable is the cannot-process channel — skipping
+                # the transition could falsely claim there is no broken step.
+                return StepDiff(index=i, previous=previous, current=steps[i], unreadable=True)
+            if not follows:
                 return StepDiff(index=i, previous=previous, current=steps[i])
         return None
 

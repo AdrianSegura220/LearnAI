@@ -86,3 +86,15 @@ def test_a_decimal_comma_is_never_read_as_two_values():
 def test_a_chain_of_equals_signs_is_unreadable_for_now():
     diff = V.diff_steps(["(x+1)(x+2)", "(x+1)(x+2) = x^2 + 2x + x + 2 = x^2 + 3x + 2"])
     assert diff is not None and diff.unreadable
+
+
+def test_a_solver_crash_does_not_escape_the_boundary(monkeypatch):
+    # No parse-valid input deterministically crashes the solver, so inject the fault.
+    def boom(*args, **kwargs):
+        raise OverflowError("solver exploded")
+
+    monkeypatch.setattr("learnai.adapters.cas.sympy_verifier.real_solutions", boom)
+
+    diff = V.diff_steps(["x^2 = 9", "x = ±3"])
+    assert diff is not None and diff.index == 1 and diff.unreadable
+    assert diff.previous == "x^2 = 9" and diff.current == "x = ±3"
