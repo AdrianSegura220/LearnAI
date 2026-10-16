@@ -160,7 +160,7 @@ One rule over everything: **nothing bad ever reaches the student; the worst outc
 
 ## 7. The graded eval set
 
-**Scenarios.** ≥50 committed YAML fixtures, each a snapshot of one tutoring moment. A scenario names: the skill; the item (a `template_id` plus a fixed seed — the same question forever); the pretend-student's help state as a real `HelpState` (`rungs_used`, `attempts`, `submissions`); the student's state (strength, calibration gap, active misconceptions, last-success offset); the submission (steps and/or answer, or a decline); and its family. Families, with floors:
+**Scenarios.** ≥50 committed YAML fixtures, each a snapshot of one tutoring moment. A scenario names: the skill; the item (a `template_id` plus a fixed seed — the same question forever); the context fields exactly as `TurnContext` carries them (`permitted_rung` — the ceiling the engine would pass for this moment — and the student summary: strength, freshness, calibration gap, prior misconceptions); the submission (steps and/or answer, or a decline), from which the runner derives the step diff, diagnosis, and last verdict through the real engine pieces; and its family. Families, with floors:
 
 | Family | Floor | What it exercises |
 |---|---|---|
