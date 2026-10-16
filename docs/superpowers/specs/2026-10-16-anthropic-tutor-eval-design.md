@@ -94,8 +94,10 @@ One clear responsibility per file, matching the repo's existing layout. The adap
 class Tutor(Protocol):
     def respond(
         self, context: TurnContext, *, feedback: TurnFeedback | None = None
-    ) -> TutorTurn: ...
+    ) -> TutorTurn | None: ...
 ```
+
+A `None` return is a **silent turn**: the adapter's honest outcome when every attempt failed (corrective retries exhausted, API unavailable, malformed output unrepaired). Both the engine and the eval runner treat it as "no message" — never as an error, never as evidence (spec §6). `FakeTutor` never returns `None`; the real adapter does, and the tests pin it.
 
 **`TurnFeedback` is new and additive** (`domain/turn.py`):
 
