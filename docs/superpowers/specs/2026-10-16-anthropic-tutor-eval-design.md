@@ -130,17 +130,19 @@ The engine remains the single validation authority. The adapter never imports `v
 
 ```yaml
 routes:
-  tutor_dialogue:  {adapter: anthropic, model: claude-opus-5, effort: high,  thinking: adaptive, stream: false, max_tool_iterations: 6}
+  tutor_dialogue:  {adapter: anthropic, model: claude-opus-5, effort: high,  thinking: adaptive, prompt: tutor_math@1, stream: false, max_tool_iterations: 6}
   error_diagnosis: {adapter: anthropic, model: claude-opus-5, effort: xhigh, thinking: adaptive}  # reserved; see below
-  rubric_judge:    {adapter: anthropic, model: claude-opus-5, effort: high,  thinking: adaptive, temperature: 0}
+  rubric_judge:    {adapter: anthropic, model: claude-opus-5, effort: high,  thinking: adaptive, prompt: rubric_judge@1, temperature: 0}
 ```
 
 `stream: false` because streaming mechanics are out of 2A; the key flips in 2B/2C. `error_diagnosis` is present and resolvable but reserved: it activates when a dedicated novel-error classification call is warranted by evidence, at which point it gets a cheaper model if the eval supports that. A missing route, a missing key, or an unknown adapter is a startup error with a clear message — an author error, never a silent fallback.
 
+**Prompts are versioned data.** A route also names the prompt file it runs: `prompt: tutor_math@1` resolves to `prompts/tutor_math/v1.md`, loaded fail-fast (a malformed reference, a missing file, or an empty file all raise at load). The adapter composes prompts; it never authors them. Iterating wording means a new version file plus a route bump — the old file stays for reproducing old runs — and every eval report records the prompt ids it ran, so two runs are comparable exactly when their ids match. The same mechanism carries the judge's rubric (`prompts/rubric_judge/v1.md`), which is why calibration binds to a rubric version.
+
 ## 5. One turn, end to end
 
 1. **The engine decides to speak** — a mistake to react to, or a help request — and builds the context: skill pack (can-do statement, teaching notes, misconception catalogue), item, student summary, step diff, diagnosis, last verdict, permitted rung, and the transcript window.
-2. **The adapter assembles the request in four layers, stable-first** (parent §10.1): (L1) the global tutor policy — identical for every student; (L2) the skill pack — shared by everyone working that skill; (L3) the session preamble — the student profile, stable for the session; (L4) the volatile turn data. L1–L3 carry cache breakpoints; nothing volatile may sit above a breakpoint.
+2. **The adapter assembles the request in four layers, stable-first** (parent §10.1): (L1) the global tutor policy — identical for every student, a versioned file under `prompts/` named by the route; (L2) the skill pack — shared by everyone working that skill; (L3) the session preamble — the student profile, stable for the session; (L4) the volatile turn data. L1–L3 carry cache breakpoints; nothing volatile may sit above a breakpoint.
 3. **The model works.** It may call the read tools mid-thought; results are appended to the conversation and it continues. Tool use is bounded (`max_tool_iterations` from the route); exceeding the bound is a misbehaving response (§6).
 4. **The model finishes by emitting the structured turn** — the `TutorTurn` shape: student-facing message, rung used, diagnosis, proposals. The schema is enforced; a malformed emission is a misbehaving response, not a parse error. Mechanism: the SDK's structured-output support; if its constraints cannot express the shape cleanly, the fallback is a single terminating tool call with the same schema. Both paths end in the same validation.
 5. **The engine validates** as today: rung ceiling, LeakGuard, proposal legality, non-empty message.
@@ -177,9 +179,9 @@ One rule over everything: **nothing bad ever reaches the student; the worst outc
 **Scoring, two layers.**
 
 - **Deterministic checks — free, exact.** The final outcome (after any corrective retries) must be a turn the engine accepts: rung within the ceiling, no leak, legal proposals. A scenario whose model never produces an acceptable turn fails, regardless of how pleasant the drafts were. These checks are the same gates that run in production — the eval cannot be greener than reality.
-- **Judge pass — live, small cost.** The `rubric_judge` route scores each accepted turn 0–2 on four dimensions: (1) mathematical correctness; (2) appropriateness of help — right level, actually helps; (3) diagnosis quality — the right mistake named, or correctly general; (4) tone — respectful, age-appropriate, encouraging without patronising. The judge sees the context and the final message; it returns structured scores with one-line reasons. The judge prompt and rubric live in the eval package, versioned with the fixtures.
+- **Judge pass — live, small cost.** The `rubric_judge` route scores each accepted turn 0–2 on four dimensions: (1) mathematical correctness; (2) appropriateness of help — right level, actually helps; (3) diagnosis quality — the right mistake named, or correctly general; (4) tone — respectful, age-appropriate, encouraging without patronising. The judge sees the context and the final message; it returns structured scores with one-line reasons. The judge prompt is itself a versioned file (`prompts/rubric_judge/v1.md`, named by the route), so calibration is tied to a rubric version by construction.
 
-**Thresholds are calibrated, then frozen.** The first judged run is spot-reviewed by the human (~10 turns). If the judge disagrees with the review, the rubric or judge prompt is fixed before its numbers are trusted. After calibration, per-family score floors are recorded as release gates for future runs; until then a run's acceptance is "report produced and reviewed".
+**Thresholds are calibrated, then frozen.** The first judged run is spot-reviewed by the human (~10 turns). If the judge disagrees with the review, the rubric moves to a new version before its numbers are trusted. After calibration, per-family score floors are recorded as release gates for future runs; until then a run's acceptance is "report produced and reviewed".
 
 **Persona smoke.** Two or three of Slice 1's personas (a diligent student, a misconception carrier, a hint abuser) run short terms through the real adapter, end to end. Assertions: every session completes; every delivered turn passed validation; no run crashes; summary statistics recorded. This is the only part of the eval that exercises whole sessions rather than single moments, and it is kept short because it is the most expensive.
 
