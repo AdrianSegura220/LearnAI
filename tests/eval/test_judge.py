@@ -442,3 +442,25 @@ def test_missing_provider_content_is_operational_failure():
     with pytest.raises(JudgeError, match="api_error"):
         run_judge(sdk.client, routes, packet=packet(), **options)
     assert traces[0].output_tokens == 40
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_provider_wire_schema_omits_unsupported_numerical_constraints(stream):
+    route = Route("rubric_judge", "anthropic", "scripted", prompt="rubric_judge@1", stream=stream)
+    sdk, routes, options, _, _ = setup([reply()], route=route)
+    assert run_judge(sdk.client, routes, packet=packet(), **options).mathematics == 2
+    schema = sdk.wire_requests[0]["output_config"]["format"]["schema"]
+    unsupported = {"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"}
+
+    def check_schema(value):
+        if isinstance(value, dict):
+            assert not unsupported.intersection(value), "unsupported numerical schema constraint on wire"
+            for child in value.values():
+                check_schema(child)
+        elif isinstance(value, list):
+            for child in value:
+                check_schema(child)
+
+    check_schema(schema)
+    for dimension in ("mathematics", "help_level", "diagnosis", "tone"):
+        assert schema["properties"][dimension]["type"] == ["integer", "null"]

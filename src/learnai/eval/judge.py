@@ -137,7 +137,8 @@ _SCORE_KEYS = frozenset((*_DIMENSIONS, "reasons", "status", "missing_information
 SCORE_SCHEMA = {
     "type": "object",
     "properties": {
-        **{name: {"type": ["integer", "null"], "minimum": 0, "maximum": 2} for name in _DIMENSIONS},
+        # Provider schemas omit numerical bounds; JudgeScores enforces 0–2 locally.
+        **{name: {"type": ["integer", "null"]} for name in _DIMENSIONS},
         "reasons": {"type": "array", "items": {"type": "string"}},
         "status": {"type": "string", "enum": ["scored", "insufficient_evidence"]},
         "missing_information": {"type": "array", "items": {"type": "string"}},
