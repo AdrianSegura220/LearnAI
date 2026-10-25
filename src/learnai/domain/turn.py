@@ -96,7 +96,7 @@ def build_turn_context(
     )
     return TurnContext(
         skill_pack=SkillPack(skill.id, skill.can_do_statement,
-                             getattr(skill, "teaching_notes", ""),
+                             skill.teaching_notes,
                              tuple(catalogue[m] for m in skill.misconception_ids)),
         item=task.item,
         student_summary=StudentSummary(
