@@ -1,6 +1,7 @@
 """Anthropic transport for a single retained, engine-validated tutor exchange."""
 from collections.abc import Callable, Mapping
 from copy import deepcopy
+from datetime import UTC, datetime
 import json
 import logging
 from pathlib import Path
@@ -120,6 +121,7 @@ class _AnthropicExchange:
         self.messages: list[dict[str, Any]] = []
         self.pending: list[dict[str, Any]] = []
         self.finished = False
+        self._retry_pending = False
         self._stop: TerminationReason | None = None
         scope, interaction = context.history_scope, context.interaction
         self.trace = TurnTrace(str(uuid4()), scope.student_id if scope else None,
@@ -207,8 +209,11 @@ class _AnthropicExchange:
             if self.expired():
                 return None
             self.trace.provider_requests.append(deepcopy(payload))
-            self.trace.attempts.append(ProviderAttempt(len(self.trace.provider_requests) - 1))
+            self.trace.attempts.append(ProviderAttempt(len(self.trace.provider_requests) - 1,
+                started_at=datetime.now(UTC).isoformat(), retry=attempt > 0 or self._retry_pending))
+            self._retry_pending = False
             self.budget.record_model_call(0)
+            attempt_started = self.budget.monotonic()
             try:
                 timeout = self.budget.remaining_seconds()
                 if self.route.stream:
@@ -219,6 +224,7 @@ class _AnthropicExchange:
                     response = self.tutor.client.messages.create(**payload, timeout=timeout)
             except (anthropic.APIConnectionError, anthropic.APIStatusError) as exc:
                 status = getattr(exc, "status_code", None)
+                self.trace.attempts[-1].outcome = type(exc).__name__
                 self.trace.attempts[-1].provider_request_id = getattr(exc, "request_id", None)
                 self.trace.api_errors.append({"type": type(exc).__name__, "status_code": status,
                     "request_id": getattr(exc, "request_id", None), "attempt": self.budget.model_calls})
@@ -236,6 +242,8 @@ class _AnthropicExchange:
                 self.trace.api_retries += 1
                 self.tutor.sleep(min(0.25 * 2 ** attempt, self.budget.remaining_seconds()))
                 continue
+            finally:
+                self.trace.attempts[-1].finish(elapsed_seconds=self.budget.monotonic() - attempt_started)
             raw = response.model_dump(mode="json", exclude_unset=True)
             self._record_response(response)
             blocks = deepcopy(raw["content"])
@@ -264,7 +272,11 @@ class _AnthropicExchange:
         attempt.usage_status = UsageStatus.COMPLETE if complete else UsageStatus.PARTIAL
         attempt.usage = response.usage.model_dump(mode="json", exclude_unset=True)
         attempt.provider_request_id = getattr(response, "_request_id", None) or attempt.provider_request_id
-        self.trace.provider_responses.append(response.model_dump(mode="json", exclude_unset=True))
+        raw = response.model_dump(mode="json", exclude_unset=True)
+        attempt.response = deepcopy(raw)
+        attempt.response_model = raw.get("model")
+        attempt.outcome = raw.get("stop_reason") or "partial_response"
+        self.trace.provider_responses.append(raw)
         self.trace.usages.append(response.usage.model_dump(mode="json", exclude_unset=True))
         self.tutor.usages.append(response.usage)
         self.budget.record_output_tokens(response.usage.output_tokens)
@@ -310,6 +322,9 @@ class _AnthropicExchange:
                 return None
 
     def _format_error(self, detail: str) -> bool:
+        self._retry_pending = True
+        if self.trace.attempts:
+            self.trace.attempts[-1].outcome = "format_rejected"
         self._settle_error("invalid_format", detail)
         if self.trace.format_retries >= MAX_FORMAT_RETRIES:
             self._stop = TerminationReason.FORMAT_EXHAUSTED
@@ -322,6 +337,7 @@ class _AnthropicExchange:
         if self.expired():
             return None
         if feedback is not None:
+            self._retry_pending = True
             self._settle_error(feedback.reason.name, feedback.detail)
             self.trace.validation_retries += 1
             self._correction(correction_text(feedback))
@@ -374,6 +390,8 @@ class _AnthropicExchange:
 
     def record_validation(self, result: ValidationResult) -> None:
         self.trace.validation_results.append(result)
+        if self.trace.attempts:
+            self.trace.attempts[-1].outcome = "accepted" if result.accepted else "validation_rejected"
         if self.expired():
             self._settle_error(self.stop_reason or "deadline")
         elif result.accepted:

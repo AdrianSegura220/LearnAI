@@ -80,3 +80,22 @@ routes:
     stream: false
     prompt: rubric_judge@1
     budget_profile: substantial
+
+# Dated direct-API estimate only; accounting parses this separately from routing.
+pricing:
+  version: direct-api@2026-10-26
+  date: '2026-10-26'
+  retrieved_at: '2026-10-26'
+  currency: USD
+  unit: 1000000
+  source_url: https://platform.claude.com/docs/en/about-claude/pricing
+  conditions:
+    service_tier: standard
+    inference_geo: not_available
+  rates:
+    claude-opus-5-5:
+      input: '4'
+      output: '20'
+      cache_write_5m: '5'
+      cache_write_1h: '8'
+      cache_read: '0.20'

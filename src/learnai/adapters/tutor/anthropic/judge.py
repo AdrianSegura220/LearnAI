@@ -5,6 +5,7 @@ This module owns only SDK framing, bounded retries and private usage traces.
 """
 from collections.abc import Callable, Mapping
 from copy import deepcopy
+from datetime import UTC, datetime
 from dataclasses import asdict, dataclass, field
 import json
 import time
@@ -31,7 +32,7 @@ class JudgeTransportError(ValueError):
 
 @dataclass
 class JudgeAttempt(ProviderAttempt):
-    response_model: str | None = None
+    """Compatibility name for the shared attempt metadata."""
 
 
 @dataclass
@@ -107,6 +108,8 @@ class _JudgeExchange:
         attempt.provider_request_id = getattr(response, "_request_id", None) or attempt.provider_request_id
         raw_response = response.model_dump(mode="json", exclude_unset=True)
         attempt.response_model = raw_response.get("model")
+        attempt.response = deepcopy(raw_response)
+        attempt.outcome = raw_response.get("stop_reason") or "partial_response"
         self.trace.provider_responses.append(raw_response)
         raw = raw_response.get("usage")
         if not isinstance(raw, dict):
@@ -162,14 +165,17 @@ class _JudgeExchange:
             if self.budget.expired():
                 self._fail(TerminationReason.DEADLINE)
             self.trace.provider_requests.append(deepcopy(payload))
-            self.trace.attempts.append(JudgeAttempt(len(self.trace.provider_requests) - 1))
+            self.trace.attempts.append(JudgeAttempt(len(self.trace.provider_requests) - 1,
+                started_at=datetime.now(UTC).isoformat(), retry=attempt > 0 or self.trace.format_retries > 0))
             self.budget.record_model_call(0)
+            attempt_started = self.budget.monotonic()
             try:
                 timeout = self.budget.remaining_seconds()
                 response = (self._stream_response(payload, timeout) if self.route.stream
                             else self.client.messages.create(**payload, timeout=timeout))
             except (anthropic.APIError, httpx2.TransportError) as exc:
                 status = getattr(exc, "status_code", None)
+                self.trace.attempts[-1].outcome = type(exc).__name__
                 self.trace.attempts[-1].provider_request_id = getattr(exc, "request_id", None)
                 self.trace.api_errors.append({"type": type(exc).__name__, "status_code": status,
                     "request_id": getattr(exc, "request_id", None), "attempt": self.budget.model_calls})
@@ -185,6 +191,8 @@ class _JudgeExchange:
                 self.trace.api_retries += 1
                 self.sleep(min(0.25 * 2 ** attempt, self.budget.remaining_seconds()))
                 continue
+            finally:
+                self.trace.attempts[-1].finish(elapsed_seconds=self.budget.monotonic() - attempt_started)
             self._record_response(response)
             if self.budget.expired():
                 self._fail(TerminationReason.DEADLINE)
@@ -214,6 +222,7 @@ class _JudgeExchange:
                     raise ValueError("unexpected response stop reason")
                 result = parse("".join(block["text"] for block in blocks if block["type"] == "text"))
             except ValueError as exc:
+                self.trace.attempts[-1].outcome = "format_rejected"
                 if self.trace.format_retries >= MAX_FORMAT_RETRIES:
                     self._fail(TerminationReason.FORMAT_EXHAUSTED, str(exc))
                 self.trace.format_retries += 1
@@ -222,6 +231,7 @@ class _JudgeExchange:
                 continue
             if self.budget.expired():
                 self._fail(TerminationReason.DEADLINE)
+            self.trace.attempts[-1].outcome = "completed"
             self.trace.termination_reason = TerminationReason.COMPLETED
             return result
 

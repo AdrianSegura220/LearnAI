@@ -98,7 +98,7 @@ def _reject_unknown(raw: Mapping, allowed: set[str], name: str) -> None:
 
 def _parse_config(raw: Mapping) -> tuple[dict[str, Route], dict[str, BudgetProfile]]:
     raw = _mapping(raw, "configuration")
-    _reject_unknown(raw, {"budget_profiles", "routes"}, "configuration")
+    _reject_unknown(raw, {"budget_profiles", "routes", "pricing"}, "configuration")
     profile_entries = _mapping(raw.get("budget_profiles"), "budget_profiles")
     route_entries = _mapping(raw.get("routes"), "routes")
     profiles: dict[str, BudgetProfile] = {}

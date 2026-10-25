@@ -1,7 +1,7 @@
 """Request-local allowances and private, replayable tutor traces."""
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
@@ -117,6 +117,19 @@ class ProviderAttempt:
     usage_status: UsageStatus = UsageStatus.MISSING
     usage: dict[str, Any] | None = None
     provider_request_id: str | None = None
+    response_model: str | None = None
+    response: dict[str, Any] | None = None
+    started_at: str | None = None
+    ended_at: str | None = None
+    elapsed_seconds: float | None = None
+    outcome: str = "started"
+    retry: bool = False
+
+    def finish(self, *, elapsed_seconds: float) -> None:
+        self.ended_at = datetime.now(UTC).isoformat()
+        self.elapsed_seconds = max(0.0, elapsed_seconds)
+        if self.outcome == "started":
+            self.outcome = "no_usable_response"
 
 
 @dataclass
