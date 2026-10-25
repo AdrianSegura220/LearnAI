@@ -401,3 +401,10 @@ def test_explicit_empty_history_views_remain_distinguishable_for_replay_assertio
     assert "history" in explicit.provided_fields and "transcript" in explicit.provided_fields
     with pytest.raises(FixtureError):
         scenario(provided_fields=["history"])
+
+
+def test_nested_answer_mapping_rejects_mixed_key_types_as_fixture_error():
+    record = event()
+    record['interaction']['answer'] = {'fields': [''], 'claims_none': False, 1: 'bad', 'other': 'bad'}
+    with pytest.raises(FixtureError, match='string keys'):
+        scenario(history=[record], interaction_kind='TASK_QUESTION', work_status='DRAFT')

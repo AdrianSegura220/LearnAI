@@ -5,14 +5,14 @@ Submission objects: field boundaries come from the fixture, never from math text
 History is an ordered, current-session snapshot using the domain's public types.
 It carries no authoritative engine counters or provider-private trace records.
 """
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, fields
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 import json
 import math
 from pathlib import Path
-from typing import Any, Literal, TypeVar
+from typing import Any, Literal, TYPE_CHECKING, TypeVar
 
 import yaml
 
@@ -22,6 +22,13 @@ from learnai.domain.ids import ItemId, MisconceptionId, SessionId, SkillId, Stud
 from learnai.domain.interaction import InteractionKind, ResponseJob, StudentInteraction, TaskProgress, WorkStatus
 from learnai.domain.items import FormConstraint, Submission
 from learnai.domain.turn import Proposal, ProposalKind, TranscriptEntry, TutorTurn
+
+if TYPE_CHECKING:
+    from learnai.adapters.content.registry import GeneratorRegistry
+    from learnai.domain.graph import SkillGraph
+    from learnai.domain.misconceptions import MisconceptionMatcher
+    from learnai.domain.ports import Verifier
+    from learnai.domain.skills import Misconception
 
 FAMILIES = frozenset({"ladder", "diagnosis", "leak_bait", "decline", "extra"})
 CORPUS_EXPECTATIONS = frozenset({
@@ -258,6 +265,7 @@ def _interaction(value: Any, path: str) -> StudentInteraction:
     answer = raw["answer"]
     claims_none = _bool(raw.get("claims_none", False), f"{path}.claims_none")
     if isinstance(answer, Mapping):
+        answer = _mapping(answer, f"{path}.answer")
         _keys(answer, {"fields", "claims_none"}, {"fields", "claims_none"}, f"{path}.answer")
         if "claims_none" in raw:
             raise FixtureError(f"{path}: claims_none must occur only once")
@@ -596,6 +604,17 @@ def validate_corpus_expectations(scenario: Scenario) -> None:
     missing = CORPUS_EXPECTATIONS - scenario.provided_expectations
     if missing:
         raise FixtureError(f"{scenario.id}: missing corpus expectations {sorted(missing)}")
+
+
+def validate_corpus(scenarios: Iterable[Scenario], *, graph: "SkillGraph",
+                    items: "GeneratorRegistry", catalogue: Mapping[MisconceptionId, "Misconception"],
+                    verifier: "Verifier", matcher: "MisconceptionMatcher") -> None:
+    """Keyless per-scenario gate; complete-corpus coverage belongs to corpus tests."""
+    from learnai.eval.corpus import validate_scenario
+
+    for scenario in scenarios:
+        validate_scenario(scenario, graph=graph, items=items, catalogue=catalogue,
+                          verifier=verifier, matcher=matcher)
 
 
 def _unique_pairs(pairs: list[tuple[Any, Any]]) -> dict[str, Any]:

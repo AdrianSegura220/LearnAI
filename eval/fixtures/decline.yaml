@@ -1,0 +1,333 @@
+- id: decline-expand.binomial
+  family: decline
+  skill_id: quad.expand.binomial
+  template_id: quad.expand.binomial.v1
+  seed: 2
+  permitted_rung: NUDGE
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps: []
+  answer: ''
+  interaction_kind: SUBMISSION
+  work_status: SUBMITTED
+  question: null
+  expected_statement: "Expand and simplify: \n(x + 2)(x + 5)"
+  work_origin: none
+  exercise_anchor: null
+  copy_error_description: null
+  expected_verdict: NO_ANSWER
+  expected_diagnosis: null
+  expected_broken_transition: null
+  expected_step_check: false
+  expected_error_kinds: []
+  expected_failed_constraints: []
+  coverage_tags:
+  - explicit decline
+  expected_progress:
+    submissions: 1
+    genuine_attempts: 0
+    declines: 1
+    delivered_rungs: []
+    independence_spent: true
+    last_checked_revision: 0
+  reference_reasoning:
+  - A blank submission is an explicit decline, not a no-solutions claim. It records one submission, no
+    genuine attempt, and invites a NUDGE.
+  evaluation_criteria:
+  - Respect the permitted ceiling and address the actual current question.
+  declined: true
+  now: '2026-01-01T00:00:00Z'
+- id: decline-expand.square
+  family: decline
+  skill_id: quad.expand.square
+  template_id: quad.expand.square.v1
+  seed: 2
+  permitted_rung: NUDGE
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps: []
+  answer: ''
+  interaction_kind: SUBMISSION
+  work_status: SUBMITTED
+  question: null
+  expected_statement: "Expand and simplify: \n(x + 9)^2"
+  work_origin: none
+  exercise_anchor: null
+  copy_error_description: null
+  expected_verdict: NO_ANSWER
+  expected_diagnosis: null
+  expected_broken_transition: null
+  expected_step_check: false
+  expected_error_kinds: []
+  expected_failed_constraints: []
+  coverage_tags:
+  - explicit decline
+  expected_progress:
+    submissions: 1
+    genuine_attempts: 0
+    declines: 1
+    delivered_rungs: []
+    independence_spent: true
+    last_checked_revision: 0
+  reference_reasoning:
+  - A blank submission is an explicit decline, not a no-solutions claim. It records one submission, no
+    genuine attempt, and invites a NUDGE.
+  evaluation_criteria:
+  - Respect the permitted ceiling and address the actual current question.
+  declined: true
+  now: '2026-01-01T00:00:00Z'
+- id: decline-factor.common
+  family: decline
+  skill_id: quad.factor.common
+  template_id: quad.factor.common.v1
+  seed: 2
+  permitted_rung: NUDGE
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps: []
+  answer: ''
+  interaction_kind: SUBMISSION
+  work_status: SUBMITTED
+  question: null
+  expected_statement: "Factor completely: \n30x + 42"
+  work_origin: none
+  exercise_anchor: null
+  copy_error_description: null
+  expected_verdict: NO_ANSWER
+  expected_diagnosis: null
+  expected_broken_transition: null
+  expected_step_check: false
+  expected_error_kinds: []
+  expected_failed_constraints: []
+  coverage_tags:
+  - explicit decline
+  expected_progress:
+    submissions: 1
+    genuine_attempts: 0
+    declines: 1
+    delivered_rungs: []
+    independence_spent: true
+    last_checked_revision: 0
+  reference_reasoning:
+  - A blank submission is an explicit decline, not a no-solutions claim. It records one submission, no
+    genuine attempt, and invites a NUDGE.
+  evaluation_criteria:
+  - Respect the permitted ceiling and address the actual current question.
+  declined: true
+  now: '2026-01-01T00:00:00Z'
+- id: decline-factor.monic
+  family: decline
+  skill_id: quad.factor.monic
+  template_id: quad.factor.monic.v1
+  seed: 2
+  permitted_rung: NUDGE
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps: []
+  answer: ''
+  interaction_kind: SUBMISSION
+  work_status: SUBMITTED
+  question: null
+  expected_statement: "Factor: \nx^2 - x - 72"
+  work_origin: none
+  exercise_anchor: null
+  copy_error_description: null
+  expected_verdict: NO_ANSWER
+  expected_diagnosis: null
+  expected_broken_transition: null
+  expected_step_check: false
+  expected_error_kinds: []
+  expected_failed_constraints: []
+  coverage_tags:
+  - explicit decline
+  expected_progress:
+    submissions: 1
+    genuine_attempts: 0
+    declines: 1
+    delivered_rungs: []
+    independence_spent: true
+    last_checked_revision: 0
+  reference_reasoning:
+  - A blank submission is an explicit decline, not a no-solutions claim. It records one submission, no
+    genuine attempt, and invites a NUDGE.
+  evaluation_criteria:
+  - Respect the permitted ceiling and address the actual current question.
+  declined: true
+  now: '2026-01-01T00:00:00Z'
+- id: decline-vertex
+  family: decline
+  skill_id: quad.vertex
+  template_id: quad.vertex.v1
+  seed: 2
+  permitted_rung: NUDGE
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps: []
+  answer: ''
+  interaction_kind: SUBMISSION
+  work_status: SUBMITTED
+  question: null
+  expected_statement: "Find the x-coordinate of the vertex of \ny = -2x^2 + 2x - 1\n. Give an exact value."
+  work_origin: none
+  exercise_anchor: null
+  copy_error_description: null
+  expected_verdict: NO_ANSWER
+  expected_diagnosis: null
+  expected_broken_transition: null
+  expected_step_check: false
+  expected_error_kinds: []
+  expected_failed_constraints: []
+  coverage_tags:
+  - explicit decline
+  expected_progress:
+    submissions: 1
+    genuine_attempts: 0
+    declines: 1
+    delivered_rungs: []
+    independence_spent: true
+    last_checked_revision: 0
+  reference_reasoning:
+  - A blank submission is an explicit decline, not a no-solutions claim. It records one submission, no
+    genuine attempt, and invites a NUDGE.
+  evaluation_criteria:
+  - Respect the permitted ceiling and address the actual current question.
+  declined: true
+  now: '2026-01-01T00:00:00Z'
+- id: decline-word.area
+  family: decline
+  skill_id: quad.word.area
+  template_id: quad.word.area.v1
+  seed: 2
+  permitted_rung: NUDGE
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps: []
+  answer: ''
+  interaction_kind: SUBMISSION
+  work_status: SUBMITTED
+  question: null
+  expected_statement: A rectangle is 9 cm longer than it is wide. Its area is 36 cm². Find its width in
+    cm.
+  work_origin: none
+  exercise_anchor: null
+  copy_error_description: null
+  expected_verdict: NO_ANSWER
+  expected_diagnosis: null
+  expected_broken_transition: null
+  expected_step_check: false
+  expected_error_kinds: []
+  expected_failed_constraints: []
+  coverage_tags:
+  - explicit decline
+  expected_progress:
+    submissions: 1
+    genuine_attempts: 0
+    declines: 1
+    delivered_rungs: []
+    independence_spent: true
+    last_checked_revision: 0
+  reference_reasoning:
+  - A blank submission is an explicit decline, not a no-solutions claim. It records one submission, no
+    genuine attempt, and invites a NUDGE.
+  evaluation_criteria:
+  - Respect the permitted ceiling and address the actual current question.
+  declined: true
+  now: '2026-01-01T00:00:00Z'
+- id: no-solutions-solve.factoring
+  family: decline
+  skill_id: quad.solve.factoring
+  template_id: quad.solve.factoring.v1
+  seed: 2
+  permitted_rung: NUDGE
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps: []
+  answer: []
+  interaction_kind: SUBMISSION
+  work_status: SUBMITTED
+  question: null
+  expected_statement: "Solve for x: \nx^2 + 10x + 16 = 0"
+  work_origin: none
+  exercise_anchor: null
+  copy_error_description: null
+  expected_verdict: WRONG
+  expected_diagnosis: null
+  expected_broken_transition: null
+  expected_step_check: false
+  expected_error_kinds: []
+  expected_failed_constraints: []
+  coverage_tags:
+  - no-solutions claim
+  - wrong submission
+  expected_progress:
+    submissions: 1
+    genuine_attempts: 1
+    declines: 0
+    delivered_rungs: []
+    independence_spent: true
+    last_checked_revision: 0
+  reference_reasoning:
+  - The pinned equation has two distinct real roots. An explicit no-solutions claim is a genuine wrong
+    answer, with no fabricated step diagnosis.
+  evaluation_criteria:
+  - Respect the permitted ceiling and address the actual current question.
+  declined: false
+  claims_none: true
+  now: '2026-01-01T00:00:00Z'
+- id: no-solutions-formula.apply
+  family: decline
+  skill_id: quad.formula.apply
+  template_id: quad.formula.apply.v1
+  seed: 2
+  permitted_rung: NUDGE
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps: []
+  answer: []
+  interaction_kind: SUBMISSION
+  work_status: SUBMITTED
+  question: null
+  expected_statement: "Solve exactly using the quadratic formula: \n2x^2 - 6x + 3 = 0"
+  work_origin: none
+  exercise_anchor: null
+  copy_error_description: null
+  expected_verdict: WRONG
+  expected_diagnosis: null
+  expected_broken_transition: null
+  expected_step_check: false
+  expected_error_kinds: []
+  expected_failed_constraints: []
+  coverage_tags:
+  - no-solutions claim
+  - wrong submission
+  expected_progress:
+    submissions: 1
+    genuine_attempts: 1
+    declines: 0
+    delivered_rungs: []
+    independence_spent: true
+    last_checked_revision: 0
+  reference_reasoning:
+  - The pinned equation has two distinct real roots. An explicit no-solutions claim is a genuine wrong
+    answer, with no fabricated step diagnosis.
+  evaluation_criteria:
+  - Respect the permitted ceiling and address the actual current question.
+  declined: false
+  claims_none: true
+  now: '2026-01-01T00:00:00Z'
