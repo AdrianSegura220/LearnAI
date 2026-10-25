@@ -37,6 +37,14 @@ def results(request):
             for b in m["content"] if b["type"] == "tool_result"]
 
 
+def test_tutor_startup_rejects_missing_prompt_before_provider_request():
+    sdk = ScriptedAnthropic([])
+    route = Route("tutor_dialogue", "anthropic", "scripted", prompt=None)
+    with pytest.raises(ValueError, match="tutor_dialogue.*prompt"):
+        AnthropicTutor({route.name: route}, sdk.client, GeneratorRegistry(()), {})
+    assert sdk.requests == []
+
+
 def test_two_tool_round_trips_preserve_original_history_and_results():
     tutor, sdk, traces, _ = setup([
         Reply([THINKING, tool("check_expression", {"expression": "x+x", "reference": "2*x"})]),

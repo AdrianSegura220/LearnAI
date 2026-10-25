@@ -84,10 +84,12 @@ class AnthropicTutor:
         selected = (resolve_route(self.routes, route_name),) if route_name is not None else tuple(
             route for name, route in self.routes.items() if name.startswith("tutor_"))
         for route in selected:
+            if route.prompt is None:
+                raise ValueError(f"tutor route {route.name} requires an explicit prompt")
             _request_kwargs(route)
             if route.budget_profile not in self.profiles:
                 raise ValueError(f"unknown budget profile: {route.budget_profile}")
-            self.prompts[route.name] = load_prompt(route.prompt or "tutor_math@1", root=prompts_root)
+            self.prompts[route.name] = load_prompt(route.prompt, root=prompts_root)
 
     def begin_turn(self, context: TurnContext) -> "_AnthropicExchange":
         route = (resolve_route(self.routes, self.route_name) if self.route_name is not None
