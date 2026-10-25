@@ -10,7 +10,7 @@ from learnai.domain.engine import PracticeEngine, SubmitOutcome
 from learnai.domain.events import EvidenceEvent
 from learnai.domain.graph import SkillGraph
 from learnai.domain.ids import CourseId, MisconceptionId, SkillId, TaskId
-from learnai.domain.interaction import InteractionKind, TaskProgress
+from learnai.domain.interaction import InteractionKind, StudentInteraction, TaskProgress
 from learnai.domain.mastery import SkillState
 from learnai.domain.misconceptions import MisconceptionMatcher
 from learnai.domain.ports import Verifier
@@ -95,6 +95,19 @@ def prepare_scenario(scenario: Scenario, *, graph: SkillGraph, items: GeneratorR
         raise FixtureError(f"{scenario.id}: {exc}") from exc
 
 
+def _validate_submission_revision(task: Task, interaction: StudentInteraction) -> None:
+    """Bind a candidate to the engine's next revision before it can be rejected.
+
+    MALFORMED does not persist this revision, so post-operation stored work
+    cannot serve as the candidate's revision check.
+    """
+    previous = task.current_interaction
+    changed = previous is not None and (
+        previous.steps != interaction.steps or previous.answer != interaction.answer)
+    if interaction.revision != task.work_revision + int(changed):
+        raise FixtureError("submission candidate revision differs from engine advancement")
+
+
 def _prepare(scenario: Scenario, *, graph: SkillGraph, items: GeneratorRegistry,
              catalogue: Mapping[MisconceptionId, Misconception], verifier: Verifier,
              matcher: MisconceptionMatcher) -> PreparedScenario:
@@ -129,11 +142,9 @@ def _prepare(scenario: Scenario, *, graph: SkillGraph, items: GeneratorRegistry,
         tutor.script, tutor.index = action.tutor_script, 0
         if action.operation == "submit":
             assert action.interaction is not None and action.confidence is not None
+            _validate_submission_revision(session.current_task, action.interaction)
             session, states, _ = engine.submit(session, states, action.interaction.steps,
                                                action.interaction.answer, action.confidence)
-            task = next(t for t in session.plan if t.id == action.task_id)
-            if task.work_revision != action.interaction.revision:
-                raise FixtureError("historical submission revision differs from engine advancement")
         elif action.operation == "ask_question":
             assert action.interaction is not None
             session, _ = engine.ask_question(session, states, action.interaction,
@@ -148,6 +159,7 @@ def _prepare(scenario: Scenario, *, graph: SkillGraph, items: GeneratorRegistry,
     tutor.capture, tutor.context = True, None
     outcome = None
     if scenario.interaction_kind is InteractionKind.SUBMISSION:
+        _validate_submission_revision(session.current_task, scenario.interaction)
         session, states, outcome = engine.submit(session, states, scenario.steps,
                                                   scenario.answer, scenario.confidence)
     elif scenario.interaction_kind is InteractionKind.TASK_QUESTION:
@@ -156,7 +168,7 @@ def _prepare(scenario: Scenario, *, graph: SkillGraph, items: GeneratorRegistry,
     else:
         session, _ = engine.request_help(session, states)
     task = next(t for t in session.plan if t.id == scenario.task_id)
-    if task.work_revision != scenario.work_revision:
+    if scenario.interaction_kind is not InteractionKind.SUBMISSION and task.work_revision != scenario.work_revision:
         raise FixtureError("current revision differs from engine advancement")
     if scenario.interaction_kind is InteractionKind.HELP_REQUEST and task.current_interaction != scenario.interaction:
         raise FixtureError("help-request work differs from engine stored work")

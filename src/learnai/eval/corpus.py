@@ -57,13 +57,19 @@ def validate_scenario(scenario: Scenario, *, graph: SkillGraph, items: Generator
         prepared = prepare_scenario(scenario, graph=graph, items=items, catalogue=catalogue,
                                     verifier=verifier, matcher=matcher)
         task = prepared.task
-        # MALFORMED deliberately leaves no stored verification or evidence.
-        checked = task.last_verification
+        # Match the findings the current opportunity actually exposes. An empty
+        # edited question can retain an older task.last_verification solely for
+        # historical progress, while its current context is unchecked.
+        checked = prepared.context.verification if prepared.context else task.last_verification
+        if checked is not None and checked.revision != scenario.work_revision:
+            checked = None
+        # MALFORMED leaves prior stored work/findings intact; check the rejected
+        # candidate separately without making it authoritative task state.
         if prepared.outcome is not None and prepared.outcome.verdict is Verdict.MALFORMED:
             checked = prepare_verification(scenario.interaction, item=item, verifier=verifier,
                 catalogue=tuple(catalogue[m] for m in graph.skills[item.skill_id].misconception_ids),
                 matcher=matcher, check_answer=True, check_steps=True)
-        checked = checked or VerificationSnapshot(task.work_revision, False, False, None, None, None)
+        checked = checked or VerificationSnapshot(scenario.work_revision, False, False, None, None, None)
         verdict = checked.verdict.name if checked.answer_checked and checked.verdict else "UNCHECKED"
         require(verdict == scenario.expected_verdict, f"verdict {verdict} differs from expectation")
         require(checked.diagnosis == scenario.expected_diagnosis,

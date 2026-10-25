@@ -346,7 +346,12 @@ def _actions(value: Any, scenario: Scenario) -> tuple[HistoricalAction, ...]:
             if interaction is None or interaction.task_id != task_id or interaction.kind is not kind:
                 raise FixtureError(f"{path}: action requires a matching task and interaction kind")
             _consistent_work(work.get(task_id), interaction, path)
-            work[task_id] = interaction
+            # A nonblank submission is only a candidate: the verifier may reject
+            # it as MALFORMED without storing its revision/body. Schema loading
+            # cannot decide that. Replay checks every candidate against the real
+            # pre-operation task; questions and blank declines do persist work.
+            if operation == "ask_question" or interaction.answer.is_blank:
+                work[task_id] = interaction
         if (operation == "submit") != (confidence is not None):
             raise FixtureError(f"{path}: explicit confidence is required only for submit")
         if operation != "ask_question" and job is not ResponseJob.NORMAL:

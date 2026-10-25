@@ -408,3 +408,21 @@ def test_nested_answer_mapping_rejects_mixed_key_types_as_fixture_error():
     record['interaction']['answer'] = {'fields': [''], 'claims_none': False, 1: 'bad', 'other': 'bad'}
     with pytest.raises(FixtureError, match='string keys'):
         scenario(history=[record], interaction_kind='TASK_QUESTION', work_status='DRAFT')
+
+
+def test_submission_candidate_does_not_become_authoritative_loader_work():
+    candidate = action(operation='submit', confidence='UNSURE', interaction=dict(
+        task_id='eval-task:case', revision=1, kind='SUBMISSION', status='SUBMITTED',
+        steps=[], answer='('), tutor_script=[])
+    # The schema cannot know whether a submission is malformed. A subsequent
+    # question can still refer to work stored before this rejected candidate.
+    loaded = scenario(history_actions=[action(), candidate], interaction_kind='TASK_QUESTION',
+        work_status='DRAFT', work_revision=0, answer='', question='Retry my old question?')
+    assert loaded.work_revision == 0
+    assert loaded.history_actions[-1].interaction.revision == 1
+
+
+def test_persisted_question_still_requires_new_revision_for_changed_work():
+    with pytest.raises(FixtureError, match='greater revision'):
+        scenario(history_actions=[action()], interaction_kind='TASK_QUESTION',
+                 work_status='DRAFT', work_revision=0, answer='changed', question='Why?')

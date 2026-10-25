@@ -252,3 +252,132 @@ def test_incomplete_common_factor_is_form_failure_without_equivalence_break(depe
 
 def test_per_scenario_preflight_does_not_require_all_family_floors(dependencies):
     validate_corpus((parse_scenario(raw_case()),), **dependencies)
+
+
+def wrong_work_action():
+    previous = action('submit')
+    previous['interaction'].update(steps=['(x + 2)(x + 5)', 'x^2+10'], answer='x^2+10')
+    return previous
+
+
+def empty_revision_after_wrong(**changes):
+    raw = raw_case(history_actions=[wrong_work_action()], interaction_kind='TASK_QUESTION',
+        work_status='DRAFT', work_revision=1, question='Can I restart?', steps=[], answer='',
+        work_origin='none', exercise_anchor=None, permitted_rung='NAME_METHOD',
+        expected_verdict='UNCHECKED', expected_step_check=False)
+    raw.update(changes)
+    return raw
+
+
+def test_current_empty_revision_accepts_unchecked_findings_and_keeps_historical_progress(dependencies):
+    scenario = parse_scenario(empty_revision_after_wrong())
+    validate_corpus((scenario,), **dependencies)
+    result = prepare_scenario(scenario, **dependencies)
+    assert result.context.verification.revision == 1
+    assert not result.context.verification.answer_checked
+    assert not result.context.verification.steps_checked
+    assert result.context.diagnosis is None
+    assert result.progress.last_checked_revision == 0
+    assert result.task.last_verification.revision == 0
+
+
+def test_current_empty_revision_rejects_stale_findings(dependencies):
+    scenario = parse_scenario(empty_revision_after_wrong(expected_verdict='WRONG',
+        expected_step_check=True, expected_diagnosis='mc.foil.drops.cross',
+        expected_broken_transition=['(x + 2)(x + 5)', 'x^2+10'],
+        expected_error_kinds=['equivalence']))
+    with pytest.raises(FixtureError, match='case:.*verdict'):
+        validate_corpus((scenario,), **dependencies)
+
+
+def test_current_malformed_after_work_preserves_prior_state(dependencies):
+    raw = raw_case(history_actions=[wrong_work_action()], steps=[], answer='(', work_revision=1,
+        work_origin='none', exercise_anchor=None, expected_verdict='MALFORMED',
+        expected_error_kinds=['unreadable'])
+    scenario = parse_scenario(raw)
+    validate_corpus((scenario,), **dependencies)
+    result = prepare_scenario(scenario, **dependencies)
+    assert result.context is None
+    assert result.outcome.verdict is Verdict.MALFORMED
+    assert result.task.work_revision == 0
+    assert result.task.current_interaction == scenario.history_actions[0].interaction
+    assert result.progress == scenario.expected_progress
+    assert len(result.evidence) == len(result.session.history) == len(result.session.transcript) == 1
+    assert result.task.last_diagnosis == 'mc.foil.drops.cross'
+
+
+def malformed_work_action(revision=1):
+    malformed = action('submit', revision=revision)
+    malformed['interaction'].update(steps=[], answer='(')
+    return malformed
+
+
+def test_historical_malformed_after_work_does_not_replace_stored_body(dependencies):
+    previous = wrong_work_action()
+    raw = raw_case(history_actions=[previous, malformed_work_action()],
+        interaction_kind='TASK_QUESTION', work_status='DRAFT', work_revision=0,
+        question='What went wrong in my original work?', steps=previous['interaction']['steps'],
+        answer='x^2+10', permitted_rung='NAME_METHOD', expected_verdict='WRONG',
+        expected_step_check=True, expected_diagnosis='mc.foil.drops.cross',
+        expected_broken_transition=['(x + 2)(x + 5)', 'x^2+10'], expected_error_kinds=['equivalence'])
+    scenario = parse_scenario(raw)
+    validate_corpus((scenario,), **dependencies)
+    result = prepare_scenario(scenario, **dependencies)
+    assert result.progress == scenario.expected_progress
+    assert result.context.verification.revision == 0
+    assert result.task.current_interaction.answer.fields == ('x^2+10',)
+    assert len(result.evidence) == 1
+    assert len(result.session.history) == len(result.session.transcript) == 2
+    assert all(record.interaction.answer.fields != ('(',) for record in result.session.history)
+
+
+def test_historical_malformed_allows_next_readable_submission_at_candidate_revision(dependencies):
+    scenario = parse_scenario(raw_case(history_actions=[wrong_work_action(), malformed_work_action()],
+        work_revision=1, expected_progress=dict(submissions=2, genuine_attempts=2, declines=0,
+            delivered_rungs=[], independence_spent=True, last_checked_revision=1)))
+    validate_corpus((scenario,), **dependencies)
+    result = prepare_scenario(scenario, **dependencies)
+    assert result.outcome.verdict is Verdict.CORRECT
+    assert result.context is None
+    assert len(result.evidence) == len(result.session.history) == 2
+    assert result.task.work_revision == 1
+
+
+@pytest.mark.parametrize('candidate_revision', [0, 2])
+def test_malformed_candidate_still_requires_exact_engine_revision(dependencies, candidate_revision):
+    raw = raw_case(history_actions=[wrong_work_action(), malformed_work_action(candidate_revision)],
+        work_revision=3)
+    with pytest.raises(FixtureError, match='revision'):
+        prepare_scenario(parse_scenario(raw), **dependencies)
+
+
+def test_historical_malformed_has_no_effect_on_later_completed_state(dependencies):
+    raw = raw_case(history_actions=[wrong_work_action(), malformed_work_action()],
+        work_revision=1, expected_progress=dict(submissions=2, genuine_attempts=2, declines=0,
+            delivered_rungs=[], independence_spent=True, last_checked_revision=1))
+    with_rejection = prepare_scenario(parse_scenario(raw), **dependencies)
+    raw['history_actions'] = raw['history_actions'][:1]
+    without_rejection = prepare_scenario(parse_scenario(raw), **dependencies)
+    assert with_rejection.context is without_rejection.context is None
+    assert with_rejection.session == without_rejection.session
+    assert with_rejection.task == without_rejection.task
+    assert with_rejection.states == without_rejection.states
+    assert with_rejection.evidence == without_rejection.evidence
+    assert with_rejection.progress == without_rejection.progress
+
+
+@pytest.mark.parametrize('revision', [0, 2])
+def test_current_malformed_candidate_revision_is_checked_before_rejection(dependencies, revision):
+    scenario = parse_scenario(raw_case(history_actions=[wrong_work_action()], answer='(',
+        steps=[], work_origin='none', exercise_anchor=None, work_revision=revision))
+    with pytest.raises(FixtureError, match='case:.*candidate revision'):
+        prepare_scenario(scenario, **dependencies)
+
+
+def test_accepted_historical_submission_still_binds_body_at_same_revision(dependencies):
+    # The loader defers an unknown submission outcome, but real replay must
+    # retain the body/revision rule once a readable submission was accepted.
+    scenario = parse_scenario(raw_case(history_actions=[wrong_work_action()],
+        interaction_kind='TASK_QUESTION', work_status='DRAFT', question='Why?', work_revision=0))
+    with pytest.raises(FixtureError, match='case:.*greater revision'):
+        prepare_scenario(scenario, **dependencies)
