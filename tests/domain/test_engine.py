@@ -236,13 +236,14 @@ def test_help_runs_out_at_the_base_rung_before_effort_is_documented():
     assert turn is None, "no reveal until the effort condition is met"
 
 
-def test_two_answered_attempts_and_three_hints_unlock_the_reveal():
+def test_two_attempts_with_delivered_feedback_and_remaining_hints_unlock_the_reveal():
     engine, session, _ = build()
     for _ in range(2):
         session, _, _ = engine.submit(
             session, {}, steps=[], answer=Submission.of("0"), confidence=Confidence.UNSURE
         )
-    for expected in (HelpRung.NUDGE, HelpRung.NEXT_STEP, HelpRung.NAME_METHOD):
+    assert session.current_task.help_state.rungs_used == (HelpRung.NUDGE,) * 2
+    for expected in (HelpRung.NEXT_STEP, HelpRung.NAME_METHOD):
         session, turn = engine.request_help(session, {})
         assert turn is not None and turn.rung_used is expected
     session, turn = engine.request_help(session, {})
@@ -263,7 +264,7 @@ def test_help_records_the_rung_the_tutor_delivered():
     for _ in range(4):
         session, turn = engine.request_help(session, {})
         assert turn is not None and turn.rung_used is HelpRung.NUDGE
-    assert session.current_task.help_state.rungs_used == (HelpRung.NUDGE,) * 4
+    assert session.current_task.help_state.rungs_used == (HelpRung.NUDGE,) * 6
 
 
 def test_a_leaking_tutor_turn_never_reaches_the_student():
@@ -307,9 +308,10 @@ def test_declining_does_not_climb_toward_a_reveal():
         session, _, _ = engine.submit(
             session, {}, steps=[], answer=Submission.of(""), confidence=Confidence.NO_IDEA
         )
-    for _ in range(3):
+    assert session.current_task.help_state.rungs_used == (HelpRung.NUDGE,) * 2
+    for expected in (HelpRung.NEXT_STEP, HelpRung.NAME_METHOD):
         session, turn = engine.request_help(session, {})
-        assert turn is not None
+        assert turn is not None and turn.rung_used is expected
     session, turn = engine.request_help(session, {})
     assert turn is None, "declines are not documented effort"
 

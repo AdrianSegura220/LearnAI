@@ -9,7 +9,8 @@ from learnai.domain.verification import CheckResult
 
 if TYPE_CHECKING:
     from learnai.domain.events import EvidenceEvent
-    from learnai.domain.turn import TutorTurn, TurnContext
+    from learnai.domain.turn import TutorTurn, TurnContext, TurnFeedback, ValidationResult
+    from learnai.domain.history import HistoryQuery, HistoryPage, HistoryScope
 
 
 class Verifier(Protocol):
@@ -55,8 +56,29 @@ class ItemSource(Protocol):
     def next_item(self, skill_id: SkillId, target_difficulty: float, seed: int) -> Item: ...
 
 
+class TutorExchange(Protocol):
+    def respond(self, *, feedback: "TurnFeedback | None" = None) -> "TutorTurn | None": ...
+
+    def expired(self) -> bool: ...
+
+    def record_validation(self, result: "ValidationResult") -> None: ...
+
+    @property
+    def stop_reason(self) -> str | None: ...
+
+    def finish(self, *, accepted: "TutorTurn | None", reason: str) -> None: ...
+
+
 class Tutor(Protocol):
-    def respond(self, context: "TurnContext") -> "TutorTurn": ...
+    def begin_turn(self, context: "TurnContext") -> TutorExchange: ...
+
+    def respond(self, context: "TurnContext", *, feedback: "TurnFeedback | None" = None) -> "TutorTurn | None": ...
+
+
+class HistoryReader(Protocol):
+    """Read a snapshot using the student/session scope bound by the application."""
+
+    def read(self, scope: "HistoryScope", query: "HistoryQuery") -> "HistoryPage": ...
 
 
 class EvidenceLog(Protocol):
