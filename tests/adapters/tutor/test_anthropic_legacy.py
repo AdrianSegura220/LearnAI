@@ -15,6 +15,7 @@ def test_legacy_inference_and_missing_evidence_are_explicit():
     saved=read_run_v1(FIXTURE)
     record=saved.records[0]
     assert record.provider=='anthropic' and record.api_family=='messages'
+    assert record.route_name is None
     assert record.normalized_usage.counts=={'input':100,'output':400,'cache_read':200,'cache_write_5m':300,'cache_write_1h':0}
     assert record.normalized_usage.billing_conditions['service_tier'].source=='unknown'
     assert 'inferred' in saved.compatibility_notes[0]

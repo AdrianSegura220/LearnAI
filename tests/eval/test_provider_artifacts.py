@@ -20,7 +20,7 @@ def request(provider='anthropic', request_id='a', normalized=None):
     return accounting.RequestRecord(request_id=request_id,exchange_id='exchange',phase='tutor',scenario_id='case',
         requested_model='same-name',returned_model='same-name',settings={'service_tier':'requested'},
         raw_usage={'vendor_secret_counter':999999},usage_status='complete',provider=provider,api_family='test',
-        normalized_usage=normalized or observation())
+        normalized_usage=normalized or observation(), route_name='tutor')
 
 
 def price(provider='anthropic', rate='2', currency='USD', conditions=None):
@@ -105,7 +105,12 @@ def test_v2_roundtrip_conditions_and_local_rejection(tmp_path):
         prices=accounting.PriceBook((price(),)),persona_smoke={})
     saved=load_saved_run(run)
     assert saved.records==ledger.records
+    assert saved.records[0].route_name == 'tutor'
     assert saved.records[0].normalized_usage.billing_conditions['tier'].source=='returned'
+    old_v2_record = json.loads((run / 'requests.jsonl').read_text())
+    del old_v2_record['route_name']
+    (run / 'requests.jsonl').write_text(json.dumps(old_v2_record) + '\n')
+    assert load_saved_run(run).records[0].route_name is None
     report=json.loads((run/'report.json').read_text())
     report['judge_packets']['case']['sha256']='bad'
     (run/'report.json').write_text(json.dumps(report))
@@ -129,7 +134,7 @@ def compared(*,model='same-name',provider='anthropic',tutor_version='1',judge_ve
         'identities':{'tutor':{'tutor':{'provider':provider,'api_family':provider,'schema_hashes':{'final_output':provider,'canonical_read_tools':'canonical-fixed','wire_read_tools':provider},'usage_mapper_id':provider,'token_counter_id':'fixed'}},'judge':{'judge':{'provider':'anthropic','api_family':'messages','schema_hashes':{'final_output':'fixed'},'usage_mapper_id':'fixed','token_counter_id':'fixed'}}},
         'inputs':[],'missing_inputs':[],'deleted_inputs':[],'saved_packet_inputs':[]}
     manifest={'schema_version':2,'run_id':'test','selected_ids':['case'],'seeds':[1],'code_revision':'abc','material':material}
-    return SavedRun(Path('unused'),manifest,(request(provider), replace(request('anthropic','j'),phase='judge',api_family='messages')),{}, {'score_averages':{'mathematics':2}})
+    return SavedRun(Path('unused'),manifest,(replace(request(provider), api_family=provider), replace(request('anthropic','j'),phase='judge',api_family='messages',route_name='judge')),{}, {'score_averages':{'mathematics':2}})
 
 
 def test_controlled_comparison_requires_declaration():
@@ -303,3 +308,45 @@ def test_conflicting_conditional_currency_is_not_applicable_to_actual_attempt():
     result=accounting.estimate_cost(ledger,book)
     assert result.known_subtotal==Decimal('.0002') and result.currency=='USD'
     assert not result.complete and result.total is None
+
+
+def test_unused_route_with_shared_model_and_provider_is_not_a_tutor_treatment():
+    from copy import deepcopy
+    from learnai.eval.report import compare_runs, TutorTreatment
+    left, right = compared(), compared()
+    for run in (left, right):
+        material = run.manifest['material']
+        material['settings']['routes']['unused_tutor'] = deepcopy(material['settings']['routes']['tutor'])
+        material['identities']['tutor']['unused_tutor'] = deepcopy(material['identities']['tutor']['tutor'])
+    result = compare_runs(left, right, treatment=TutorTreatment(('unused_tutor',)))
+    assert not result['controlled_tutor_comparison']['eligible']
+
+
+def test_conflicting_observed_tutor_api_blocks_controlled_treatment():
+    from learnai.eval.report import compare_runs, TutorTreatment
+    left, right = compared(), compared()
+    right = replace(right, records=tuple(replace(record, api_family='unexpected-api')
+        if record.phase == 'tutor' else record for record in right.records))
+    assert not compare_runs(left, right, treatment=TutorTreatment(('tutor',)))['controlled_tutor_comparison']['eligible']
+
+
+def test_missing_selected_tutor_route_only_blocks_controlled_comparison():
+    from learnai.eval.report import compare_runs, TutorTreatment
+    left = compared()
+    unknown = replace(left, records=tuple(replace(record, route_name=None)
+        if record.phase == 'tutor' else record for record in left.records))
+    assert not compare_runs(unknown, unknown, treatment=TutorTreatment(('tutor',)))['controlled_tutor_comparison']['eligible']
+    ordinary = compare_runs(unknown, unknown)
+    assert ordinary['numerical_differences']['mathematics'] == 0
+
+
+def test_conflicting_selected_routes_in_one_exchange_are_ambiguous():
+    from copy import deepcopy
+    from learnai.eval.report import compare_runs, TutorTreatment
+    run = compared()
+    material = run.manifest['material']
+    material['settings']['routes']['other_tutor'] = deepcopy(material['settings']['routes']['tutor'])
+    material['identities']['tutor']['other_tutor'] = deepcopy(material['identities']['tutor']['tutor'])
+    conflicting = replace(run.records[0], request_id='other-attempt', route_name='other_tutor')
+    run = replace(run, records=(*run.records, conflicting))
+    assert not compare_runs(run, run, treatment=TutorTreatment(('tutor',)))['controlled_tutor_comparison']['eligible']

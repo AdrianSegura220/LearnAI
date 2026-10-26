@@ -26,6 +26,7 @@ class RequestRecord:
     api_family: str
     normalized_usage: UsageObservation
     schema_version: int = 2
+    route_name: str | None = None
     session_id: str | None = None
     provider_request_id: str | None = None
     started_at: str | None = None
@@ -52,13 +53,15 @@ class RequestLedger:
         if record.phase not in {'tutor', 'judge', 'smoke'}:
             raise ValueError('unknown request phase')
         if old := self._records.get(record.request_id):
-            identity = ('exchange_id', 'phase', 'scenario_id', 'requested_model', 'provider', 'api_family', 'session_id')
+            identity = ('exchange_id', 'phase', 'scenario_id', 'requested_model', 'provider', 'api_family', 'session_id', 'route_name')
             if any(getattr(old, name) != getattr(record, name) for name in identity):
                 raise ValueError('conflicting request identity')
         if (not record.provider or not record.api_family or record.schema_version != 2
                 or not isinstance(record.normalized_usage, UsageObservation)
                 or record.usage_status != record.normalized_usage.status.value):
             raise ValueError('invalid normalized request observation')
+        if record.route_name is not None and (not isinstance(record.route_name, str) or not record.route_name.strip()):
+            raise ValueError('invalid selected route name')
         usage = record.normalized_usage
         validated = UsageObservation(usage.counts, usage.status, usage.reasons, usage.details, usage.billing_conditions)
         self._records[record.request_id] = deepcopy(replace(record, normalized_usage=validated,
@@ -76,6 +79,7 @@ class RequestLedger:
                     request_id=f'{trace.request_id}:{index}', exchange_id=trace.request_id,
                     phase=phase, scenario_id=scenario_id, session_id=getattr(trace, 'session_id', None),
                     provider=trace.provider, api_family=trace.api_family, normalized_usage=attempt.normalized_usage,
+                    route_name=getattr(trace, 'route_name', None),
                     requested_model=trace.model, returned_model=getattr(attempt, 'response_model', None),
                     settings=trace.settings, provider_request_id=attempt.provider_request_id,
                     started_at=getattr(attempt, 'started_at', None), ended_at=getattr(attempt, 'ended_at', None),

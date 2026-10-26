@@ -446,3 +446,20 @@ def test_response_metadata_reaches_attempt_normalization():
     assert observation.billing_conditions['service_tier'].value == 'returned-tier'
     assert observation.billing_conditions['service_tier'].source == 'returned'
     assert 'response.service_tier' in observation.billing_conditions['service_tier'].evidence
+
+
+def test_selected_route_reaches_ledger_without_entering_wire_payload():
+    from dataclasses import replace
+    from learnai.eval.accounting import RequestLedger
+
+    configured, sdk, _, _ = setup([final()])
+    selected = replace(configured.routes['tutor_dialogue'], name='tutor_selected')
+    ledger = RequestLedger()
+    tutor = AnthropicTutor({**configured.routes, selected.name: selected}, sdk.client,
+        GeneratorRegistry(()), {}, route_name=selected.name, budget_profiles={'normal': PROFILE},
+        monotonic=sdk.clock, sleep=sdk.clock.sleep, trace_sink=ledger.sink(phase='tutor'))
+    assert tutor.respond(make_context()) is not None
+    assert ledger.records[0].route_name == 'tutor_selected'
+    trace = next(iter(ledger.traces.values()))['trace']
+    assert trace['route_name'] == 'tutor_selected'
+    assert all('route_name' not in request for request in sdk.requests)

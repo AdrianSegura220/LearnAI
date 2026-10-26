@@ -279,7 +279,7 @@ def _request_record(raw: dict[str, Any]) -> RequestRecord:
         for name in ('request_id','exchange_id','phase','requested_model','provider','api_family','usage_status','outcome'):
             if not isinstance(value.get(name), str) or not value[name]:
                 raise ValueError('invalid request string')
-        for name in ('returned_model','scenario_id','session_id','provider_request_id','started_at','ended_at'):
+        for name in ('returned_model','scenario_id','session_id','provider_request_id','started_at','ended_at','route_name'):
             if value.get(name) is not None and not isinstance(value[name], str):
                 raise ValueError('invalid optional request string')
         for name in ('settings','normalized_tokens'):

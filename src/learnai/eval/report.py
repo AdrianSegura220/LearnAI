@@ -268,15 +268,28 @@ def _controlled_tutor_comparison(left: SavedRun, right: SavedRun,
     identities = [material.get('identities', {}) for material in materials]
     roles = [material.get('role_dependencies', {}) for material in materials]
     for run, setting, identity in zip(runs, settings, identities):
+        tutor_records = [record for record in run.records if record.phase == 'tutor']
+        selected_by_exchange: dict[str, set[str | None]] = {}
+        for record in tutor_records:
+            selected_by_exchange.setdefault(record.exchange_id, set()).add(record.route_name)
+            route = setting.get('routes', {}).get(record.route_name)
+            role_identity = identity.get('tutor', {}).get(record.route_name)
+            if (record.route_name is None or not isinstance(route, dict)
+                    or not _known_role_identity(role_identity, tutor=True)):
+                reasons.append('missing or unknown selected tutor route evidence')
+            elif (record.requested_model != route.get('model')
+                    or record.provider != role_identity.get('provider')
+                    or record.api_family != role_identity.get('api_family')):
+                reasons.append(f'observed tutor provider/API/model contradicts selected route: {record.route_name}')
+        if any(len(route_names) != 1 for route_names in selected_by_exchange.values()):
+            reasons.append('ambiguous selected tutor route evidence within an exchange')
         for name in names:
             route = setting.get('routes', {}).get(name)
             role_identity = identity.get('tutor', {}).get(name)
             if not _known_role_identity(role_identity, tutor=True):
                 reasons.append(f'unknown tutor encoding identity: {name}')
             if (not isinstance(route, dict) or name == setting.get('judge_route')
-                    or not isinstance(role_identity, dict) or not role_identity
-                    or not any(record.phase == 'tutor' and record.requested_model == route.get('model')
-                               and record.provider == role_identity.get('provider') for record in run.records)):
+                    or not any(record.route_name == name for record in tutor_records)):
                 reasons.append(f'declared route is not established as used for tutor generation: {name}')
         judge_name = setting.get('judge_route')
         judge_identity = identity.get('judge', {}).get(judge_name)

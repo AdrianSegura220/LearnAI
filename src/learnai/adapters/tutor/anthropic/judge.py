@@ -61,7 +61,7 @@ class _JudgeExchange:
         self.budget = ResponseBudget(profile, monotonic=monotonic)
         self.settings = _settings(route, schema)
         self.trace = JudgeTrace(str(uuid4()), (prompt.id,), route.model, deepcopy(self.settings),
-                                provider="anthropic", api_family="messages")
+                                provider="anthropic", api_family="messages", route_name=route.name)
 
     def _fail(self, reason: TerminationReason, detail: str | None = None) -> NoReturn:
         self.trace.termination_reason = reason

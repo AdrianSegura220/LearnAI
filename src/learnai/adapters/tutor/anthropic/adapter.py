@@ -123,7 +123,7 @@ class _AnthropicExchange:
             scope.session_id if scope else None, interaction.task_id if interaction else None,
             context.item.id, interaction.revision if interaction else None,
             (policy.id,), route.model, _request_kwargs(route),
-            provider="anthropic", api_family="messages")
+            provider="anthropic", api_family="messages", route_name=route.name)
         system = [SystemBlock(policy.text, cache=True), SystemBlock(render_skill_pack(context), cache=True)]
         if preamble := render_session_preamble(context):
             system.append(SystemBlock(preamble, cache=True))

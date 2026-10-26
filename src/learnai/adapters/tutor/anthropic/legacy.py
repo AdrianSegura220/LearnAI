@@ -17,7 +17,7 @@ def read_run_v1(directory: Path) -> SavedRun:
                     raise ValueError('invalid legacy raw observation mapping')
             usage = normalize_anthropic_usage(entry['raw_usage'], status=UsageStatus(entry['usage_status']),
                 response_metadata=entry.get('response'), request_settings=entry.get('request'))
-            value = dict(entry, schema_version=2, provider='anthropic', api_family='messages', usage_status=usage.status.value,
+            value = dict(entry, route_name=None, schema_version=2, provider='anthropic', api_family='messages', usage_status=usage.status.value,
                 normalized_usage={**asdict(usage), 'status': usage.status.value, 'reasons': list(usage.reasons)}, normalized_tokens=dict(usage.counts))
             records.append(_request_record(value))
         except (KeyError, TypeError) as exc:

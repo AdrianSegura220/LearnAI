@@ -108,6 +108,7 @@ class TurnTrace:
     settings: dict[str, Any]
     provider: str
     api_family: str
+    route_name: str | None = None
     context_view: ContextView | None = None
     source_ids: tuple[str, ...] = ()
     initial_context: str | None = None

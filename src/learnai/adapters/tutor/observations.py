@@ -140,6 +140,7 @@ class RequestTrace(Protocol):
     provider: str
     api_family: str
     request_id: str
+    route_name: str | None
     model: str
     @property
     def settings(self) -> Mapping[str, object]: ...
@@ -165,6 +166,7 @@ class JudgeTrace:
     settings: dict[str, Any]
     provider: str
     api_family: str
+    route_name: str | None = None
     attempts: list[ProviderAttempt] = field(default_factory=list)
     provider_requests: list[dict[str, Any]] = field(default_factory=list)
     provider_responses: list[dict[str, Any]] = field(default_factory=list)

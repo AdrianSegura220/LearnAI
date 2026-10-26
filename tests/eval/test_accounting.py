@@ -119,3 +119,11 @@ def test_present_malformed_cache_creation_is_unknown_even_without_positive_aggre
     assert result.total is None and not result.complete
     assert result.known_subtotal == Decimal('0.000010')
     assert any('cache creation' in reason for reason in result.unknown_entries)
+
+
+def test_selected_route_is_immutable_attempt_identity():
+    ledger = RequestLedger()
+    entry = replace(record(), route_name='tutor_selected')
+    ledger.record(entry)
+    with pytest.raises(ValueError, match='identity'):
+        ledger.record(replace(entry, route_name='same_model_other_route'))
