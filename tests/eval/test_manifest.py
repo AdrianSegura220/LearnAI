@@ -92,3 +92,14 @@ def test_selected_order_and_budget_defaults_on_manifest_are_material(tmp_path):
     path.write_text('default_budget = 200\n')
     second = build_manifest(root=tmp_path, selected_ids=(), seeds=(), settings={}, prompts={}, references={})
     assert configuration_fingerprint(first) != configuration_fingerprint(second)
+
+
+def test_verified_saved_packet_hashes_are_material_rejudge_inputs(tmp_path):
+    first = build_manifest(root=tmp_path, selected_ids=('source:case',), seeds=(), settings={'operation': 'rejudge'},
+        prompts={}, references={}, input_paths=(), linked_sources=({'run_id': 'source',
+            'packets': {'case': 'candidate-and-moment-a'}},))
+    second = build_manifest(root=tmp_path, selected_ids=('source:case',), seeds=(), settings={'operation': 'rejudge'},
+        prompts={}, references={}, input_paths=(), linked_sources=({'run_id': 'source',
+            'packets': {'case': 'candidate-and-moment-b'}},))
+    assert first.material['saved_packet_inputs'] == [{'run_id': 'source', 'packets': {'case': 'candidate-and-moment-a'}}]
+    assert configuration_fingerprint(first) != configuration_fingerprint(second)

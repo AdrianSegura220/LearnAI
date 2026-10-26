@@ -170,20 +170,38 @@ def compare_runs(left: Path, right: Path) -> dict[str, Any]:
                             if materials[0].get(key) != materials[1].get(key)}
     if judges[0] != judges[1]:
         evaluator_differences['judge_settings'] = {'left': judges[0], 'right': judges[1]}
-    evaluator_changed = bool(evaluator_differences)
     selected = [set(manifest['selected_ids']) for manifest in manifests]
+    execution_inputs = [{
+        'selected_ids': manifest['selected_ids'], 'seeds': manifest['seeds'],
+        'schema_version': manifest['schema_version'], 'code_revision': manifest['code_revision'],
+        **{key: material.get(key) for key in ('python', 'dependencies', 'deleted_inputs',
+                                             'missing_inputs', 'saved_packet_inputs')},
+    } for manifest, material in zip(manifests, materials)]
+    execution_differences = {key: {'left': execution_inputs[0][key], 'right': execution_inputs[1][key]}
+                             for key in execution_inputs[0]
+                             if execution_inputs[0][key] != execution_inputs[1][key]}
     def returned(path: Path) -> list[tuple[Any, ...]]:
         from json import loads
         return [(entry.get('scenario_id'), entry['phase'], entry['requested_model'], entry['returned_model'])
                 for line in (path / 'requests.jsonl').read_text(encoding='utf-8').splitlines() if (entry := loads(line))]
     provider_models = [returned(path) for path in (left, right)]
+    by_phase = [{phase: [list(entry) for entry in sorted(
+        {(case, requested, actual) for case, recorded_phase, requested, actual in models if recorded_phase == phase},
+        key=canonical_json)] for phase in ('tutor', 'judge', 'smoke')} for models in provider_models]
+    if by_phase[0]['judge'] != by_phase[1]['judge']:
+        evaluator_differences['returned_judge_models'] = {'left': by_phase[0]['judge'], 'right': by_phase[1]['judge']}
+    evaluator_changed = bool(evaluator_differences)
     # Conservative verdict: matching fingerprints alone never establish quality.
-    comparable = not (changed_inputs or settings_changed or evaluator_changed) and selected[0] == selected[1]
+    comparable = not (changed_inputs or settings_changed or evaluator_changed or execution_differences)
     return dict(changed_input_hashes=changed_inputs, settings_changed=settings_changed,
-        changed_settings=changed_settings, evaluator_differences=evaluator_differences,
+        changed_settings=changed_settings, execution_input_differences=execution_differences,
+        evaluator_differences=evaluator_differences,
         evaluator_or_reference_changed=evaluator_changed, selected_case_overlap=sorted(selected[0] & selected[1]),
         provider_returned_models={'left': provider_models[0], 'right': provider_models[1],
-                                 'changed': provider_models[0] != provider_models[1]},
+                                 'changed': provider_models[0] != provider_models[1],
+                                 **{phase: {'left': by_phase[0][phase], 'right': by_phase[1][phase],
+                                           'changed': by_phase[0][phase] != by_phase[1][phase]}
+                                    for phase in ('tutor', 'judge', 'smoke')}},
         direct_comparison_inputs_held_fixed=comparable,
         comparison_notice='Inspect scenarios, references and judge before interpreting numerical differences.',
         numerical_differences={name: (reports[1]['score_averages'][name] - reports[0]['score_averages'][name]

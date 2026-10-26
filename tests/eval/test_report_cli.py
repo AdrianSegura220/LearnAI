@@ -394,3 +394,148 @@ def test_compare_reports_actual_changed_hashes_and_evaluator_settings(tmp_path):
     assert comparison['changed_settings']['routes']['left']['judge']['model'] == 'old-judge'
     assert comparison['changed_settings']['routes']['right']['judge']['model'] == 'new-judge'
     assert comparison['evaluator_or_reference_changed'] is True
+
+
+def saved_packet_run(tmp_path):
+    return write_report(tmp_path / 'source', manifest=manifest(tmp_path), outcomes={}, scores={},
+        judge_packets={'one': packet()}, ledger=RequestLedger(), prices=prices(), persona_smoke={})
+
+
+def replace_saved_packet(run, mutate):
+    from hashlib import sha256
+    from learnai.eval.manifest import canonical_json
+    report_path = run / 'report.json'
+    report = json.loads(report_path.read_text())
+    entry = report['judge_packets']['one']
+    target = run / entry['path']
+    raw = json.loads(target.read_text())
+    mutate(raw)
+    encoded = canonical_json(raw)
+    target.write_text(encoded)
+    entry['sha256'] = sha256(encoded.encode('utf-8')).hexdigest()
+    report_path.write_text(json.dumps(report))
+
+
+@pytest.mark.parametrize('change', ['candidate', 'student_moment'])
+def test_rejudge_fingerprint_identifies_saved_candidate_and_context_inputs(tmp_path, monkeypatch, change):
+    monkeypatch.setenv('ANTHROPIC_API_KEY', 'fake-key')
+    source = saved_packet_run(tmp_path)
+    routes = routes_file(tmp_path)
+    args = ['rejudge', str(source), '--routes', str(routes), '--out', str(tmp_path / 'rejudged')]
+    first_sdk = ScriptedJudge([reply()])
+    assert main(args, client_factory=lambda **kwargs: first_sdk.client) == 0
+    first = next((tmp_path / 'rejudged').iterdir())
+    if change == 'candidate':
+        mutate = lambda raw: raw['fields']['turn']['fields'].__setitem__('message', 'Consider the product and sum.')
+    else:
+        mutate = lambda raw: raw['fields']['context']['fields']['interaction']['fields'].__setitem__('question', 'Why does expansion verify it?')
+    replace_saved_packet(source, mutate)
+    second_sdk = ScriptedJudge([reply()])
+    assert main(args, client_factory=lambda **kwargs: second_sdk.client) == 0
+    second = next(path for path in (tmp_path / 'rejudged').iterdir() if path != first)
+    manifests = [json.loads((path / 'manifest.json').read_text()) for path in (first, second)]
+    assert manifests[0]['material']['references'] == manifests[1]['material']['references']
+    assert manifests[0]['selected_ids'] == manifests[1]['selected_ids']
+    assert manifests[0]['configuration_fingerprint'] != manifests[1]['configuration_fingerprint']
+    assert len(first_sdk.wire_requests) == len(second_sdk.wire_requests) == 1
+
+
+@pytest.mark.parametrize('field,value', [('message', None), ('rung_used', 'NUDGE'), ('proposals', ['invalid'])])
+def test_malformed_saved_turn_fields_fail_before_client_creation(tmp_path, monkeypatch, field, value):
+    monkeypatch.setenv('ANTHROPIC_API_KEY', 'fake-key')
+    source = saved_packet_run(tmp_path)
+    replace_saved_packet(source, lambda raw: raw['fields']['turn']['fields'].__setitem__(field, value))
+    with pytest.raises(ValueError):
+        load_packets(source)
+    assert main(['rejudge', str(source), '--routes', str(routes_file(tmp_path))],
+                client_factory=lambda **kwargs: pytest.fail('invalid packet created client')) == 2
+
+
+@pytest.mark.parametrize('case', ['string-turn', 'statement-block', 'negative-progress', 'history-revision',
+                                  'reference-shape', 'reference-none-and-fields', 'interaction-kind',
+                                  'blank-candidate', 'exceeded-rung', 'oversized-number'])
+def test_malformed_nested_saved_packet_is_a_local_validation_failure(tmp_path, monkeypatch, case):
+    monkeypatch.setenv('ANTHROPIC_API_KEY', 'fake-key')
+    source = saved_packet_run(tmp_path)
+    def mutate(raw):
+        fields = raw['fields']
+        context = fields['context']['fields']
+        if case == 'string-turn':
+            fields['turn'] = 'invalid candidate'
+        elif case == 'statement-block':
+            context['item']['fields']['statement'] = {'$tuple': ['invalid block']}
+        elif case == 'negative-progress':
+            context['task_progress']['fields']['submissions'] = -1
+        elif case == 'history-revision':
+            context['history']['$tuple'][0]['fields']['revision'] = True
+        elif case == 'reference-shape':
+            fields['reference']['fields']['answer']['fields']['fields'] = {'$tuple': ['x', 'y']}
+        elif case == 'reference-none-and-fields':
+            fields['reference']['fields']['answer']['fields']['claims_none'] = True
+        elif case == 'blank-candidate':
+            fields['turn']['fields']['message'] = '   '
+        elif case == 'exceeded-rung':
+            fields['turn']['fields']['rung_used']['name'] = 'FULL_REVEAL'
+        elif case == 'oversized-number':
+            context['student_summary']['fields']['strength'] = 10 ** 400
+        else:
+            context['interaction']['fields']['kind'] = 'TASK_QUESTION'
+    replace_saved_packet(source, mutate)
+    assert main(['rejudge', str(source), '--routes', str(routes_file(tmp_path))],
+                client_factory=lambda **kwargs: pytest.fail('invalid nested packet created client')) == 2
+
+
+def write_returned_models(run, *, tutor='tutor-version-a', judge_model='judge-version-a'):
+    entries = [{'scenario_id': 'one', 'phase': 'tutor', 'requested_model': 'tutor-alias', 'returned_model': tutor},
+               {'scenario_id': 'one', 'phase': 'judge', 'requested_model': 'judge-alias', 'returned_model': judge_model}]
+    (run / 'requests.jsonl').write_text(''.join(json.dumps(entry) + '\n' for entry in entries))
+
+
+def test_actual_returned_judge_change_invalidates_fixed_evaluator_comparison(tmp_path):
+    left, right = saved_packet_run(tmp_path), saved_packet_run(tmp_path)
+    write_returned_models(left)
+    write_returned_models(right, judge_model='judge-version-b')
+    compared = compare_runs(left, right)
+    assert compared['evaluator_or_reference_changed'] is True
+    assert compared['evaluator_differences']['returned_judge_models'] == {
+        'left': [['one', 'judge-alias', 'judge-version-a']],
+        'right': [['one', 'judge-alias', 'judge-version-b']]}
+    assert compared['direct_comparison_inputs_held_fixed'] is False
+    write_returned_models(right, tutor='tutor-version-b')
+    compared = compare_runs(left, right)
+    assert compared['provider_returned_models']['tutor']['changed'] is True
+    assert compared['provider_returned_models']['judge']['changed'] is False
+    assert compared['evaluator_or_reference_changed'] is False
+    assert compared['direct_comparison_inputs_held_fixed'] is True
+
+
+@pytest.mark.parametrize('difference,expected', [
+    ('order', {'left': ['one', 'two'], 'right': ['two', 'one']}),
+    ('seeds', {'left': [7, 8], 'right': [7, 9]}),
+    ('python', {'left': '3.12.1', 'right': '3.12.2'}),
+    ('dependencies', {'left': {'verifier': '1.0'}, 'right': {'verifier': '1.1'}}),
+])
+def test_compare_surfaces_selected_order_seeds_and_runtime_provenance(tmp_path, difference, expected):
+    left, right = saved_packet_run(tmp_path), saved_packet_run(tmp_path)
+    for index, run in enumerate((left, right)):
+        path = run / 'manifest.json'
+        raw = json.loads(path.read_text())
+        raw['selected_ids'] = ['one', 'two']
+        raw['seeds'] = [7, 8]
+        raw['material']['python'] = '3.12.1'
+        raw['material']['dependencies'] = {'verifier': '1.0'}
+        if index == 1:
+            if difference == 'order':
+                raw['selected_ids'] = ['two', 'one']
+            elif difference == 'seeds':
+                raw['seeds'] = [7, 9]
+            elif difference == 'python':
+                raw['material']['python'] = '3.12.2'
+            else:
+                raw['material']['dependencies'] = {'verifier': '1.1'}
+        path.write_text(json.dumps(raw))
+    compared = compare_runs(left, right)
+    key = {'order': 'selected_ids', 'seeds': 'seeds', 'python': 'python', 'dependencies': 'dependencies'}[difference]
+    assert compared['execution_input_differences'][key] == expected
+    assert compared['selected_case_overlap'] == ['one', 'two']
+    assert compared['direct_comparison_inputs_held_fixed'] is False

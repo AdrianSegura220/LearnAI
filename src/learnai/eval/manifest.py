@@ -1,4 +1,5 @@
 """Versioned, captured configuration identity, separate from execution identity."""
+from copy import deepcopy
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -67,6 +68,7 @@ def build_manifest(*, root: Path, selected_ids: Iterable[str], seeds: Iterable[i
                    linked_sources: Iterable[dict[str, Any]] = (),
                    supplemental_inputs: Mapping[str, str] | None = None) -> RunManifest:
     root = root.resolve()
+    sources = tuple(deepcopy(source) for source in linked_sources)
     if input_paths is None:
         paths = [path.relative_to(root) for name in _INPUT_ROOTS for path in (root / name).rglob('*')
                  if path.is_file() and _allowed(path.relative_to(root))]
@@ -109,12 +111,12 @@ def build_manifest(*, root: Path, selected_ids: Iterable[str], seeds: Iterable[i
     material = dict(schema_version=SCHEMA_VERSION, selected_ids=ids, seeds=seed_values,
         settings=dict(settings), prompts=dict(prompts), references=dict(references), inputs=inputs,
         code_revision=revision, python=platform.python_version(), dependencies=dependencies,
-        missing_inputs=missing, deleted_inputs=deleted)
+        missing_inputs=missing, deleted_inputs=deleted, saved_packet_inputs=list(sources))
     # Validate before any artifact/client creation, including non-finite settings.
     canonical_json(material)
     return RunManifest(SCHEMA_VERSION, str(uuid4()), datetime.now(UTC).isoformat(), None,
                        'preflight', 'running', ids, seed_values, material, revision,
-                       None if dirty_paths is None else bool(dirty_paths), tuple(missing), tuple(linked_sources))
+                       None if dirty_paths is None else bool(dirty_paths), tuple(missing), sources)
 
 
 def configuration_fingerprint(manifest: RunManifest) -> str:

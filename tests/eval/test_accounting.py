@@ -87,3 +87,17 @@ def test_invalid_pricing_snapshot_is_a_local_validation_error(tmp_path):
         'source_url': 'https://example.test', 'retrieved_at': '2026-10-26', 'conditions': {}}}))
     with pytest.raises(ValueError, match='pricing'):
         load_prices(path)
+
+
+@pytest.mark.parametrize('nested', ['invalid', [], 0, False, None])
+@pytest.mark.parametrize('aggregate', [None, 0])
+def test_present_malformed_cache_creation_is_unknown_even_without_positive_aggregate(nested, aggregate):
+    raw = {'input_tokens': 1, 'output_tokens': 2, 'cache_creation': nested}
+    if aggregate is not None:
+        raw['cache_creation_input_tokens'] = aggregate
+    ledger = RequestLedger()
+    ledger.record(record(usage=raw))
+    result = estimate_cost(ledger, prices())
+    assert result.total is None and not result.complete
+    assert result.known_subtotal == Decimal('0.000010')
+    assert any('cache creation' in reason for reason in result.unknown_entries)

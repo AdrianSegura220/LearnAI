@@ -136,6 +136,8 @@ def normalize_usage(raw: dict[str, Any] | None) -> tuple[dict[str, int], list[st
             reasons.append('cache creation aggregate differs from duration counters')
         if nested.keys() - {'ephemeral_5m_input_tokens', 'ephemeral_1h_input_tokens'}:
             reasons.append('unknown usage cache creation category')
+    elif 'cache_creation' in raw:
+        reasons.append('invalid cache creation metadata')
     elif aggregate:
         reasons.append('cache creation duration unknown')
     if raw.keys() - _USAGE_FIELDS:
