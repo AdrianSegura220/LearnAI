@@ -297,3 +297,24 @@ def test_expired_stream_closes_and_keeps_observed_partial_usage():
     assert traces[0].termination_reason is TerminationReason.DEADLINE
     assert traces[0].output_tokens == 2 and sdk.streams[0].closed
     assert traces[0].attempts[0].usage_status.value == 'partial'
+
+
+def test_native_stream_api_error_stops_without_replay_and_preserves_partial_evidence():
+    raw = {'id':'resp-p','model':'scripted','status':'in_progress','output':[],
+        'usage':usage(output_tokens=2,reasoning_tokens=1)}
+    reply = ResponseReply(events=[{'type':'response.created','sequence_number':0,'response':raw},
+        {'type':'error','error':{'message':'stream failed','type':'server_error'}}])
+    tutor,sdk,traces = setup([reply,final()],stream=True)
+    assert tutor.respond(make_context()) is None
+    trace = traces[0]
+    assert len(sdk.requests) == len(trace.attempts) == 1 and sdk.streams[0].closed
+    assert trace.termination_reason is TerminationReason.NETWORK_EXHAUSTED
+    assert trace.accepted is None and trace.api_retries == 0
+    assert trace.api_errors[0]['type'] == 'APIError'
+    attempt = trace.attempts[0]
+    assert attempt.outcome == 'partial_response' and attempt.response == raw
+    assert attempt.provider_request_id == 'req-1'
+    assert attempt.usage == raw['usage'] and attempt.usage_status.value == 'partial'
+    assert attempt.normalized_usage.counts == {'input':80,'cache_read':20,'output':2}
+    assert trace.output_tokens == 2
+    assert trace.provider_responses == [raw]

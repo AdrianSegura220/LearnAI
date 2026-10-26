@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 import time
 
 import httpx2
-from openai import APIConnectionError, APIStatusError, OpenAI
+from openai import APIConnectionError, APIError, APIStatusError, OpenAI
 
 from learnai.adapters.tutor.observations import ProviderAttempt, UsageStatus
 from learnai.adapters.tutor.openai.usage import normalize_openai_usage
@@ -129,7 +129,7 @@ class ResponsesTransport:
                         break
                     if terminal:
                         break
-        except (httpx2.TransportError, APIConnectionError, APIStatusError) as exc:
+        except (httpx2.TransportError, APIError) as exc:
             self.trace.api_errors.append({'type': type(exc).__name__,
                 'status_code': getattr(exc, 'status_code', None),
                 'request_id': attempt.provider_request_id, 'attempt': self.budget.model_calls})
