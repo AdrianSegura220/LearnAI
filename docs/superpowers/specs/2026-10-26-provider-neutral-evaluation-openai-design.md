@@ -1,8 +1,8 @@
 # Provider-neutral evaluation and OpenAI adapters
 
-**Date:** 2026-10-26. **Status:** draft for user review; no implementation authorized by this document.
+**Date:** 2026-10-26. **Status:** approved in conversation on 2026-10-26 after the section-by-section explanation; implementation planning authorized. Product implementation is not yet authorized.
 
-**Builder check:** a fresh independent reviewer found no important unanswered questions on 2026-10-26. Detailed implementation interfaces remain the plan's responsibility. User approval of this written design is pending.
+**Builder check:** a fresh independent reviewer found no important unanswered questions on 2026-10-26. Detailed implementation interfaces remain the plan's responsibility.
 
 **Baseline:** merged Plan 2A, `40d2559`; 1,219 keyless tests passed in the user's merged checkout. Parent: [platform design](2026-09-14-ai-tutoring-platform-design.md). This extension preserves its engine and pedagogy rules. See [Plan 2A design](2026-10-16-anthropic-tutor-eval-design.md) for existing exchanges and evaluation semantics.
 
