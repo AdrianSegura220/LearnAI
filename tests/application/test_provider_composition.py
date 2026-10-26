@@ -349,3 +349,106 @@ def test_close_failure_does_not_replace_original_error_and_other_clients_close()
             operation.judge(scenario_id='case')
             raise ValueError('original failure')
     assert first.clients_closed == second.clients_closed == 1
+
+
+def test_default_registry_and_both_role_preparations_remain_sdk_free():
+    import os
+    import subprocess
+    import sys
+    code = '''
+import importlib.abc
+import sys
+class Block(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.split('.')[0] in {'openai', 'anthropic', 'httpx2'}:
+            raise AssertionError('SDK import during resolution: ' + fullname)
+sys.meta_path.insert(0, Block())
+from learnai.application.providers import default_registry
+from learnai.adapters.tutor.openai.wiring import OpenAIFactory, OpenAIProviderFactory
+from learnai.adapters.tutor.routing import Route
+from learnai.adapters.tutor.prompts import PROMPTS_ROOT
+from learnai.adapters.tutor.runtime import DEFAULT_BUDGET_PROFILES
+from learnai.application.ports import TutorDependencies
+from learnai.adapters.content.registry import GeneratorRegistry
+from tests.adapters.tutor.test_rendering import make_context
+from learnai.eval.artifacts import load_packets
+from pathlib import Path
+assert OpenAIFactory is OpenAIProviderFactory
+for provider in ('anthropic', 'openai'):
+    factory = default_registry().get(provider)
+    for role in ('tutor', 'judge'):
+        config = factory.resolve_config(Route('selected', provider, 'fictional', prompt=('tutor_math@1' if role == 'tutor' else 'rubric_judge@1')),
+            role=role, profiles=DEFAULT_BUDGET_PROFILES, prompts_root=PROMPTS_ROOT)
+'''
+    code += '''
+        if role == 'tutor':
+            factory.prepare_tutor(config, context=make_context(), dependencies=TutorDependencies(GeneratorRegistry(()), {}))
+        else:
+            factory.prepare_judge(config, packet=next(iter(load_packets(Path('tests/fixtures/eval_v1/run')).values())))
+assert not any(m.split('.')[0] in {'openai', 'anthropic', 'httpx2'} for m in sys.modules)
+'''
+    result = subprocess.run([sys.executable, '-c', code], capture_output=True, text=True,
+        env={k: v for k, v in os.environ.items() if k not in ('ANTHROPIC_API_KEY', 'OPENAI_API_KEY')})
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize('complex_enabled', [False, True])
+def test_actual_sdks_use_independent_jobs_and_keep_phase_sinks_scoped(tmp_path, complex_enabled):
+    from learnai.adapters.content.registry import GeneratorRegistry
+    from learnai.adapters.tutor.routing import load_routes, load_budget_profiles
+    from learnai.domain.turn import TurnFeedback, RejectionReason
+    from learnai.eval.judge import build_judge_messages
+    from tests.eval.test_judge import ScriptedJudge, reply, packet
+    from tests.support.scripted_client import final as af
+    from tests.support.scripted_openai import ScriptedOpenAI, final as of
+    from tests.support.provider_contracts import write_routes, scripted_factories
+    import json
+    import yaml
+    path = write_routes(tmp_path, tutor_provider='openai', judge_provider='anthropic',
+                        jobs={'tutor_brief':'anthropic', 'tutor_explanation':'openai'})
+    raw = yaml.safe_load(path.read_text())
+    if complex_enabled:
+        raw['routes']['tutor_complex'] = {**raw['routes']['tutor_explanation'], 'budget_profile':'complex'}
+        path.write_text(yaml.safe_dump(raw))
+    contexts = [make_context(response_job=job) for job in
+                (ResponseJob.BRIEF, ResponseJob.NORMAL, ResponseJob.SUBSTANTIAL)]
+    routes = load_routes(path)
+    selected = resolve_operation_routes(routes=routes, contexts=contexts, judge_route_name='rubric_judge',
+                                        smoke=True, rejudge=False)
+    if not complex_enabled:
+        with pytest.raises(ValueError, match='tutor_complex'):
+            resolve_operation_routes(routes=routes, contexts=[make_context(response_job=ResponseJob.COMPLEX)],
+                                     judge_route_name='rubric_judge', smoke=False, rejudge=False)
+    else:
+        contexts.append(make_context(response_job=ResponseJob.COMPLEX))
+        selected = resolve_operation_routes(routes=routes, contexts=contexts, judge_route_name='rubric_judge',
+                                            smoke=True, rejudge=False)
+    sdks = {'anthropic': ScriptedJudge([af('Brief hint.'), reply()]),
+            'openai': ScriptedOpenAI([of('Draft normal.'), of('Smoke hint.'), of('Corrected normal.'),
+                                      of('Substantial hint.'), *([of('Complex hint.')] if complex_enabled else [])])}
+    ledger = RequestLedger()
+    operation = ProviderServices(selected=selected, registry=ProviderRegistry(scripted_factories(sdks)),
+        environment={'ANTHROPIC_API_KEY':'scripted-key', 'OPENAI_API_KEY':'scripted-key'},
+        dependencies=TutorDependencies(GeneratorRegistry(()), {}), profiles=load_budget_profiles(path),
+        prompts_root=PROMPTS_ROOT, ledger=ledger)
+    with operation:
+        assert operation.tutor(phase='tutor', scenario_id='brief').respond(contexts[0]).message == 'Brief hint.'
+        outer = operation.tutor(phase='tutor', scenario_id='normal').begin_turn(contexts[1])
+        rejected = outer.respond()
+        operation.tutor(phase='smoke', scenario_id='smoke').respond(contexts[1])
+        accepted = outer.respond(feedback=TurnFeedback(RejectionReason.RUNG_EXCEEDED, 'retry', rejected))
+        outer.finish(accepted=accepted, reason='accepted')
+        for context in contexts[2:]:
+            operation.tutor(phase='tutor', scenario_id=context.response_job.value).respond(context)
+        p = packet()
+        operation.judge(scenario_id='judge').evaluate(p)
+    records = ledger.records
+    assert [(r.phase, r.scenario_id, r.provider, r.route_name) for r in records[:4]] == [
+        ('tutor', 'brief', 'anthropic', 'tutor_brief'), ('smoke', 'smoke', 'openai', 'tutor_dialogue'),
+        ('tutor', 'normal', 'openai', 'tutor_dialogue'), ('tutor', 'normal', 'openai', 'tutor_dialogue')]
+    assert records[4].route_name == 'tutor_explanation' and records[4].provider == 'openai'
+    if complex_enabled:
+        assert records[5].route_name == 'tutor_complex' and records[5].provider == 'openai'
+    assert records[-1].phase == 'judge' and records[-1].provider == 'anthropic'
+    assert json.loads(sdks['anthropic'].wire_requests[-1]['messages'][0]['content']) == json.loads(build_judge_messages(p)[0]['content'])
+    assert all(s.client.is_closed() for s in sdks.values())

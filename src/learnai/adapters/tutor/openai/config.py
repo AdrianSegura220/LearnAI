@@ -68,20 +68,24 @@ def resolve_config(route: Route, *, role: str, profiles: Mapping[str, BudgetProf
                    prompts_root: Path) -> ResolvedRoleConfig:
     from learnai.adapters.tutor.openai.encoding import TURN_SCHEMA, encode_tools
     validate_route(route, role=role)
-    if role != 'tutor':
-        raise ValueError('OpenAI judge configuration is not implemented yet')
     if route.budget_profile not in profiles:
         raise ValueError(f'unknown budget profile: {route.budget_profile}')
-    definitions = tool_definitions()
-    hashes = {'final_output': schema_hash(TURN_SCHEMA),
-        'canonical_read_tools': schema_hash([asdict(tool) for tool in definitions]),
-        'wire_read_tools': schema_hash(encode_tools(definitions))}
+    if role == 'tutor':
+        schema, name = TURN_SCHEMA, 'tutor_turn'
+        definitions = tool_definitions()
+        hashes = {'final_output': schema_hash(schema),
+            'canonical_read_tools': schema_hash([asdict(tool) for tool in definitions]),
+            'wire_read_tools': schema_hash(encode_tools(definitions))}
+    else:
+        from learnai.eval.judge import SCORE_SCHEMA
+        schema, name = SCORE_SCHEMA, 'rubric_scores'
+        hashes = {'final_output': schema_hash(schema)}
     dependencies = {}
     for distribution in ROLE_DEPENDENCIES[role]:
         try:
             dependencies[distribution] = version(distribution)
         except PackageNotFoundError:
             dependencies[distribution] = None
-    return ResolvedRoleConfig('openai', 'responses', 'tutor', route, profiles[route.budget_profile],
-        load_prompt(route.prompt, root=prompts_root), final_settings(route, TURN_SCHEMA, name='tutor_turn'),
+    return ResolvedRoleConfig('openai', 'responses', role, route, profiles[route.budget_profile],
+        load_prompt(route.prompt, root=prompts_root), final_settings(route, schema, name=name),
         hashes, dependencies, USAGE_MAPPER_ID, TOKEN_COUNTER_ID)

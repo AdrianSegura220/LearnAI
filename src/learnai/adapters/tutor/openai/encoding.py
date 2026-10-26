@@ -2,6 +2,10 @@
 from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
 import json
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from learnai.eval.judge import JudgePacket
 
 from learnai.adapters.tutor.configuration import PreparedRequest, ResolvedRoleConfig
 from learnai.adapters.tutor.context import ContextLimitError, render_context, select_context
@@ -101,3 +105,20 @@ def correction_item(feedback: TurnFeedback | str) -> dict:
     text = feedback if isinstance(feedback, str) else json.dumps(
         {'reason': feedback.reason.name, 'detail': feedback.detail}, ensure_ascii=False, separators=(',', ':'))
     return {'role': 'developer', 'content': 'Correct the tutor response using this private feedback: ' + text}
+
+
+def judge_payload(config: ResolvedRoleConfig, *, inputs: list[dict], remaining_output: int) -> dict:
+    """Frame only the isolated evaluation packet and rubric; judging has no tools."""
+    return {**deepcopy(dict(config.effective_settings)), 'instructions': config.prompt.text,
+        'input': deepcopy(inputs), 'max_output_tokens': min(config.route.max_tokens, remaining_output)}
+
+
+def prepare_judge(config: ResolvedRoleConfig, *, packet: 'JudgePacket',
+                  count_tokens: Callable[[str], int]) -> PreparedRequest:
+    from learnai.eval.judge import build_judge_messages
+    require_config(config, role='judge')
+    body = judge_payload(config, inputs=list(build_judge_messages(packet)),
+                         remaining_output=config.profile.max_output_tokens)
+    units = count_tokens(json.dumps(body, ensure_ascii=False, separators=(',', ':')))
+    reservation = body['max_output_tokens']
+    return PreparedRequest(body, units, reservation, units + reservation <= config.profile.context_input_tokens)

@@ -236,11 +236,21 @@ def compare_runs(left: SavedRun, right: SavedRun, *, treatment: TutorTreatment |
 _TUTOR_FIELDS = {'adapter', 'model', 'effort', 'thinking', 'temperature', 'max_tokens', 'stream', 'provider_options'}
 
 
-def _without_treatment_routes(settings: Mapping[str, Any], names: tuple[str, ...]) -> dict[str, Any]:
+def _without_treatment_routes(settings: Mapping[str, Any], names: tuple[str, ...],
+                              *, other: Mapping[str, Any] | None = None) -> dict[str, Any]:
     result = deepcopy(dict(settings))
     for name in names:
         route = result.get('routes', {}).get(name)
         if isinstance(route, dict):
+            if 'effective_settings' in route:
+                from learnai.application.providers import tutor_settings_residual
+                counterpart = (other or {}).get('routes', {}).get(name, {})
+                residual = tutor_settings_residual(route, provider_changed=(
+                    isinstance(counterpart, dict) and route.get('adapter') != counterpart.get('adapter')))
+                if residual == {}:
+                    route.pop('effective_settings')
+                else:
+                    route['effective_settings'] = residual
             for field in _TUTOR_FIELDS:
                 route.pop(field, None)
     return result
@@ -303,7 +313,7 @@ def _controlled_tutor_comparison(left: SavedRun, right: SavedRun,
             reasons.append('unknown or conflicting evaluator identity')
         if not run.manifest['material'].get('pricing_snapshots'):
             reasons.append('unknown pricing snapshot identity')
-    if _without_treatment_routes(settings[0], names) != _without_treatment_routes(settings[1], names):
+    if _without_treatment_routes(settings[0], names, other=settings[1]) != _without_treatment_routes(settings[1], names, other=settings[0]):
         reasons.append('settings changed outside declared tutor fields')
     for key in ('prompts', 'references', 'python', 'deleted_inputs', 'missing_inputs', 'saved_packet_inputs', 'pricing_snapshots'):
         if materials[0].get(key) != materials[1].get(key):
@@ -370,7 +380,7 @@ def _controlled_tutor_comparison(left: SavedRun, right: SavedRun,
             try:
                 parsed = [yaml.safe_load(entry['content']) for entry in (a, b)]
                 if all(isinstance(value, dict) for value in parsed) and (
-                    _without_treatment_routes(parsed[0], names) == _without_treatment_routes(parsed[1], names)):
+                    _without_treatment_routes(parsed[0], names, other=parsed[1]) == _without_treatment_routes(parsed[1], names, other=parsed[0])):
                     continue
             except (KeyError, TypeError, ValueError, yaml.YAMLError):
                 pass

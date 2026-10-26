@@ -33,7 +33,66 @@ class ProviderRegistry:
 
 def default_registry() -> ProviderRegistry:
     from learnai.adapters.tutor.anthropic.wiring import AnthropicFactory
-    return ProviderRegistry({'anthropic': AnthropicFactory()})
+    from learnai.adapters.tutor.openai.wiring import OpenAIProviderFactory
+    return ProviderRegistry({'anthropic': AnthropicFactory(), 'openai': OpenAIProviderFactory()})
+
+
+def tutor_settings_residual(route: Mapping[str, object], *, provider_changed: bool) -> object:
+    """Retain saved wire evidence not explained by the declared tutor route.
+
+    This static composition classification is SDK-free. Exact documented values
+    may follow a tutor treatment; unknown fields and inconsistent values remain
+    held fixed. Stateless continuation invariants are encoding differences only
+    when the provider actually changes.
+    """
+    actual = deepcopy(route.get('effective_settings'))
+    if not isinstance(actual, dict):
+        return actual
+    try:
+        selected = Route(**{key: value for key, value in route.items() if key != 'effective_settings'})
+        if selected.adapter == 'anthropic':
+            from learnai.adapters.tutor.anthropic.config import final_settings, validate_route
+            from learnai.adapters.tutor.anthropic.turn_schema import TURN_SCHEMA
+            validate_route(selected, role='tutor')
+            expected = final_settings(selected, TURN_SCHEMA)
+        elif selected.adapter == 'openai':
+            from learnai.adapters.tutor.openai.config import final_settings, validate_route
+            from learnai.adapters.tutor.openai.encoding import TURN_SCHEMA
+            validate_route(selected, role='tutor')
+            expected = final_settings(selected, TURN_SCHEMA, name='tutor_turn')
+            if not provider_changed:
+                for key in ('store', 'include', 'truncation'):
+                    expected.pop(key)
+        else:
+            return actual
+    except (TypeError, ValueError, KeyError):
+        return actual
+
+    def missing_paths(observed: dict, documented: dict, prefix: str = '') -> list[str]:
+        missing = []
+        for key, value in documented.items():
+            path = prefix + key
+            if key not in observed:
+                missing.append(path)
+            elif isinstance(value, dict) and isinstance(observed[key], dict):
+                missing.extend(missing_paths(observed[key], value, path + '.'))
+        return missing
+
+    if missing := missing_paths(actual, expected):
+        return {'unresolved_wire_settings': actual, 'missing_documented_fields': missing}
+
+    def subtract(observed: dict, documented: dict) -> dict:
+        for key, value in documented.items():
+            if key not in observed:
+                continue
+            if isinstance(value, dict) and isinstance(observed[key], dict):
+                subtract(observed[key], value)
+                if not observed[key]:
+                    observed.pop(key)
+            elif type(observed[key]) is type(value) and observed[key] == value:
+                observed.pop(key)
+        return observed
+    return subtract(actual, expected)
 
 
 @dataclass(frozen=True)
