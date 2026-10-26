@@ -1,0 +1,528 @@
+- id: ladder-next-step
+  family: ladder
+  skill_id: quad.expand.binomial
+  template_id: quad.expand.binomial.v1
+  seed: 2
+  permitted_rung: NEXT_STEP
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps: []
+  answer: ''
+  interaction_kind: HELP_REQUEST
+  work_status: DRAFT
+  question: null
+  expected_statement: "Expand and simplify: \n(x + 2)(x + 5)"
+  work_origin: none
+  exercise_anchor: null
+  copy_error_description: null
+  expected_verdict: UNCHECKED
+  expected_diagnosis: null
+  expected_broken_transition: null
+  expected_step_check: false
+  expected_error_kinds: []
+  expected_failed_constraints: []
+  coverage_tags:
+  - help before first submission
+  expected_progress:
+    submissions: 0
+    genuine_attempts: 0
+    declines: 0
+    delivered_rungs:
+    - NUDGE
+    independence_spent: true
+    last_checked_revision: null
+  reference_reasoning:
+  - A delivered NUDGE makes the next explicit help request a NEXT_STEP opportunity, without a submission
+    or reveal credit.
+  evaluation_criteria:
+  - Advance beyond the previous nudge with one concrete next step; stay below a full solution.
+  now: '2026-01-01T00:00:00Z'
+  notes: Model-facing companion; original engine regression remains in the corpus.
+  history_actions:
+  - operation: request_help
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-next-step
+    template_id: quad.expand.binomial.v1
+    seed: 2
+    tutor_script:
+    - message: Choose one term from the first bracket.
+      rung_used: NUDGE
+- id: ladder-after-none-help
+  family: ladder
+  skill_id: quad.expand.binomial
+  template_id: quad.expand.binomial.v1
+  seed: 2
+  permitted_rung: NUDGE
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps: []
+  answer: ''
+  interaction_kind: HELP_REQUEST
+  work_status: DRAFT
+  question: null
+  expected_statement: "Expand and simplify: \n(x + 2)(x + 5)"
+  work_origin: none
+  exercise_anchor: null
+  copy_error_description: null
+  expected_verdict: UNCHECKED
+  expected_diagnosis: null
+  expected_broken_transition: null
+  expected_step_check: false
+  expected_error_kinds: []
+  expected_failed_constraints: []
+  coverage_tags:
+  - conceptual question
+  expected_progress:
+    submissions: 0
+    genuine_attempts: 0
+    declines: 0
+    delivered_rungs: []
+    independence_spent: true
+    last_checked_revision: null
+  reference_reasoning:
+  - Delivered NONE spent independence without advancing the ladder; an explicit help request still starts
+    at NUDGE.
+  evaluation_criteria:
+  - Respect the earlier NONE delivery, and give the first ladder nudge without assuming a prior hint.
+  history_actions:
+  - operation: ask_question
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-after-none-help
+    template_id: quad.expand.binomial.v1
+    seed: 2
+    tutor_script:
+    - message: Describe your plan.
+      rung_used: NONE
+    interaction:
+      task_id: eval-task:ladder-after-none-help
+      revision: 0
+      kind: TASK_QUESTION
+      status: DRAFT
+      steps: []
+      answer: ''
+      question: Can you guide my next step?
+  notes: Model-facing companion; original engine regression remains in the corpus.
+  now: '2026-01-01T00:00:00Z'
+- id: ladder-after-rejected-help
+  family: ladder
+  skill_id: quad.expand.binomial
+  template_id: quad.expand.binomial.v1
+  seed: 2
+  permitted_rung: NUDGE
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps: []
+  answer: ''
+  interaction_kind: HELP_REQUEST
+  work_status: DRAFT
+  question: null
+  expected_statement: "Expand and simplify: \n(x + 2)(x + 5)"
+  work_origin: none
+  exercise_anchor: null
+  copy_error_description: null
+  expected_verdict: UNCHECKED
+  expected_diagnosis: null
+  expected_broken_transition: null
+  expected_step_check: false
+  expected_error_kinds: []
+  expected_failed_constraints: []
+  coverage_tags:
+  - conceptual question
+  expected_progress:
+    submissions: 0
+    genuine_attempts: 0
+    declines: 0
+    delivered_rungs: []
+    independence_spent: false
+    last_checked_revision: null
+  reference_reasoning:
+  - The rejected draft and silence supplied no delivered assistance; the next explicit request still opens
+    at NUDGE.
+  evaluation_criteria:
+  - Give the first nudge without referring to the private rejected draft as delivered advice.
+  history_actions:
+  - operation: ask_question
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-after-rejected-help
+    template_id: quad.expand.binomial.v1
+    seed: 2
+    tutor_script:
+    - message: Too much help.
+      rung_used: FULL_REVEAL
+    - null
+    interaction:
+      task_id: eval-task:ladder-after-rejected-help
+      revision: 0
+      kind: TASK_QUESTION
+      status: DRAFT
+      steps: []
+      answer: ''
+      question: Can you guide my next step?
+  notes: Model-facing companion; original engine regression remains in the corpus.
+  now: '2026-01-01T00:00:00Z'
+- id: ladder-first-work-help
+  family: ladder
+  skill_id: quad.expand.square
+  template_id: quad.expand.square.v1
+  seed: 2
+  permitted_rung: NUDGE
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps:
+  - (x + 9)^2
+  - x^2+81
+  answer: x^2+81
+  interaction_kind: HELP_REQUEST
+  work_status: SUBMITTED
+  question: null
+  expected_statement: "Expand and simplify: \n(x + 9)^2"
+  work_origin: exercise
+  exercise_anchor: (x + 9)^2
+  copy_error_description: null
+  expected_verdict: WRONG
+  expected_diagnosis: mc.square.distributes
+  expected_broken_transition:
+  - (x + 9)^2
+  - x^2+81
+  expected_step_check: true
+  expected_error_kinds:
+  - equivalence
+  expected_failed_constraints: []
+  coverage_tags:
+  - wrong submission
+  - supported diagnosis
+  expected_progress:
+    submissions: 1
+    genuine_attempts: 1
+    declines: 0
+    delivered_rungs: []
+    independence_spent: true
+    last_checked_revision: 0
+  reference_reasoning:
+  - A first worked wrong submission remains cold evidence and gets no unsolicited tutor. This explicit
+    request opens NUDGE while preserving that checked work.
+  evaluation_criteria:
+  - Orient the learner toward the missing middle product, respecting the first explicit help rung.
+  declined: false
+  now: '2026-01-01T00:00:00Z'
+  notes: Model-facing companion; original engine regression remains in the corpus.
+  history_actions:
+  - operation: submit
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-first-work-help
+    template_id: quad.expand.square.v1
+    seed: 2
+    tutor_script: []
+    confidence: UNSURE
+    interaction:
+      task_id: eval-task:ladder-first-work-help
+      revision: 0
+      kind: SUBMISSION
+      status: SUBMITTED
+      steps:
+      - (x + 9)^2
+      - x^2+81
+      answer: x^2+81
+- id: ladder-second-work
+  family: ladder
+  skill_id: quad.expand.binomial
+  template_id: quad.expand.binomial.v1
+  seed: 1
+  permitted_rung: NUDGE
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps:
+  - (x - 8)(x - 6)
+  - x^2+48
+  answer: x^2+48
+  interaction_kind: SUBMISSION
+  work_status: SUBMITTED
+  question: null
+  expected_statement: "Expand and simplify: \n(x - 8)(x - 6)"
+  work_origin: exercise
+  exercise_anchor: (x - 8)(x - 6)
+  copy_error_description: null
+  expected_verdict: WRONG
+  expected_diagnosis: mc.foil.drops.cross
+  expected_broken_transition:
+  - (x - 8)(x - 6)
+  - x^2+48
+  expected_step_check: true
+  expected_error_kinds:
+  - equivalence
+  expected_failed_constraints: []
+  coverage_tags:
+  - wrong submission
+  - supported diagnosis
+  expected_progress:
+    submissions: 2
+    genuine_attempts: 2
+    declines: 0
+    delivered_rungs: []
+    independence_spent: true
+    last_checked_revision: 0
+  reference_reasoning:
+  - The first worked error was left for the learner to find. A repeated second submission now triggers
+    unprompted NUDGE feedback.
+  evaluation_criteria:
+  - Respond to the repeated worked error with a nudge about missing cross products, rather than a solution.
+  declined: false
+  now: '2026-01-01T00:00:00Z'
+  notes: Model-facing companion; original engine regression remains in the corpus.
+  history_actions:
+  - operation: submit
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-second-work
+    template_id: quad.expand.binomial.v1
+    seed: 1
+    tutor_script: []
+    confidence: UNSURE
+    interaction:
+      task_id: eval-task:ladder-second-work
+      revision: 0
+      kind: SUBMISSION
+      status: SUBMITTED
+      steps:
+      - (x - 8)(x - 6)
+      - x^2+48
+      answer: x^2+48
+- id: ladder-declines-question
+  family: ladder
+  skill_id: quad.expand.binomial
+  template_id: quad.expand.binomial.v1
+  seed: 2
+  permitted_rung: NAME_METHOD
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps: []
+  answer: ''
+  interaction_kind: TASK_QUESTION
+  work_status: DRAFT
+  question: I still cannot begin. Could you explain the method in a different way?
+  expected_statement: "Expand and simplify: \n(x + 2)(x + 5)"
+  work_origin: none
+  exercise_anchor: null
+  copy_error_description: null
+  expected_verdict: NO_ANSWER
+  expected_diagnosis: null
+  expected_broken_transition: null
+  expected_step_check: false
+  expected_error_kinds: []
+  expected_failed_constraints: []
+  coverage_tags:
+  - explicit decline
+  expected_progress:
+    submissions: 2
+    genuine_attempts: 0
+    declines: 2
+    delivered_rungs:
+    - NUDGE
+    - NUDGE
+    - NEXT_STEP
+    - NAME_METHOD
+    independence_spent: true
+    last_checked_revision: 0
+  reference_reasoning:
+  - Two declines are not genuine attempts. Explicit task questions remain available after NAME_METHOD
+    delivery, but FULL_REVEAL stays locked.
+  evaluation_criteria:
+  - Answer the new question without repeating the same wording or treating declines as effort that unlocks
+    a reveal.
+  history_actions:
+  - operation: submit
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-declines-question
+    template_id: quad.expand.binomial.v1
+    seed: 2
+    tutor_script:
+    - &id001
+      message: Check which operation comes next.
+      rung_used: NUDGE
+    interaction:
+      task_id: eval-task:ladder-declines-question
+      revision: 0
+      kind: SUBMISSION
+      status: SUBMITTED
+      steps: []
+      answer: ''
+    confidence: UNSURE
+  - operation: submit
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-declines-question
+    template_id: quad.expand.binomial.v1
+    seed: 2
+    tutor_script:
+    - *id001
+    interaction:
+      task_id: eval-task:ladder-declines-question
+      revision: 0
+      kind: SUBMISSION
+      status: SUBMITTED
+      steps: []
+      answer: ''
+    confidence: UNSURE
+  - operation: request_help
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-declines-question
+    template_id: quad.expand.binomial.v1
+    seed: 2
+    tutor_script:
+    - message: Use distribution on the product.
+      rung_used: NEXT_STEP
+  - operation: request_help
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-declines-question
+    template_id: quad.expand.binomial.v1
+    seed: 2
+    tutor_script:
+    - message: Use distribution.
+      rung_used: NAME_METHOD
+  now: '2026-01-01T00:00:00Z'
+  notes: Model-facing companion; original engine regression remains in the corpus.
+- id: ladder-repeated-method
+  family: ladder
+  skill_id: quad.expand.binomial
+  template_id: quad.expand.binomial.v1
+  seed: 2
+  permitted_rung: NAME_METHOD
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps: []
+  answer: ''
+  interaction_kind: TASK_QUESTION
+  work_status: DRAFT
+  question: I have heard the method name. Why must each term multiply every term in the other bracket?
+  expected_statement: "Expand and simplify: \n(x + 2)(x + 5)"
+  work_origin: none
+  exercise_anchor: null
+  copy_error_description: null
+  expected_verdict: UNCHECKED
+  expected_diagnosis: null
+  expected_broken_transition: null
+  expected_step_check: false
+  expected_error_kinds: []
+  expected_failed_constraints: []
+  coverage_tags:
+  - help before first submission
+  expected_progress:
+    submissions: 0
+    genuine_attempts: 0
+    declines: 0
+    delivered_rungs:
+    - NUDGE
+    - NEXT_STEP
+    - NAME_METHOD
+    independence_spent: true
+    last_checked_revision: null
+  reference_reasoning:
+  - A method has already been delivered. With no genuine attempts FULL_REVEAL remains locked, but a follow-up
+    conceptual question has a real NAME_METHOD ceiling.
+  evaluation_criteria:
+  - Explain the requested concept using the delivered history; avoid merely repeating the method name
+    or revealing the active answer.
+  now: '2026-01-01T00:00:00Z'
+  notes: Model-facing companion; original engine regression remains in the corpus.
+  history_actions:
+  - operation: request_help
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-repeated-method
+    template_id: quad.expand.binomial.v1
+    seed: 2
+    tutor_script:
+    - message: Choose one term from the first bracket.
+      rung_used: NUDGE
+  - operation: request_help
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-repeated-method
+    template_id: quad.expand.binomial.v1
+    seed: 2
+    tutor_script:
+    - message: Multiply that term by each term in the other bracket.
+      rung_used: NEXT_STEP
+  - operation: request_help
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-repeated-method
+    template_id: quad.expand.binomial.v1
+    seed: 2
+    tutor_script:
+    - message: This uses the distributive property.
+      rung_used: NAME_METHOD
+- id: ladder-corrected-draft
+  family: ladder
+  skill_id: quad.expand.binomial
+  template_id: quad.expand.binomial.v1
+  seed: 2
+  permitted_rung: NAME_METHOD
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps:
+  - (x + 2)(x + 5)
+  - x^2+7x+10
+  answer: x^2+7x+10
+  interaction_kind: TASK_QUESTION
+  work_status: DRAFT
+  question: I put the middle products back. Why is this corrected line equivalent to the starting product?
+  expected_statement: "Expand and simplify: \n(x + 2)(x + 5)"
+  work_origin: exercise
+  exercise_anchor: (x + 2)(x + 5)
+  copy_error_description: null
+  expected_verdict: UNCHECKED
+  expected_diagnosis: null
+  expected_broken_transition: null
+  expected_step_check: true
+  expected_error_kinds: []
+  expected_failed_constraints: []
+  coverage_tags:
+  - mistake followed by correction
+  - valid-work no-diagnosis
+  - conceptual question
+  expected_progress:
+    submissions: 1
+    genuine_attempts: 1
+    declines: 0
+    delivered_rungs: []
+    independence_spent: true
+    last_checked_revision: 1
+  reference_reasoning:
+  - The corrected draft preserves the original product and includes both cross products. Asking about
+    it checks the steps without submitting the correct final answer or completing the task.
+  evaluation_criteria:
+  - Explain the valid corrected transformation without persisting the old diagnosis or claiming the draft
+    was a graded final submission.
+  history_actions:
+  - operation: submit
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-corrected-draft
+    template_id: quad.expand.binomial.v1
+    seed: 2
+    tutor_script: []
+    interaction:
+      task_id: eval-task:ladder-corrected-draft
+      revision: 0
+      kind: SUBMISSION
+      status: SUBMITTED
+      steps:
+      - (x + 2)(x + 5)
+      - x^2+10
+      answer: x^2+10
+    confidence: UNSURE
+  declined: false
+  work_revision: 1
+  now: '2026-01-01T00:00:00Z'
+  notes: Model-facing companion; original engine regression remains in the corpus.

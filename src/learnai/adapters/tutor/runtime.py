@@ -28,9 +28,9 @@ class TerminationReason(str, Enum):
 
 DEFAULT_BUDGET_PROFILES = {
     "brief": BudgetProfile(3, 8, 4, 8, 4096, 16000, 512),
-    "normal": BudgetProfile(8, 15, 8, 16, 8192, 16000, 1024),
-    "substantial": BudgetProfile(20, 30, 12, 24, 16384, 24000, 1024),
-    "complex": BudgetProfile(30, 60, 20, 40, 32768, 32000, 2048),
+    "normal": BudgetProfile(8, 15, 8, 16, 8192, 40000, 1024),
+    "substantial": BudgetProfile(20, 30, 12, 24, 16384, 48000, 1024),
+    "complex": BudgetProfile(30, 60, 20, 40, 32768, 64000, 2048),
 }
 
 

@@ -15,7 +15,7 @@ budget_profiles:
     max_round_trips: 8
     max_tool_calls: 16
     max_output_tokens: 8192
-    context_input_tokens: 16000
+    context_input_tokens: 40000
     finalization_reserve_tokens: 1024
   substantial:
     soft_seconds: 20
@@ -23,7 +23,7 @@ budget_profiles:
     max_round_trips: 12
     max_tool_calls: 24
     max_output_tokens: 16384
-    context_input_tokens: 24000
+    context_input_tokens: 48000
     finalization_reserve_tokens: 1024
   complex:
     soft_seconds: 30
@@ -31,7 +31,7 @@ budget_profiles:
     max_round_trips: 20
     max_tool_calls: 40
     max_output_tokens: 32768
-    context_input_tokens: 32000
+    context_input_tokens: 64000
     finalization_reserve_tokens: 2048
 
 routes:

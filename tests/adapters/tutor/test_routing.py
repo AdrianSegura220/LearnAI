@@ -172,8 +172,8 @@ def test_initial_configuration_loads_job_budgets():
     assert set(profiles) == {"brief", "normal", "substantial", "complex"}
     for job, expected in [
         (ResponseJob.BRIEF, (3, 8, 4, 8, 4096, 16000, 512)),
-        (ResponseJob.NORMAL, (8, 15, 8, 16, 8192, 16000, 1024)),
-        (ResponseJob.SUBSTANTIAL, (20, 30, 12, 24, 16384, 24000, 1024)),
+        (ResponseJob.NORMAL, (8, 15, 8, 16, 8192, 40000, 1024)),
+        (ResponseJob.SUBSTANTIAL, (20, 30, 12, 24, 16384, 48000, 1024)),
     ]:
         profile = profiles[resolve_tutor_route(routes, job).budget_profile]
         assert (
@@ -185,4 +185,4 @@ def test_initial_configuration_loads_job_budgets():
     assert (complex_profile.soft_seconds, complex_profile.hard_seconds,
             complex_profile.max_round_trips, complex_profile.max_tool_calls,
             complex_profile.max_output_tokens, complex_profile.context_input_tokens,
-            complex_profile.finalization_reserve_tokens) == (30, 60, 20, 40, 32768, 32000, 2048)
+            complex_profile.finalization_reserve_tokens) == (30, 60, 20, 40, 32768, 64000, 2048)

@@ -72,11 +72,73 @@ def test_coverage_floors_and_balanced_cases():
     assert len(scenarios) >= 50
     assert all(counts[family] >= floor for family, floor in FLOORS.items())
     assert TAGS <= {tag for s in scenarios for tag in s.coverage_tags}
-    # A family count cannot conceal one missing supported belief.
-    diagnoses = Counter(s.expected_diagnosis for s in scenarios if s.family == 'diagnosis')
+
+
+def test_model_facing_coverage_counts_actual_engine_opportunities(dependencies):
+    prepared = [prepare_scenario(s, **dependencies) for s in load_scenarios_dir(FIXTURES)]
+    eligible = [p for p in prepared if p.context is not None]
+    families = Counter(p.scenario.family for p in eligible)
+    assert families['ladder'] >= 15, families
+    assert len(eligible) >= 50, families
+    # Declarations on first worked errors must not satisfy diagnostic coverage.
+    diagnoses = Counter(p.context.diagnosis for p in eligible if p.scenario.family == 'diagnosis')
     for name in ('mc.foil.drops.cross', 'mc.square.distributes', 'mc.gcf.partial',
                  'mc.factor.sign', 'mc.diffsquares.sum', 'mc.zeroproduct.misapplied'):
-        assert diagnoses[name] >= 2
+        assert diagnoses[name] >= 2, diagnoses
+
+
+@pytest.mark.parametrize('diagnosis', [
+    'mc.foil.drops.cross', 'mc.square.distributes', 'mc.gcf.partial',
+    'mc.factor.sign', 'mc.diffsquares.sum', 'mc.zeroproduct.misapplied',
+])
+def test_each_diagnosis_has_two_actual_tutor_opportunities(dependencies, diagnosis):
+    contexts = [prepare_scenario(s, **dependencies).context
+                for s in load_scenarios_dir(FIXTURES) if s.family == 'diagnosis']
+    assert sum(c is not None and c.diagnosis == diagnosis for c in contexts) >= 2
+
+
+def test_ladder_model_moments_cover_rungs_and_real_delivery_history(dependencies):
+    prepared = {s.id: prepare_scenario(s, **dependencies)
+                for s in load_scenarios_dir(FIXTURES) if s.family == 'ladder'}
+    intended = {
+        'ladder-help-first': HelpRung.NUDGE,
+        'ladder-next-step': HelpRung.NEXT_STEP,
+        'ladder-none-delivery': HelpRung.NAME_METHOD,
+        'ladder-rejected-silent': HelpRung.NAME_METHOD,
+        'ladder-edited-draft': HelpRung.NAME_METHOD,
+        'ladder-previous-exercise': HelpRung.NAME_METHOD,
+        'ladder-long-conversation': HelpRung.NAME_METHOD,
+        'ladder-reveal-earned': HelpRung.FULL_REVEAL,
+        'ladder-after-none-help': HelpRung.NUDGE,
+        'ladder-after-rejected-help': HelpRung.NUDGE,
+        'ladder-first-work-help': HelpRung.NUDGE,
+        'ladder-second-work': HelpRung.NUDGE,
+        'ladder-declines-question': HelpRung.NAME_METHOD,
+        'ladder-repeated-method': HelpRung.NAME_METHOD,
+        'ladder-corrected-draft': HelpRung.NAME_METHOD,
+    }
+    assert intended.keys() <= prepared.keys()
+    for name, rung in intended.items():
+        assert prepared[name].context is not None, name
+        assert prepared[name].context.permitted_rung is rung, name
+    # NONE is a delivered rung, never a PRACTICE opportunity ceiling.
+    none = prepared['ladder-none-delivery']
+    assert any(r.message and r.rung is HelpRung.NONE for r in none.context.history)
+    assert none.context.task_progress.independence_spent
+    assert none.context.task_progress.delivered_rungs == ()
+    repeated = prepared['ladder-repeated-method'].context
+    assert HelpRung.NAME_METHOD in repeated.task_progress.delivered_rungs
+    assert any(r.message and r.rung is HelpRung.NAME_METHOD for r in repeated.history)
+    assert len(prepared['ladder-long-conversation'].context.transcript) > 20
+    # Correct finals and the exhausted decline help request remain regressions,
+    # separate from the required model-facing moments.
+    silent = [p for p in prepared.values() if p.context is None]
+    assert {p.scenario.id for p in silent} == {
+        'ladder-corrected-final', 'ladder-declines-no-reveal',
+        'ladder-correct-expand.binomial', 'ladder-correct-factor.monic',
+        'ladder-correct-solve.factoring', 'ladder-correct-vertex',
+        'ladder-correct-discriminant', 'ladder-correct-word.area',
+    }
 
 
 def test_committed_corpus_passes_keyless_preflight(dependencies):
@@ -244,10 +306,14 @@ def test_incomplete_common_factor_is_form_failure_without_equivalence_break(depe
     for scenario in load_scenarios_dir(FIXTURES):
         if scenario.id.startswith('diagnosis-partial-'):
             result = prepare_scenario(scenario, **dependencies)
-            assert result.outcome.verdict is Verdict.WRONG
+            assert result.task.last_verification.verdict is Verdict.WRONG
             assert result.task.last_verification.failed_constraints == ('fully_factored',)
             assert result.task.last_step_diff is None
             assert result.task.last_diagnosis == 'mc.gcf.partial'
+            if result.context is not None:
+                assert result.context.diagnosis == 'mc.gcf.partial'
+                assert result.context.verification.failed_constraints == ('fully_factored',)
+                assert result.context.step_diff is None
 
 
 def test_per_scenario_preflight_does_not_require_all_family_floors(dependencies):

@@ -372,9 +372,22 @@ git commit -m "feat: teaching notes for the quadratics cluster, required by the 
 | Profile | Soft/hard seconds | Max model round trips | Max individual read calls | Total output tokens | Protected+selected input budget | Finalization token reserve |
 |---|---|---|---|---|---|---|
 | brief | 3 / 8 | 4 | 8 | 4096 | 16000 | 512 |
-| normal | 8 / 15 | 8 | 16 | 8192 | 16000 | 1024 |
-| substantial | 20 / 30 | 12 | 24 | 16384 | 24000 | 1024 |
-| complex | 30 / 60 | 20 | 40 | 32768 | 32000 | 2048 |
+| normal | 8 / 15 | 8 | 16 | 8192 | 40000 | 1024 |
+| substantial | 20 / 30 | 12 | 24 | 16384 | 48000 | 1024 |
+| complex | 30 / 60 | 20 | 40 | 32768 | 64000 | 2048 |
+
+The context admission allowances were revised during final integration on
+2026-10-26. The production counter charges UTF-8 bytes plus framing margin for
+the complete serialized provider request; admission also reserves the next
+call's output. These units are deliberately conservative, rather than provider
+token or billing measurements. The normal allowance admits the committed long
+active conversation (30,957 units including 2,048 output) with 9,043 units left
+for continuation. The substantial allowance admits its complete judge packet
+with a representative accepted candidate, retaining more than 8,192 units of
+headroom. Complex keeps a larger context allowance for explicitly enabled work.
+The output, call and time ceilings above are unchanged. The offline corpus gate
+checks all actual opportunities against both YAML and fallback profiles using
+the production counter; runtime overflow checks still apply to every call.
 
 These ceilings are emergency controls; soft deadlines should normally end exploration sooner.
 Select the job deterministically from the operation and explicit request metadata; use normal
