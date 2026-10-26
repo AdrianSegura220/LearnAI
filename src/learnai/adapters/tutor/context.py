@@ -14,6 +14,10 @@ from learnai.domain.turn import TranscriptEntry, TurnContext
 class ContextLimitError(ValueError):
     """The protected active exercise cannot fit without losing student work."""
 
+    def __init__(self, message: str, *, context_view=None) -> None:
+        super().__init__(message)
+        self.context_view = context_view
+
 
 @dataclass(frozen=True, slots=True)
 class ContextView:
@@ -132,7 +136,8 @@ def select_context(
     view = make_view((), ())
     if view.input_tokens > input_budget:
         raise ContextLimitError(
-            f"protected exercise requires {view.input_tokens} tokens; allowance is {input_budget}"
+            f"protected exercise requires {view.input_tokens} tokens; allowance is {input_budget}",
+            context_view=view
         )
     selected: set[TaskId] = set()
     summarized: tuple[HistoryRecord, ...] = ()

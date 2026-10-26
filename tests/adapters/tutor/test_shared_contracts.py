@@ -124,7 +124,8 @@ def test_anthropic_tutor_rejects_invalid_selection_before_provider_requests(chan
     {"provider_options": {"unknown": True}}, {"prompt": None},
 ])
 def test_anthropic_judge_rejects_invalid_selection_before_provider_requests(changes):
-    from learnai.adapters.tutor.anthropic.judge import request_judgment
+    from learnai.adapters.tutor.anthropic.judge import run_judge
+    from tests.eval.test_judge import packet
     from learnai.adapters.tutor.prompts import load_prompt
     from learnai.adapters.tutor.routing import Route
     from tests.support.scripted_client import ScriptedAnthropic
@@ -132,6 +133,5 @@ def test_anthropic_judge_rejects_invalid_selection_before_provider_requests(chan
     sdk = ScriptedAnthropic([])
     route = Route("rubric_judge", "anthropic", "scripted", prompt="rubric_judge@1")
     with pytest.raises(ValueError):
-        request_judgment(sdk.client, replace(route, **changes), prompt=load_prompt("rubric_judge@1"),
-                         messages=(), schema={}, parse=lambda text: text)
+        run_judge(sdk.client, {route.name: replace(route, **changes)}, packet=packet())
     assert sdk.requests == []

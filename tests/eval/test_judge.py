@@ -17,8 +17,9 @@ from learnai.domain.items import Submission
 from learnai.domain.turn import TutorTurn
 from learnai.eval.judge import (
     JudgeError, JudgePacket, JudgeReference, JudgeScores, build_judge_messages,
-    parse_scores, run_judge,
+    parse_scores,
 )
+from learnai.adapters.tutor.anthropic.judge import run_judge
 from tests.adapters.tutor.test_rendering import make_context, record
 from tests.support.scripted_client import FakeMonotonic, Reply, ScriptedAnthropic
 

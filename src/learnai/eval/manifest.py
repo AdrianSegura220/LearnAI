@@ -109,11 +109,12 @@ def build_manifest(*, root: Path, selected_ids: Iterable[str], seeds: Iterable[i
         inputs.append({'path': name, 'sha256': sha256(content.encode('utf-8')).hexdigest(),
                        'content': content, 'artifact_path': f'inputs/{name}'})
     dependencies = {}
-    for name in ('learnai', 'anthropic', 'httpx2', 'sympy', 'PyYAML'):
+    for name in ('learnai', 'sympy', 'PyYAML'):
         try:
             dependencies[name] = version(name)
         except PackageNotFoundError:
             dependencies[name] = None
+    dependencies.update(resolved_dependencies)
     revision = _git(root, 'rev-parse', 'HEAD')
     deleted_raw = _git(root, 'ls-files', '--deleted', '--', *_INPUT_ROOTS, *_INPUT_FILES)
     deleted = sorted(name for name in (deleted_raw or '').splitlines() if _allowed(Path(name)))

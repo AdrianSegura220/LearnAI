@@ -15,10 +15,14 @@ from uuid import uuid4
 import anthropic
 import httpx2
 
-from learnai.adapters.tutor.anthropic.config import request_settings, validate_route
+from learnai.adapters.tutor.anthropic.config import resolve_config
 from learnai.adapters.tutor.anthropic.usage import normalize_anthropic_usage
 from learnai.adapters.tutor.observations import JudgeTrace, TraceSink
-from learnai.adapters.tutor.prompts import TutorPrompt
+from learnai.adapters.tutor.prompts import PROMPTS_ROOT
+from learnai.adapters.tutor.configuration import ResolvedRoleConfig
+from learnai.adapters.tutor.anthropic.prompt import judge_payload, require_config
+from learnai.eval.judge import JudgeError, JudgePacket, JudgeScores, build_judge_messages, parse_scores
+from pathlib import Path
 from learnai.adapters.tutor.routing import BudgetProfile, Route
 from learnai.adapters.tutor.runtime import (
     DEFAULT_BUDGET_PROFILES, ProviderAttempt, ResponseBudget, TerminationReason,
@@ -38,28 +42,24 @@ class JudgeAttempt(ProviderAttempt):
     """Compatibility name for the shared attempt metadata."""
 
 
-def _settings(route: Route, schema: dict[str, Any]) -> dict[str, Any]:
-    result: dict[str, Any] = request_settings(route)
-    result.setdefault("output_config", {})["format"] = {
-        "type": "json_schema", "schema": deepcopy(schema)}
-    return result
 
 
 class _JudgeExchange:
     def __init__(
-        self, client: anthropic.Anthropic, route: Route, *, prompt: TutorPrompt,
-        messages: tuple[dict[str, Any], ...], schema: dict[str, Any],
-        profile: BudgetProfile, monotonic: Callable[[], float],
+        self, client: anthropic.Anthropic, config: ResolvedRoleConfig, *,
+        messages: tuple[dict[str, Any], ...], monotonic: Callable[[], float],
         count_tokens: Callable[[str], int], sleep: Callable[[float], None],
     ) -> None:
         self.client = client.with_options(max_retries=0)
+        self.config = config
+        route, prompt = config.route, config.prompt
         self.route = route
         self.policy = prompt.text
         self.messages = deepcopy(list(messages))
         self.count_tokens = count_tokens
         self.sleep = sleep
-        self.budget = ResponseBudget(profile, monotonic=monotonic)
-        self.settings = _settings(route, schema)
+        self.budget = ResponseBudget(config.profile, monotonic=monotonic)
+        self.settings = deepcopy(dict(config.effective_settings))
         self.trace = JudgeTrace(str(uuid4()), (prompt.id,), route.model, deepcopy(self.settings),
                                 provider="anthropic", api_family="messages", route_name=route.name)
 
@@ -131,9 +131,8 @@ class _JudgeExchange:
     def _model_call(self) -> anthropic.types.Message:
         for attempt in range(MAX_API_ATTEMPTS):
             self._available()
-            payload = {**self.settings,
-                "max_tokens": min(self.route.max_tokens, self.budget.remaining_output_tokens),
-                "system": self.policy, "messages": deepcopy(self.messages)}
+            payload = judge_payload(self.config, messages=self.messages,
+                                    remaining_output=self.budget.remaining_output_tokens)
             serialized = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
             if self.count_tokens(serialized) + payload["max_tokens"] > self.budget.profile.context_input_tokens:
                 self._fail(TerminationReason.CONTEXT_LIMIT)
@@ -219,26 +218,42 @@ class _JudgeExchange:
         self.trace.output_tokens = self.budget.output_tokens
 
 
-def request_judgment[T](
-    client: anthropic.Anthropic, route: Route, *, prompt: TutorPrompt,
-    messages: tuple[dict[str, Any], ...], schema: dict[str, Any], parse: Callable[[str], T],
-    budget_profiles: Mapping[str, BudgetProfile] | None = None,
-    monotonic: Callable[[], float] = time.monotonic,
-    count_tokens: Callable[[str], int] = conservative_token_count,
-    sleep: Callable[[float], None] = time.sleep,
-    trace_sink: TraceSink | None = None,
-) -> T:
-    """Retain every attempted provider call; deliver only completed parsed output."""
-    validate_route(route, role="judge")
-    profiles = DEFAULT_BUDGET_PROFILES if budget_profiles is None else budget_profiles
-    if route.budget_profile not in profiles:
-        raise JudgeTransportError(f"unknown budget profile: {route.budget_profile}")
-    exchange = _JudgeExchange(client, route, prompt=prompt, messages=messages,
-        schema=schema, profile=profiles[route.budget_profile], monotonic=monotonic,
-        count_tokens=count_tokens, sleep=sleep)
+class AnthropicJudge:
+    """A bound judge role, retaining loaded prompt and effective settings."""
+    def __init__(self, *, config: ResolvedRoleConfig, client: anthropic.Anthropic,
+                 trace_sink: TraceSink | None = None,
+                 monotonic: Callable[[], float] = time.monotonic,
+                 count_tokens: Callable[[str], int] = conservative_token_count,
+                 sleep: Callable[[float], None] = time.sleep) -> None:
+        require_config(config, role='judge')
+        self.config = deepcopy(config)
+        self.client, self.trace_sink = client, trace_sink
+        self.monotonic, self.count_tokens, self.sleep = monotonic, count_tokens, sleep
+
+    def evaluate(self, packet: JudgePacket) -> JudgeScores:
+        exchange = _JudgeExchange(self.client, self.config, messages=build_judge_messages(packet),
+            monotonic=self.monotonic, count_tokens=self.count_tokens, sleep=self.sleep)
+        try:
+            return exchange.run(parse_scores)
+        except JudgeTransportError as exc:
+            raise JudgeError(str(exc)) from exc
+        finally:
+            exchange.finish()
+            if self.trace_sink is not None:
+                self.trace_sink(exchange.trace)
+
+
+def run_judge(client: anthropic.Anthropic, routes: Mapping[str, Route], *, packet: JudgePacket,
+              route_name: str = 'rubric_judge', prompts_root: Path = PROMPTS_ROOT,
+              budget_profiles: Mapping[str, BudgetProfile] | None = None, **options) -> JudgeScores:
+    """Compatibility constructor for existing Anthropic integrations."""
+    from learnai.adapters.tutor.routing import resolve_route
     try:
-        return exchange.run(parse)
-    finally:
-        exchange.finish()
-        if trace_sink is not None:
-            trace_sink(exchange.trace)
+        config = resolve_config(resolve_route(routes, route_name), role='judge',
+            profiles=DEFAULT_BUDGET_PROFILES if budget_profiles is None else budget_profiles,
+            prompts_root=prompts_root)
+        return AnthropicJudge(config=config, client=client, **options).evaluate(packet)
+    except ValueError as exc:
+        if isinstance(exc, JudgeError):
+            raise
+        raise JudgeError(str(exc)) from exc
