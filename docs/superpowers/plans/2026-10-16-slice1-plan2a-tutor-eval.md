@@ -12,6 +12,11 @@
 
 **Revision 2026-10-25:** Records the agreed history, current-interaction, assistance, retrieval, response-budget, judge-packet, corpus-validity and run-provenance/accounting decisions. The five discussed review issues are recorded; implementation and live calibration remain unverified.
 
+**Current implementation status — 2026-10-26:** Tasks 1–14 are implemented and reviewed.
+Task 15's keyless implementation is pending independent review. See [eval/README.md](../../../eval/README.md)
+and the execution ledger for current behavior and verification limits. The dated review-only
+notes below describe the earlier planning scope; paid live acceptance and human calibration remain unverified.
+
 ## Global Constraints
 
 Project constraints from the parent spec, clarified for runtime versus study time; every task includes these.
@@ -1118,11 +1123,11 @@ test `tests/eval/{test_manifest,test_accounting,test_report_cli}.py`.
 - History retrieval crosses an exercise boundary: keep provenance, bound scope and corrected misconceptions intact (Tasks 4–5, 8, 10).
 - A slow reply exceeds a budget or active work cannot fit: report a typed outcome, preserve cold credit if no help arrived, and never deliver a truncated/unchecked guess (Tasks 4, 7–8, 13–15).
 
-## Execution notes and review status — 2026-10-24
+## Historical execution notes and review status — 2026-10-24
 
 This is a documentation revision of the existing plan, not an implementation. Affected inline
 implementations were replaced with explicit interfaces, behaviors and verification tasks so stale
-algorithms are not left as competing instructions. Start at Task 1; Task 13 can test the CLI with --no-smoke; Task 14 then adds full smoke integration, so task order stays sequential. Perform Task 15's small live compatibility checks after Task 8
+algorithms are not left as competing instructions. At that review, execution was to start at Task 1; Task 13 could test the CLI with --no-smoke; Task 14 would add full smoke integration, so task order stayed sequential. Perform Task 15's small live compatibility checks after Task 8
 when paid live execution is authorized; the larger eval remains an explicitly authorized implementation validation step.
 
 Engineering starting values (Task 3 profiles, context budgets and reserves) are provisional and
@@ -1136,4 +1141,5 @@ by this documentation-only task, and nothing is committed automatically.
 Final review refinements (2026-10-25) are recorded in Tasks 1, 3, 5–11: work-revision
 identity, richer scoped history metadata and per-exchange binding, live response-job routing,
 shared existing verification/form-diagnosis behavior, strict malformed-turn parsing and task-local
-verification commands. All remain planned work, not implemented features.
+verification commands. At that review these were planned work, not implemented features;
+the current implementation status and eval guide above supersede that historical status.

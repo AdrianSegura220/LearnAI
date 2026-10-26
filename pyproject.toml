@@ -19,4 +19,6 @@ packages = ["src/learnai"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+pythonpath = ["."]
+addopts = "-q -m 'not live'"
+markers = ["live: explicitly opted-in paid provider compatibility checks (requires ANTHROPIC_API_KEY)"]

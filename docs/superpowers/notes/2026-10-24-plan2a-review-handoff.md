@@ -1,8 +1,14 @@
+> **Implementation is now authorized and underway (current pointer updated 2026-10-26).** The earlier review-only
+> scope below is historical. Resume from
+> `.superpowers/sdd/2026-10-16-slice1-plan2a-tutor-eval/resume.md` and `progress.md`.
+> Tasks 1–14 are implemented/reviewed; Task 15's keyless implementation is pending review.
+> See [eval/README.md](../../../eval/README.md) for current scope and verification limits. Paid live execution and human calibration remain unverified. Trust the ledger and Git for latest state.
+
 # Plan 2A review handoff
 
 **Updated:** 2026-10-25
-**Resume at:** five original issues and final review refinements approved and recorded; await the user’s next instruction. No implementation authorized.
-**Mode:** Discuss review points individually with the user; do not implement the plan.
+**Historical resume state (2026-10-25):** five original issues and final review refinements approved and recorded; the review-only task awaited the user’s next instruction. This historical section did not authorize implementation; the current pointer above supersedes it.
+**Historical mode:** Discuss review points individually with the user; do not implement the plan within that earlier review-only task.
 
 ## Project and review objective
 

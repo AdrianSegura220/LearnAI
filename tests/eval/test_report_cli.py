@@ -187,7 +187,8 @@ def test_preflight_failures_never_construct_client(tmp_path, monkeypatch, bad):
     elif bad == 'invalid-fixture':
         args[2] = str(tmp_path / 'absent')
     else:
-        args = ['rejudge', str(tmp_path / 'absent'), '--routes', str(routes)]
+        args = ['rejudge', str(tmp_path / 'absent'), '--routes', str(routes),
+                '--out', str(tmp_path / 'rejudged')]
     def forbidden(**kwargs):
         pytest.fail('client created before local validation')
     assert main(args, client_factory=forbidden) == 2
@@ -295,7 +296,7 @@ def test_rejudge_multiple_runs_links_sources_and_rejects_missing_packet_before_c
     source = runs[0]
     report = json.loads((source / 'report.json').read_text())
     (source / next(iter(report['judge_packets'].values()))['path']).unlink()
-    assert main(['rejudge', str(source), '--routes', str(routes)],
+    assert main(['rejudge', str(source), '--routes', str(routes), '--out', str(tmp_path / 'rejudged')],
                 client_factory=lambda **kwargs: pytest.fail('incomplete artifact created client')) == 2
 
 
@@ -428,6 +429,29 @@ def saved_packet_run(tmp_path):
         judge_packets={'one': packet()}, ledger=RequestLedger(), prices=prices(), persona_smoke={})
 
 
+def test_default_output_writes_reports_under_project_root_without_touching_legacy_runs(tmp_path, monkeypatch):
+    from learnai.eval import __main__ as cli
+    project = tmp_path / 'project'
+    project.mkdir()
+    monkeypatch.setattr(cli, 'ROOT', project)
+    monkeypatch.setenv('ANTHROPIC_API_KEY', 'fake-key')
+    legacy = project / 'eval/runs'
+    legacy.mkdir(parents=True)
+    private = legacy / 'private-existing.json'
+    private.write_text('preserve existing artifact')
+    for operation in ('run', 'rejudge'):
+        args = [operation] if operation == 'run' else [operation, str(tmp_path / 'source')]
+        assert cli._parser().parse_args(args).out == project / 'eval/reports'
+    sdk = ScriptedJudge([reply()])
+    source = saved_packet_run(tmp_path)
+    assert main(['rejudge', str(source), '--routes', str(routes_file(tmp_path))],
+                client_factory=lambda **kwargs: sdk.client) == 0
+    run = next((project / 'eval/reports').iterdir())
+    assert (run / 'report.json').is_file()
+    assert list(legacy.iterdir()) == [private]
+    assert private.read_text() == 'preserve existing artifact'
+
+
 def replace_saved_packet(run, mutate):
     from hashlib import sha256
     from learnai.eval.manifest import canonical_json
@@ -474,7 +498,8 @@ def test_malformed_saved_turn_fields_fail_before_client_creation(tmp_path, monke
     replace_saved_packet(source, lambda raw: raw['fields']['turn']['fields'].__setitem__(field, value))
     with pytest.raises(ValueError):
         load_packets(source)
-    assert main(['rejudge', str(source), '--routes', str(routes_file(tmp_path))],
+    assert main(['rejudge', str(source), '--routes', str(routes_file(tmp_path)),
+                 '--out', str(tmp_path / 'rejudged')],
                 client_factory=lambda **kwargs: pytest.fail('invalid packet created client')) == 2
 
 
@@ -508,7 +533,8 @@ def test_malformed_nested_saved_packet_is_a_local_validation_failure(tmp_path, m
         else:
             context['interaction']['fields']['kind'] = 'TASK_QUESTION'
     replace_saved_packet(source, mutate)
-    assert main(['rejudge', str(source), '--routes', str(routes_file(tmp_path))],
+    assert main(['rejudge', str(source), '--routes', str(routes_file(tmp_path)),
+                 '--out', str(tmp_path / 'rejudged')],
                 client_factory=lambda **kwargs: pytest.fail('invalid nested packet created client')) == 2
 
 

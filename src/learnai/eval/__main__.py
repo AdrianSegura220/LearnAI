@@ -59,7 +59,7 @@ def _parser() -> argparse.ArgumentParser:
     rejudge.add_argument('sources', type=Path, nargs='+')
     for command in (run, rejudge):
         command.add_argument('--routes', type=Path, default=ROOT / 'config/llm_routes.yaml')
-        command.add_argument('--out', type=Path, default=ROOT / 'eval/runs')
+        command.add_argument('--out', type=Path, default=ROOT / 'eval/reports')
         command.add_argument('--judge-route', default='rubric_judge')
     compare = operations.add_parser('compare')
     compare.add_argument('left', type=Path)
