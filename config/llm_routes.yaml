@@ -34,6 +34,24 @@ budget_profiles:
     context_input_tokens: 64000
     finalization_reserve_tokens: 2048
 
+# Inactive OpenAI opt-in example, verified 2026-10-27. Install .[openai].
+# This profile supports the documented GPT-5.4 Responses settings below;
+# other model families require their own compatibility verification.
+# Defaults remain the Anthropic routes. Registration/judge follows separately.
+#   tutor_openai:
+#     adapter: openai
+#     model: gpt-5.4-2026-03-05
+#     effort: low
+#     max_tokens: 2048
+#     stream: false
+#     prompt: tutor_math@1
+#     budget_profile: normal
+#     provider_options:
+#       service_tier: default
+#       prompt_cache_retention: in_memory
+#       prompt_cache_key: learnai-tutor-policy-v1
+# Set effort: none before selecting temperature (range 0–2).
+# prompt_cache_retention also accepts 24h for this model.
 routes:
   tutor_dialogue:
     adapter: anthropic
