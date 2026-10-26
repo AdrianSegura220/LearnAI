@@ -157,12 +157,20 @@ The approved product targets are [parent design §10.3](../docs/superpowers/spec
 
 The current YAML profiles are provisional engineering choices:
 
-| Profile | Soft/hard seconds | Model rounds/tools | Total output/reserve tokens | Context input tokens |
+| Profile | Soft/hard seconds | Model rounds/tools | Total output/reserve tokens | Context admission allowance |
 | --- | --- | --- | --- | --- |
 | brief | 3 / 8 | 4 / 8 | 4096 / 512 | 16000 |
-| normal | 8 / 15 | 8 / 16 | 8192 / 1024 | 16000 |
-| substantial | 20 / 30 | 12 / 24 | 16384 / 1024 | 24000 |
-| complex (reserved) | 30 / 60 | 20 / 40 | 32768 / 2048 | 32000 |
+| normal | 8 / 15 | 8 / 16 | 8192 / 1024 | 40000 |
+| substantial | 20 / 30 | 12 / 24 | 16384 / 1024 | 48000 |
+| complex (reserved) | 30 / 60 | 20 / 40 | 32768 / 2048 | 64000 |
+
+Context admission counts the complete serialized request as UTF-8 bytes plus
+framing margin and reserves the next call's output. The revised allowances admit
+all 54 committed tutor opportunities and their judge packets without truncating
+active work or history. The largest initial requests leave 9,043 admission units
+for tutor continuation and 16,454 for the judge, beyond their output reservation.
+These engineering input allowances do not change the latency targets or output
+ceilings. The overflow guard still applies to every subsequent call.
 
 Live engine jobs currently route BRIEF, NORMAL and SUBSTANTIAL; COMPLEX remains
 disabled. All model/API/format/validation retries and tools share one exchange
