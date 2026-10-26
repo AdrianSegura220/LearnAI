@@ -1,6 +1,7 @@
 # AI Tutoring Platform — Design
 
 **Date:** 2026-09-14
+**Revision:** 2026-10-24 — agreed current-interaction, assistance, history/reconstruction and latency policies (§8.2, §9, §10.3, §11).
 **Status:** Approved design, pending implementation plan
 **Scope:** Full architecture, with Slice 1 scoped for implementation
 
@@ -712,9 +713,36 @@ that unlocks a reveal — otherwise the cheapest route to the answer would be tw
 walk up the hint ladder.
 
 `evidence_class ∈ {unassisted_cold, post_instruction, assisted, timed_exam}`.
-**Only `unassisted_cold` and `timed_exam` move mastery.** An attempt is `post_instruction` if the
+`unassisted_cold` and `timed_exam` have full weight, `post_instruction` has near-zero weight
+(initially 0.1), and `assisted` has exactly zero weight. An attempt is `post_instruction` if the
 same skill was taught in the current session; `assisted` from the moment any help event lands on
 the task.
+
+**Draft work, questions, and assistance (agreed 2026-10-24).** Learn and Practice may support
+discussion of unfinished work before an explicit submission. Editing a draft or asking a question
+records no assessment evidence and counts as neither a submission nor effort toward a reveal.
+The headless interaction contract lands in Plan 2A; its editing/chat interface lands in 2C.
+Learn mode itself remains Slice 3; mock exams offer no task-related tutoring.
+
+| Interaction | Effect on independence for the current item |
+|---|---|
+| Draft editing, asking a question, or an undelivered/rejected tutor response | Preserved |
+| Interface-only guidance that supplies no assessed knowledge | Preserved |
+| Explanation of assessed terminology/instructions, step confirmation, error localization delivered to the student, hint, method, or solution | Subsequent answers are assisted, weight 0 |
+| First explicit readable submission before assistance | Cold evidence recorded, correct or incorrect |
+| Retry after a recorded verdict | Assisted, weight 0 |
+
+The engine owns assistance classification. In 2A, free-form task questions are conservatively
+task-related; a model saying it used rung NONE cannot exempt them. Only engine-owned,
+predefined interface guidance is exempt. Ambiguous content clarification is task-related until
+there is a tested policy proving it supplies no assessed knowledge. Mark assistance only when
+a substantive response is actually delivered, including unsolicited feedback; a question,
+timeout, or silence alone cannot consume independence. Keep contamination distinct from ladder
+progress: orientation may count as task assistance without advancing the hint rung.
+
+Assistance never retroactively changes a recorded cold attempt. Fractional credit by hint rung is
+not introduced: a short hint can supply the entire missing insight. Later independent work on a
+fresh item supplies stronger evidence; a same-session taught skill remains post-instruction.
 
 Mastery evidence is therefore collected **continuously** — every first attempt before any hint —
 rather than in a separate examination ceremony. The student simply practises, and the honest
@@ -771,7 +799,9 @@ Deterministic and inspectable: given a student state and a mode, assert the queu
 
 ```python
 class Tutor(Protocol):
-    def respond(self, ctx: TurnContext) -> TutorTurn: ...
+    def begin_turn(self, ctx: TurnContext) -> TutorExchange: ...
+    # One request-scoped exchange survives tools and corrective retries.
+    # A one-shot respond wrapper remains for direct callers (Plan 2A §4).
 
 TurnContext(
   skill_pack,        # can-do statement, teaching notes, misconception catalogue
@@ -779,7 +809,10 @@ TurnContext(
   student_summary,   # strength/freshness here and nearby, calibration gap, prior misconceptions
   step_diff,         # from the Verifier: which step broke equivalence, and how
   permitted_rung,    # what the contract allows right now
-  transcript,
+  interaction,       # exact current working, answer fields, question, status and revision
+  verification,      # what was checked, against which revision; unchecked is not wrong
+  task_progress,     # engine-computed submissions, effort, declines and delivered assistance
+  transcript,        # relevant delivered exchanges, with item/revision references
 )
 
 TutorTurn(
@@ -805,6 +838,26 @@ gains a sibling field carrying that verifier's defect shape — `UnjustifiedStep
 for a proof, a rubric finding for an essay — rather than `StepDiff` being generalised. One
 example is too few to design an abstraction from; the second will say what it should be. See §14
 D10.
+
+**Current interaction and history (agreed 2026-10-24).** Supply the exact exercise instructions
+and answer constraints, the student's ordered working and answer fields, whether that work is a
+draft/submission/revision, their exact question, and any referenced step. A question is not an
+implicit final submission. Verifier findings identify their scope and revision; a verdict on an
+older submission must not be presented as a verdict on edited work. Same work revision means
+identical steps and answer fields; edited work gets a newer work revision, while a new question
+about unchanged work may keep it. The engine's current snapshot
+and permissions take precedence over historical observations and summaries.
+
+Keep three records distinct: assessment evidence (§11), student interactions/delivered messages,
+and the provider-private exchange used to prepare one response. Preserve the complete active
+exchange across tools and corrective retries, including required provider content blocks and
+paired tool calls/results. Rejected drafts never enter delivered history. Select older history
+by a configurable token budget and exercise boundaries, rather than a fixed number of messages;
+protect the current exercise and working. Summaries carry source references, preserve corrections
+and unresolved questions, and never replace original records or decide mastery. Retrieve original
+records when details are missing; if protected context cannot fit, report a context-limit outcome
+rather than silently dropping it. Plan 2A starts with deterministic summaries of earlier exercise
+outcomes and bounded current-session retrieval. Durable cross-session retrieval belongs to 2B.
 
 **What "equivalent" means to the CAS verifier.** Two expressions are equivalent when they agree
 wherever both are defined. An isolated hole is ignored — simplifying `(x²−1)/(x−1)` to `x+1` is
@@ -832,8 +885,15 @@ sense that matters — it observes and initiates — while every state change re
 | `get_worked_example` | Fetch a vetted analogous example instead of inventing one |
 | `lookup_misconception` | Retrieve the catalogue entry matching a signature |
 | `get_student_summary` | Read-only student state |
+| `get_session_history` | Bounded current-session evidence and interaction records, filtered by task/skill with pagination and provenance |
 
 Nothing in that surface touches mastery. P2 is enforced by absence, not by instruction.
+History access is bound by application code to the current student and permitted session scope;
+the model does not choose a student identity. Skill is an optional filter, not the access boundary:
+retain item/skill/task/time/kind/revision metadata and related-record links; bounded session-wide
+browsing can retrieve a question about another skill. Bind each exchange to an immutable reader. Current task counts and help permissions are supplied
+automatically, not reconstructed by the model counting retrieved events. Cross-session history
+uses the same read boundary once durable storage is built in 2B; it is not advertised before then.
 `check_expression` is also the single largest reliability win available: arithmetic is where
 models embarrass themselves in front of students, and it is exactly what a CAS never gets wrong.
 
@@ -850,8 +910,9 @@ Every turn, before a character reaches the student:
 3. **Proposal validation** — is the proposed prerequisite actually a prerequisite, and is the
    student permitted there?
 
-On failure the turn is regenerated with a corrective instruction appended as a **mid-conversation
-system message**, which preserves the cached prefix and is the injection-safe operator channel.
+On failure the turn is regenerated inside the same private exchange with a paired tool result
+and an engine-authored corrective instruction using the provider's supported operator channel.
+Retain preceding tool results and provider-required blocks; preserve the stable cached prefix.
 Student-authored text is untrusted input throughout.
 
 A system prompt saying "never reveal the answer" is a hope; models under pressure from a
@@ -885,15 +946,16 @@ routes:
 
 ### 10.1 Caching layout
 
-Stable content first, volatile last, four breakpoints:
+Stable content first, volatile last, four logical layers:
 
 1. **Global tutor policy** — identical for every student; warm essentially always.
 2. **Skill pack** — teaching notes and misconception catalogue; shared by everyone working that skill.
-3. **Session preamble** — student profile; stable for the whole session.
+3. **Session preamble** — stable identity/profile metadata only; omit if none exists. Strength,
+   freshness, calibration and active misconceptions evolve and belong in layer 4.
 4. Item and turn data — uncached.
 
-Verified by asserting `cache_read_input_tokens > 0` in adapter integration tests. A zero means
-something volatile entered the prefix.
+Verified by asserting `cache_read_input_tokens > 0` in adapter integration tests. Check model support, minimum cacheable length and TTL before attributing a zero to a volatile
+prefix. Cache hits are a performance check, not a memory or correctness guarantee.
 
 ### 10.2 Cost
 
@@ -905,6 +967,36 @@ is involved. Model turns occur on errors, hints, and Learn mode.
 Expected **$4–10 per active student per month with Opus 5 throughout**, which fits the quality-first
 budget without routing pedagogy down to cheaper models. Offline content generation runs through the
 Batch API at 50% off, as none of it is latency-sensitive.
+
+### 10.3 Interactive latency and execution budgets
+
+**Initial product targets, agreed 2026-10-24; tune from measured quality and latency.** These are
+LearnAI targets, not vendor service guarantees. Classify the response being prepared: a brief
+clarification within a hard exercise need not be a complex response. Engine-owned interface
+guidance and deterministic grading need not wait for LLM wording.
+
+| Interaction | Desired time to useful validated feedback | Investigate when |
+|---|---|---|
+| Interface action or deterministic result | Under 1 s where feasible | Repeated multi-second delays |
+| Brief conversational clarification | 1–3 s | Regularly above 5 s |
+| Normal hint or diagnosed-error explanation | 3–8 s | Regularly above 10–15 s |
+| Substantial checked explanation | 8–20 s | Above 30 s |
+| Exceptional complex analysis | 20–30 s | May extend to 60 s with honest progress |
+
+Use job-configurable soft and hard budgets for elapsed time, sequential model/tool round trips,
+individual tool calls and tokens. A small universal six-call cap is not the policy. All retries,
+tools and validation for one response share one budget; corrective retries never reset it. At a
+soft threshold, stop exploratory work and reserve a final opportunity to emit a validated turn.
+Answer outstanding tool calls with results or typed errors before continuing. At a hard ceiling,
+stop and record the outcome; never deliver an unchecked guess. Thirty seconds is a review point
+for substantial work, with sixty seconds reserved for exceptional work, not routine clarification.
+
+2A measures time to the accepted buffered turn with an injected monotonic runtime clock, separate
+from the domain's UTC Clock. It enforces request timeouts and loop budgets; enforceable isolation
+of synchronous CAS work is D17 in 2B, so 2A cannot claim a strict end-to-end wall-clock guarantee.
+2B/2C adds progress/cancellation and time to first validated chunk. A spinner is not useful
+feedback and raw streamed text is not validated feedback. Track distributions by job, including
+median, p95, silence, exhaustion, retries and quality; tune budgets from these observations.
 
 ---
 
@@ -919,6 +1011,18 @@ algorithm or silently corrupts their history.
 
 The projection lives in ordinary tables and is rebuilt from the log on demand. Rebuild-from-log is
 itself a tested operation, not an emergency script.
+
+**Interaction reconstruction is a separate replay capability.** Preserve relevant question/work
+snapshots and revisions, delivered replies, and private per-response traces: context and history
+selection, prompt versions, actual request settings, tool calls/results, validation outcomes,
+budget use and termination reason. In 2A these are in-memory records and on-demand eval artifacts;
+2B makes them durable. Link records by student/session/task/item, interaction and response ids and
+UTC timestamps. Do not record every keystroke or treat reading/chatting as mastery evidence.
+Private traces stay separate from the student-visible transcript and are not returned by the
+tutor's history tool. Rebuilding state with the same evidence and rule/parameter version should
+reproduce that state; reconstructing a tutoring response uses its recorded output. Rerunning an
+LLM is a new generation, not a guarantee of identical wording. Summaries are derived views with
+source references, not replacements for either original history or engine state.
 
 Personal data is minimised: the log records attempts, timings, verdicts, and confidence — not free
 text beyond what tutoring requires. Minors' data handling is a launch requirement (see §14).
@@ -952,6 +1056,19 @@ new template version. This is what keeps a wrong answer key from ever reaching a
 The first is unit tests over messages that leak the answer in non-obvious ways. The second is a
 graded rubric over real tutoring turns — the instrument that makes model routing a measurement
 rather than a preference. The eval set is a first-class deliverable, not a nice-to-have.
+The offline evaluator sees the actual student question, working/revision and relevant delivered
+history, alongside separate evaluator-only answers/reference reasoning and teaching guidance.
+It assesses help against the permitted ceiling, accepts alternative valid methods and appropriate
+absence of diagnosis, and flags insufficient evidence instead of guessing scores. Reports show
+abstention/error coverage separately from quality averages; the judge is outside the delivery path.
+Eval fixtures pin generated exercises, use actual answer shapes and declare exact expected
+verdicts/diagnoses. Include correct work and alternative methods; label copying errors explicitly.
+History and progress derive from the same events. Keyless fixture validation precedes paid calls.
+Each eval has a unique execution id and a captured-input/configuration fingerprint. Record code,
+models/settings, selected response job/budget, prompts, fixtures, dependencies and evaluator provenance; compare tutors under
+a fixed evaluator or rejudge saved outputs together. Account for all tutor/judge/smoke requests,
+including retries and cache usage, with dated prices and explicitly incomplete estimates when
+usage is missing. Recorded artifact review differs from a new model execution.
 
 `FakeTutor` — scripted, deterministic — lets the entire engine, every mode contract, and the full
 session flow be tested without an API key, without cost, and without flakiness. Only the real

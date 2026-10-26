@@ -1,0 +1,1057 @@
+- id: ladder-help-first
+  family: ladder
+  skill_id: quad.expand.binomial
+  template_id: quad.expand.binomial.v1
+  seed: 2
+  permitted_rung: NUDGE
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps: []
+  answer: ''
+  interaction_kind: HELP_REQUEST
+  work_status: DRAFT
+  question: null
+  expected_statement: "Expand and simplify: \n(x + 2)(x + 5)"
+  work_origin: none
+  exercise_anchor: null
+  copy_error_description: null
+  expected_verdict: UNCHECKED
+  expected_diagnosis: null
+  expected_broken_transition: null
+  expected_step_check: false
+  expected_error_kinds: []
+  expected_failed_constraints: []
+  coverage_tags:
+  - help before first submission
+  expected_progress:
+    submissions: 0
+    genuine_attempts: 0
+    declines: 0
+    delivered_rungs: []
+    independence_spent: false
+    last_checked_revision: null
+  reference_reasoning:
+  - This is a draft question; no final answer is submitted or graded.
+  evaluation_criteria:
+  - Respect the permitted ceiling and address the actual current question.
+  now: '2026-01-01T00:00:00Z'
+- id: ladder-none-delivery
+  family: ladder
+  skill_id: quad.expand.binomial
+  template_id: quad.expand.binomial.v1
+  seed: 2
+  permitted_rung: NAME_METHOD
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps: []
+  answer: ''
+  interaction_kind: TASK_QUESTION
+  work_status: DRAFT
+  question: What should I check first?
+  expected_statement: "Expand and simplify: \n(x + 2)(x + 5)"
+  work_origin: none
+  exercise_anchor: null
+  copy_error_description: null
+  expected_verdict: UNCHECKED
+  expected_diagnosis: null
+  expected_broken_transition: null
+  expected_step_check: false
+  expected_error_kinds: []
+  expected_failed_constraints: []
+  coverage_tags:
+  - conceptual question
+  expected_progress:
+    submissions: 0
+    genuine_attempts: 0
+    declines: 0
+    delivered_rungs: []
+    independence_spent: true
+    last_checked_revision: null
+  reference_reasoning:
+  - This is a draft question; no final answer is submitted or graded.
+  evaluation_criteria:
+  - Respect the permitted ceiling and address the actual current question.
+  history_actions:
+  - operation: ask_question
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-none-delivery
+    template_id: quad.expand.binomial.v1
+    seed: 2
+    tutor_script:
+    - message: Describe your plan.
+      rung_used: NONE
+    interaction:
+      task_id: eval-task:ladder-none-delivery
+      revision: 0
+      kind: TASK_QUESTION
+      status: DRAFT
+      steps: []
+      answer: ''
+      question: Can you guide my next step?
+  notes: Accepted rung NONE spends independence without moving the ladder.
+  now: '2026-01-01T00:00:00Z'
+  history:
+  - id: eval-session:ladder-none-delivery:1
+    at: '2025-12-31T00:00:00Z'
+    student_id: eval-student
+    session_id: eval-session:ladder-none-delivery
+    task_id: eval-task:ladder-none-delivery
+    item_id: quad.expand.binomial.v1#2
+    skill_id: quad.expand.binomial
+    revision: 0
+    kind: STUDENT_QUESTION
+    interaction:
+      task_id: eval-task:ladder-none-delivery
+      revision: 0
+      kind: TASK_QUESTION
+      status: DRAFT
+      steps: []
+      answer: ''
+      question: Can you guide my next step?
+  - id: eval-session:ladder-none-delivery:2
+    at: '2025-12-31T00:00:00Z'
+    student_id: eval-student
+    session_id: eval-session:ladder-none-delivery
+    task_id: eval-task:ladder-none-delivery
+    item_id: quad.expand.binomial.v1#2
+    skill_id: quad.expand.binomial
+    revision: 0
+    kind: TUTOR_DELIVERED
+    message: Describe your plan.
+    rung: NONE
+    related_record_ids:
+    - eval-session:ladder-none-delivery:1
+  - id: eval-session:ladder-none-delivery:3
+    at: '2026-01-01T00:00:00Z'
+    student_id: eval-student
+    session_id: eval-session:ladder-none-delivery
+    task_id: eval-task:ladder-none-delivery
+    item_id: quad.expand.binomial.v1#2
+    skill_id: quad.expand.binomial
+    revision: 0
+    kind: STUDENT_QUESTION
+    interaction:
+      task_id: eval-task:ladder-none-delivery
+      revision: 0
+      kind: TASK_QUESTION
+      status: DRAFT
+      steps: []
+      answer: ''
+      question: What should I check first?
+  transcript:
+  - speaker: student
+    text: '
+
+      Can you guide my next step?'
+  - speaker: tutor
+    text: Describe your plan.
+  - speaker: student
+    text: '
+
+      What should I check first?'
+  current_interaction_id: eval-session:ladder-none-delivery:3
+- id: ladder-rejected-silent
+  family: ladder
+  skill_id: quad.expand.binomial
+  template_id: quad.expand.binomial.v1
+  seed: 2
+  permitted_rung: NAME_METHOD
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps: []
+  answer: ''
+  interaction_kind: TASK_QUESTION
+  work_status: DRAFT
+  question: What should I check first?
+  expected_statement: "Expand and simplify: \n(x + 2)(x + 5)"
+  work_origin: none
+  exercise_anchor: null
+  copy_error_description: null
+  expected_verdict: UNCHECKED
+  expected_diagnosis: null
+  expected_broken_transition: null
+  expected_step_check: false
+  expected_error_kinds: []
+  expected_failed_constraints: []
+  coverage_tags:
+  - conceptual question
+  expected_progress:
+    submissions: 0
+    genuine_attempts: 0
+    declines: 0
+    delivered_rungs: []
+    independence_spent: false
+    last_checked_revision: null
+  reference_reasoning:
+  - This is a draft question; no final answer is submitted or graded.
+  evaluation_criteria:
+  - Respect the permitted ceiling and address the actual current question.
+  history_actions:
+  - operation: ask_question
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-rejected-silent
+    template_id: quad.expand.binomial.v1
+    seed: 2
+    tutor_script:
+    - message: Too much help.
+      rung_used: FULL_REVEAL
+    - null
+    interaction:
+      task_id: eval-task:ladder-rejected-silent
+      revision: 0
+      kind: TASK_QUESTION
+      status: DRAFT
+      steps: []
+      answer: ''
+      question: Can you guide my next step?
+  notes: Rejected draft and subsequent silence are private and consume no assistance.
+  now: '2026-01-01T00:00:00Z'
+- id: ladder-edited-draft
+  family: ladder
+  skill_id: quad.expand.binomial
+  template_id: quad.expand.binomial.v1
+  seed: 2
+  permitted_rung: NAME_METHOD
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps:
+  - (x + 2)(x + 5)
+  - x^2+2x+5x+10
+  answer: ''
+  interaction_kind: TASK_QUESTION
+  work_status: DRAFT
+  question: What should I check first?
+  expected_statement: "Expand and simplify: \n(x + 2)(x + 5)"
+  work_origin: exercise
+  exercise_anchor: (x + 2)(x + 5)
+  copy_error_description: null
+  expected_verdict: UNCHECKED
+  expected_diagnosis: null
+  expected_broken_transition: null
+  expected_step_check: true
+  expected_error_kinds: []
+  expected_failed_constraints: []
+  coverage_tags:
+  - edited draft after an earlier wrong answer
+  - unfinished draft
+  - valid-work no-diagnosis
+  expected_progress:
+    submissions: 1
+    genuine_attempts: 1
+    declines: 0
+    delivered_rungs: []
+    independence_spent: true
+    last_checked_revision: 1
+  reference_reasoning:
+  - The initial answer omitted 7x. The revised draft restores both cross products without submitting a
+    final answer.
+  evaluation_criteria:
+  - Respect the permitted ceiling and address the actual current question.
+  history_actions:
+  - operation: submit
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-edited-draft
+    template_id: quad.expand.binomial.v1
+    seed: 2
+    tutor_script: []
+    interaction:
+      task_id: eval-task:ladder-edited-draft
+      revision: 0
+      kind: SUBMISSION
+      status: SUBMITTED
+      steps:
+      - (x + 2)(x + 5)
+      - x^2+10
+      answer: x^2+10
+    confidence: UNSURE
+  work_revision: 1
+  now: '2026-01-01T00:00:00Z'
+- id: ladder-corrected-final
+  family: ladder
+  skill_id: quad.expand.binomial
+  template_id: quad.expand.binomial.v1
+  seed: 2
+  permitted_rung: NONE
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps:
+  - (x + 2)(x + 5)
+  - x^2+7x+10
+  answer: x^2+7x+10
+  interaction_kind: SUBMISSION
+  work_status: SUBMITTED
+  question: null
+  expected_statement: "Expand and simplify: \n(x + 2)(x + 5)"
+  work_origin: exercise
+  exercise_anchor: (x + 2)(x + 5)
+  copy_error_description: null
+  expected_verdict: CORRECT
+  expected_diagnosis: null
+  expected_broken_transition: null
+  expected_step_check: false
+  expected_error_kinds: []
+  expected_failed_constraints: []
+  coverage_tags:
+  - mistake followed by correction
+  - correct submission
+  - valid-work no-diagnosis
+  expected_progress:
+    submissions: 2
+    genuine_attempts: 2
+    declines: 0
+    delivered_rungs: []
+    independence_spent: true
+    last_checked_revision: 1
+  reference_reasoning:
+  - Distribution gives x²+7x+10; the corrected submission completes the task without unsolicited feedback.
+  evaluation_criteria:
+  - Respect the permitted ceiling and address the actual current question.
+  history_actions:
+  - operation: submit
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-corrected-final
+    template_id: quad.expand.binomial.v1
+    seed: 2
+    tutor_script: []
+    interaction:
+      task_id: eval-task:ladder-corrected-final
+      revision: 0
+      kind: SUBMISSION
+      status: SUBMITTED
+      steps:
+      - (x + 2)(x + 5)
+      - x^2+10
+      answer: x^2+10
+    confidence: UNSURE
+  declined: false
+  work_revision: 1
+  now: '2026-01-01T00:00:00Z'
+- id: ladder-previous-exercise
+  family: ladder
+  skill_id: quad.expand.binomial
+  template_id: quad.expand.binomial.v1
+  seed: 2
+  permitted_rung: NAME_METHOD
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps: []
+  answer: ''
+  interaction_kind: TASK_QUESTION
+  work_status: DRAFT
+  question: How is this different from the previous exercise?
+  expected_statement: "Expand and simplify: \n(x + 2)(x + 5)"
+  work_origin: none
+  exercise_anchor: null
+  copy_error_description: null
+  expected_verdict: UNCHECKED
+  expected_diagnosis: null
+  expected_broken_transition: null
+  expected_step_check: false
+  expected_error_kinds: []
+  expected_failed_constraints: []
+  coverage_tags:
+  - previous-exercise retrieval
+  - conceptual question
+  expected_progress:
+    submissions: 0
+    genuine_attempts: 0
+    declines: 0
+    delivered_rungs: []
+    independence_spent: false
+    last_checked_revision: null
+  reference_reasoning:
+  - The previous product has two negative constants. Its completed task remains in the same session history;
+    the current product has two positive constants.
+  evaluation_criteria:
+  - Respect the permitted ceiling and address the actual current question.
+  history_actions:
+  - operation: submit
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:previous
+    template_id: quad.expand.binomial.v1
+    seed: 1
+    tutor_script: []
+    interaction:
+      task_id: eval-task:previous
+      revision: 0
+      kind: SUBMISSION
+      status: SUBMITTED
+      steps:
+      - (x - 8)(x - 6)
+      - x^2-14x+48
+      answer: x^2-14x+48
+    confidence: UNSURE
+  now: '2026-01-01T00:00:00Z'
+- id: ladder-long-conversation
+  family: ladder
+  skill_id: quad.expand.binomial
+  template_id: quad.expand.binomial.v1
+  seed: 2
+  permitted_rung: NAME_METHOD
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps: []
+  answer: ''
+  interaction_kind: TASK_QUESTION
+  work_status: DRAFT
+  question: Please connect our earlier discussion to the next multiplication.
+  expected_statement: "Expand and simplify: \n(x + 2)(x + 5)"
+  work_origin: none
+  exercise_anchor: null
+  copy_error_description: null
+  expected_verdict: UNCHECKED
+  expected_diagnosis: null
+  expected_broken_transition: null
+  expected_step_check: false
+  expected_error_kinds: []
+  expected_failed_constraints: []
+  coverage_tags:
+  - active conversation beyond twenty entries
+  - conceptual question
+  expected_progress:
+    submissions: 0
+    genuine_attempts: 0
+    declines: 0
+    delivered_rungs: []
+    independence_spent: true
+    last_checked_revision: null
+  reference_reasoning:
+  - This is a draft question; no final answer is submitted or graded.
+  evaluation_criteria:
+  - Respect the permitted ceiling and address the actual current question.
+  history_actions:
+  - operation: ask_question
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-long-conversation
+    template_id: quad.expand.binomial.v1
+    seed: 2
+    tutor_script:
+    - message: Consider one product at a time.
+      rung_used: NONE
+    interaction:
+      task_id: eval-task:ladder-long-conversation
+      revision: 0
+      kind: TASK_QUESTION
+      status: DRAFT
+      steps: []
+      answer: ''
+      question: Can we revisit part 1?
+  - operation: ask_question
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-long-conversation
+    template_id: quad.expand.binomial.v1
+    seed: 2
+    tutor_script:
+    - message: Consider one product at a time.
+      rung_used: NONE
+    interaction:
+      task_id: eval-task:ladder-long-conversation
+      revision: 0
+      kind: TASK_QUESTION
+      status: DRAFT
+      steps: []
+      answer: ''
+      question: Can we revisit part 2?
+  - operation: ask_question
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-long-conversation
+    template_id: quad.expand.binomial.v1
+    seed: 2
+    tutor_script:
+    - message: Consider one product at a time.
+      rung_used: NONE
+    interaction:
+      task_id: eval-task:ladder-long-conversation
+      revision: 0
+      kind: TASK_QUESTION
+      status: DRAFT
+      steps: []
+      answer: ''
+      question: Can we revisit part 3?
+  - operation: ask_question
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-long-conversation
+    template_id: quad.expand.binomial.v1
+    seed: 2
+    tutor_script:
+    - message: Consider one product at a time.
+      rung_used: NONE
+    interaction:
+      task_id: eval-task:ladder-long-conversation
+      revision: 0
+      kind: TASK_QUESTION
+      status: DRAFT
+      steps: []
+      answer: ''
+      question: Can we revisit part 4?
+  - operation: ask_question
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-long-conversation
+    template_id: quad.expand.binomial.v1
+    seed: 2
+    tutor_script:
+    - message: Consider one product at a time.
+      rung_used: NONE
+    interaction:
+      task_id: eval-task:ladder-long-conversation
+      revision: 0
+      kind: TASK_QUESTION
+      status: DRAFT
+      steps: []
+      answer: ''
+      question: Can we revisit part 5?
+  - operation: ask_question
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-long-conversation
+    template_id: quad.expand.binomial.v1
+    seed: 2
+    tutor_script:
+    - message: Consider one product at a time.
+      rung_used: NONE
+    interaction:
+      task_id: eval-task:ladder-long-conversation
+      revision: 0
+      kind: TASK_QUESTION
+      status: DRAFT
+      steps: []
+      answer: ''
+      question: Can we revisit part 6?
+  - operation: ask_question
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-long-conversation
+    template_id: quad.expand.binomial.v1
+    seed: 2
+    tutor_script:
+    - message: Consider one product at a time.
+      rung_used: NONE
+    interaction:
+      task_id: eval-task:ladder-long-conversation
+      revision: 0
+      kind: TASK_QUESTION
+      status: DRAFT
+      steps: []
+      answer: ''
+      question: Can we revisit part 7?
+  - operation: ask_question
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-long-conversation
+    template_id: quad.expand.binomial.v1
+    seed: 2
+    tutor_script:
+    - message: Consider one product at a time.
+      rung_used: NONE
+    interaction:
+      task_id: eval-task:ladder-long-conversation
+      revision: 0
+      kind: TASK_QUESTION
+      status: DRAFT
+      steps: []
+      answer: ''
+      question: Can we revisit part 8?
+  - operation: ask_question
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-long-conversation
+    template_id: quad.expand.binomial.v1
+    seed: 2
+    tutor_script:
+    - message: Consider one product at a time.
+      rung_used: NONE
+    interaction:
+      task_id: eval-task:ladder-long-conversation
+      revision: 0
+      kind: TASK_QUESTION
+      status: DRAFT
+      steps: []
+      answer: ''
+      question: Can we revisit part 9?
+  - operation: ask_question
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-long-conversation
+    template_id: quad.expand.binomial.v1
+    seed: 2
+    tutor_script:
+    - message: Consider one product at a time.
+      rung_used: NONE
+    interaction:
+      task_id: eval-task:ladder-long-conversation
+      revision: 0
+      kind: TASK_QUESTION
+      status: DRAFT
+      steps: []
+      answer: ''
+      question: Can we revisit part 10?
+  - operation: ask_question
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-long-conversation
+    template_id: quad.expand.binomial.v1
+    seed: 2
+    tutor_script:
+    - message: Consider one product at a time.
+      rung_used: NONE
+    interaction:
+      task_id: eval-task:ladder-long-conversation
+      revision: 0
+      kind: TASK_QUESTION
+      status: DRAFT
+      steps: []
+      answer: ''
+      question: Can we revisit part 11?
+  now: '2026-01-01T00:00:00Z'
+- id: ladder-reveal-earned
+  family: ladder
+  skill_id: quad.expand.binomial
+  template_id: quad.expand.binomial.v1
+  seed: 2
+  permitted_rung: FULL_REVEAL
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps: []
+  answer: '0'
+  interaction_kind: HELP_REQUEST
+  work_status: SUBMITTED
+  question: null
+  expected_statement: "Expand and simplify: \n(x + 2)(x + 5)"
+  work_origin: none
+  exercise_anchor: null
+  copy_error_description: null
+  expected_verdict: WRONG
+  expected_diagnosis: null
+  expected_broken_transition: null
+  expected_step_check: false
+  expected_error_kinds: []
+  expected_failed_constraints: []
+  coverage_tags:
+  - wrong submission
+  expected_progress:
+    submissions: 2
+    genuine_attempts: 2
+    declines: 0
+    delivered_rungs:
+    - NUDGE
+    - NUDGE
+    - NEXT_STEP
+    - NAME_METHOD
+    independence_spent: true
+    last_checked_revision: 0
+  reference_reasoning:
+  - Two genuine wrong answers and delivery through NAME_METHOD unlock the next requested FULL_REVEAL.
+  evaluation_criteria:
+  - Respect the permitted ceiling and address the actual current question.
+  history_actions:
+  - operation: submit
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-reveal-earned
+    template_id: quad.expand.binomial.v1
+    seed: 2
+    tutor_script:
+    - &id001
+      message: Check which operation comes next.
+      rung_used: NUDGE
+    interaction:
+      task_id: eval-task:ladder-reveal-earned
+      revision: 0
+      kind: SUBMISSION
+      status: SUBMITTED
+      steps: []
+      answer: '0'
+    confidence: UNSURE
+  - operation: submit
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-reveal-earned
+    template_id: quad.expand.binomial.v1
+    seed: 2
+    tutor_script:
+    - *id001
+    interaction:
+      task_id: eval-task:ladder-reveal-earned
+      revision: 0
+      kind: SUBMISSION
+      status: SUBMITTED
+      steps: []
+      answer: '0'
+    confidence: UNSURE
+  - operation: request_help
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-reveal-earned
+    template_id: quad.expand.binomial.v1
+    seed: 2
+    tutor_script:
+    - &id002
+      message: Use distribution on the product.
+      rung_used: NEXT_STEP
+  - operation: request_help
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-reveal-earned
+    template_id: quad.expand.binomial.v1
+    seed: 2
+    tutor_script:
+    - &id003
+      message: Use distribution.
+      rung_used: NAME_METHOD
+  now: '2026-01-01T00:00:00Z'
+- id: ladder-declines-no-reveal
+  family: ladder
+  skill_id: quad.expand.binomial
+  template_id: quad.expand.binomial.v1
+  seed: 2
+  permitted_rung: NONE
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps: []
+  answer: ''
+  interaction_kind: HELP_REQUEST
+  work_status: SUBMITTED
+  question: null
+  expected_statement: "Expand and simplify: \n(x + 2)(x + 5)"
+  work_origin: none
+  exercise_anchor: null
+  copy_error_description: null
+  expected_verdict: NO_ANSWER
+  expected_diagnosis: null
+  expected_broken_transition: null
+  expected_step_check: false
+  expected_error_kinds: []
+  expected_failed_constraints: []
+  coverage_tags:
+  - explicit decline
+  expected_progress:
+    submissions: 2
+    genuine_attempts: 0
+    declines: 2
+    delivered_rungs:
+    - NUDGE
+    - NUDGE
+    - NEXT_STEP
+    - NAME_METHOD
+    independence_spent: true
+    last_checked_revision: 0
+  reference_reasoning:
+  - Declines spend submissions but supply no genuine attempts. At NAME_METHOD no further help request
+    is possible.
+  evaluation_criteria:
+  - Respect the permitted ceiling and address the actual current question.
+  history_actions:
+  - operation: submit
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-declines-no-reveal
+    template_id: quad.expand.binomial.v1
+    seed: 2
+    tutor_script:
+    - *id001
+    interaction:
+      task_id: eval-task:ladder-declines-no-reveal
+      revision: 0
+      kind: SUBMISSION
+      status: SUBMITTED
+      steps: []
+      answer: ''
+    confidence: UNSURE
+  - operation: submit
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-declines-no-reveal
+    template_id: quad.expand.binomial.v1
+    seed: 2
+    tutor_script:
+    - *id001
+    interaction:
+      task_id: eval-task:ladder-declines-no-reveal
+      revision: 0
+      kind: SUBMISSION
+      status: SUBMITTED
+      steps: []
+      answer: ''
+    confidence: UNSURE
+  - operation: request_help
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-declines-no-reveal
+    template_id: quad.expand.binomial.v1
+    seed: 2
+    tutor_script:
+    - *id002
+  - operation: request_help
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:ladder-declines-no-reveal
+    template_id: quad.expand.binomial.v1
+    seed: 2
+    tutor_script:
+    - *id003
+  now: '2026-01-01T00:00:00Z'
+- id: ladder-correct-expand.binomial
+  family: ladder
+  skill_id: quad.expand.binomial
+  template_id: quad.expand.binomial.v1
+  seed: 1
+  permitted_rung: NONE
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps:
+  - (x - 8)(x - 6)
+  - x(x-6)-8(x-6)
+  - x^2-14x+48
+  answer: x^2-14x+48
+  interaction_kind: SUBMISSION
+  work_status: SUBMITTED
+  question: null
+  expected_statement: "Expand and simplify: \n(x - 8)(x - 6)"
+  work_origin: exercise
+  exercise_anchor: (x - 8)(x - 6)
+  copy_error_description: null
+  expected_verdict: CORRECT
+  expected_diagnosis: null
+  expected_broken_transition: null
+  expected_step_check: false
+  expected_error_kinds: []
+  expected_failed_constraints: []
+  coverage_tags:
+  - correct submission
+  - valid alternative method
+  - valid-work no-diagnosis
+  expected_progress:
+    submissions: 1
+    genuine_attempts: 1
+    declines: 0
+    delivered_rungs: []
+    independence_spent: true
+    last_checked_revision: 0
+  reference_reasoning:
+  - Distribute by grouping; the two cross products total -14x.
+  evaluation_criteria:
+  - Respect the permitted ceiling and address the actual current question.
+  declined: false
+  now: '2026-01-01T00:00:00Z'
+- id: ladder-correct-factor.monic
+  family: ladder
+  skill_id: quad.factor.monic
+  template_id: quad.factor.monic.v1
+  seed: 1
+  permitted_rung: NONE
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps:
+  - x^2 + 6x - 16
+  - (x+8)(x-2)
+  answer: (x+8)(x-2)
+  interaction_kind: SUBMISSION
+  work_status: SUBMITTED
+  question: null
+  expected_statement: "Factor: \nx^2 + 6x - 16"
+  work_origin: exercise
+  exercise_anchor: x^2 + 6x - 16
+  copy_error_description: null
+  expected_verdict: CORRECT
+  expected_diagnosis: null
+  expected_broken_transition: null
+  expected_step_check: false
+  expected_error_kinds: []
+  expected_failed_constraints: []
+  coverage_tags:
+  - correct submission
+  - valid alternative method
+  - valid-work no-diagnosis
+  expected_progress:
+    submissions: 1
+    genuine_attempts: 1
+    declines: 0
+    delivered_rungs: []
+    independence_spent: true
+    last_checked_revision: 0
+  reference_reasoning:
+  - 8 and -2 have sum 6 and product -16; reversed factor order is valid.
+  evaluation_criteria:
+  - Respect the permitted ceiling and address the actual current question.
+  declined: false
+  now: '2026-01-01T00:00:00Z'
+- id: ladder-correct-solve.factoring
+  family: ladder
+  skill_id: quad.solve.factoring
+  template_id: quad.solve.factoring.v1
+  seed: 1
+  permitted_rung: NONE
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps:
+  - x^2 - 2x - 63 = 0
+  - (x-9)(x+7)=0
+  - x=-7 or x=9
+  answer:
+  - '9'
+  - '-7'
+  interaction_kind: SUBMISSION
+  work_status: SUBMITTED
+  question: null
+  expected_statement: "Solve for x: \nx^2 - 2x - 63 = 0"
+  work_origin: exercise
+  exercise_anchor: x^2 - 2x - 63 = 0
+  copy_error_description: null
+  expected_verdict: CORRECT
+  expected_diagnosis: null
+  expected_broken_transition: null
+  expected_step_check: false
+  expected_error_kinds: []
+  expected_failed_constraints: []
+  coverage_tags:
+  - correct submission
+  - valid alternative method
+  - valid-work no-diagnosis
+  expected_progress:
+    submissions: 1
+    genuine_attempts: 1
+    declines: 0
+    delivered_rungs: []
+    independence_spent: true
+    last_checked_revision: 0
+  reference_reasoning:
+  - Both roots satisfy the equation; value-set order is immaterial.
+  evaluation_criteria:
+  - Respect the permitted ceiling and address the actual current question.
+  declined: false
+  now: '2026-01-01T00:00:00Z'
+- id: ladder-correct-vertex
+  family: ladder
+  skill_id: quad.vertex
+  template_id: quad.vertex.v1
+  seed: 1
+  permitted_rung: NONE
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps: []
+  answer: -7/2
+  interaction_kind: SUBMISSION
+  work_status: SUBMITTED
+  question: null
+  expected_statement: "Find the x-coordinate of the vertex of \ny = x^2 + 7x - 8\n. Give an exact value."
+  work_origin: none
+  exercise_anchor: null
+  copy_error_description: null
+  expected_verdict: CORRECT
+  expected_diagnosis: null
+  expected_broken_transition: null
+  expected_step_check: false
+  expected_error_kinds: []
+  expected_failed_constraints: []
+  coverage_tags:
+  - correct submission
+  - valid-work no-diagnosis
+  expected_progress:
+    submissions: 1
+    genuine_attempts: 1
+    declines: 0
+    delivered_rungs: []
+    independence_spent: true
+    last_checked_revision: 0
+  reference_reasoning:
+  - For a=1,b=7 the x-coordinate is -b/(2a)=-7/2; one scalar field.
+  evaluation_criteria:
+  - Respect the permitted ceiling and address the actual current question.
+  declined: false
+  now: '2026-01-01T00:00:00Z'
+- id: ladder-correct-discriminant
+  family: ladder
+  skill_id: quad.discriminant
+  template_id: quad.discriminant.v1
+  seed: 1
+  permitted_rung: NONE
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps: []
+  answer: '0'
+  interaction_kind: SUBMISSION
+  work_status: SUBMITTED
+  question: null
+  expected_statement: "How many distinct real roots does \n2x^2 + 20x + 54 = 0\n have? Answer 0, 1, or\
+    \ 2."
+  work_origin: none
+  exercise_anchor: null
+  copy_error_description: null
+  expected_verdict: CORRECT
+  expected_diagnosis: null
+  expected_broken_transition: null
+  expected_step_check: false
+  expected_error_kinds: []
+  expected_failed_constraints: []
+  coverage_tags:
+  - correct submission
+  - valid-work no-diagnosis
+  expected_progress:
+    submissions: 1
+    genuine_attempts: 1
+    declines: 0
+    delivered_rungs: []
+    independence_spent: true
+    last_checked_revision: 0
+  reference_reasoning:
+  - 400-432=-32 is negative, so there are zero distinct real roots.
+  evaluation_criteria:
+  - Respect the permitted ceiling and address the actual current question.
+  declined: false
+  now: '2026-01-01T00:00:00Z'
+- id: ladder-correct-word.area
+  family: ladder
+  skill_id: quad.word.area
+  template_id: quad.word.area.v1
+  seed: 2
+  permitted_rung: NONE
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps: []
+  answer: '3'
+  interaction_kind: SUBMISSION
+  work_status: SUBMITTED
+  question: null
+  expected_statement: A rectangle is 9 cm longer than it is wide. Its area is 36 cm². Find its width in
+    cm.
+  work_origin: none
+  exercise_anchor: null
+  copy_error_description: null
+  expected_verdict: CORRECT
+  expected_diagnosis: null
+  expected_broken_transition: null
+  expected_step_check: false
+  expected_error_kinds: []
+  expected_failed_constraints: []
+  coverage_tags:
+  - correct submission
+  - valid-work no-diagnosis
+  expected_progress:
+    submissions: 1
+    genuine_attempts: 1
+    declines: 0
+    delivered_rungs: []
+    independence_spent: true
+    last_checked_revision: 0
+  reference_reasoning:
+  - Width 3 and length 12 multiply to 36, with difference 9.
+  evaluation_criteria:
+  - Respect the permitted ceiling and address the actual current question.
+  declined: false
+  now: '2026-01-01T00:00:00Z'

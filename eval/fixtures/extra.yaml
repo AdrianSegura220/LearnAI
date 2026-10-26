@@ -1,0 +1,369 @@
+- id: extra-nonmonic
+  family: extra
+  skill_id: quad.factor.nonmonic
+  template_id: quad.factor.nonmonic.v1
+  seed: 1
+  permitted_rung: NAME_METHOD
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps:
+  - 8x^2 + 22x + 5
+  - x^2+22x+5
+  answer: ''
+  interaction_kind: TASK_QUESTION
+  work_status: DRAFT
+  question: Is my draft reasoning valid?
+  expected_statement: "Factor: \n8x^2 + 22x + 5"
+  work_origin: exercise
+  exercise_anchor: 8x^2 + 22x + 5
+  copy_error_description: null
+  expected_verdict: UNCHECKED
+  expected_diagnosis: null
+  expected_broken_transition:
+  - 8x^2 + 22x + 5
+  - x^2+22x+5
+  expected_step_check: true
+  expected_error_kinds:
+  - equivalence
+  expected_failed_constraints: []
+  coverage_tags:
+  - unsupported error
+  - unfinished draft
+  expected_progress:
+    submissions: 0
+    genuine_attempts: 0
+    declines: 0
+    delivered_rungs: []
+    independence_spent: false
+    last_checked_revision: 0
+  reference_reasoning:
+  - The leading coefficient 8 was replaced by 1 without dividing the other terms. The ignores-leading-coefficient
+    signature is deferred.
+  evaluation_criteria:
+  - Respect the permitted ceiling and address the actual current question.
+  now: '2026-01-01T00:00:00Z'
+- id: extra-compensation
+  family: extra
+  skill_id: quad.completesquare
+  template_id: quad.completesquare.v1
+  seed: 1
+  permitted_rung: NAME_METHOD
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps:
+  - x^2 - 8x + 34
+  - (x-4)^2+34
+  answer: ''
+  interaction_kind: TASK_QUESTION
+  work_status: DRAFT
+  question: Is my draft reasoning valid?
+  expected_statement: "Rewrite by completing the square: \nx^2 - 8x + 34"
+  work_origin: exercise
+  exercise_anchor: x^2 - 8x + 34
+  copy_error_description: null
+  expected_verdict: UNCHECKED
+  expected_diagnosis: null
+  expected_broken_transition:
+  - x^2 - 8x + 34
+  - (x-4)^2+34
+  expected_step_check: true
+  expected_error_kinds:
+  - equivalence
+  expected_failed_constraints: []
+  coverage_tags:
+  - unsupported error
+  - unfinished draft
+  expected_progress:
+    submissions: 0
+    genuine_attempts: 0
+    declines: 0
+    delivered_rungs: []
+    independence_spent: false
+    last_checked_revision: 0
+  reference_reasoning:
+  - Completing x²-8x adds 16 inside the square without subtracting 16 outside. The compensation signature
+    is deferred.
+  evaluation_criteria:
+  - Respect the permitted ceiling and address the actual current question.
+  now: '2026-01-01T00:00:00Z'
+- id: extra-formula-b
+  family: extra
+  skill_id: quad.formula.apply
+  template_id: quad.formula.apply.v1
+  seed: 1
+  permitted_rung: NAME_METHOD
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps:
+  - x^2 - 6x + 4 = 0
+  - x=-3-sqrt(5) or x=-3+sqrt(5)
+  answer: ''
+  interaction_kind: TASK_QUESTION
+  work_status: DRAFT
+  question: Is my draft reasoning valid?
+  expected_statement: "Solve exactly using the quadratic formula: \nx^2 - 6x + 4 = 0"
+  work_origin: exercise
+  exercise_anchor: x^2 - 6x + 4 = 0
+  copy_error_description: null
+  expected_verdict: UNCHECKED
+  expected_diagnosis: null
+  expected_broken_transition:
+  - x^2 - 6x + 4 = 0
+  - x=-3-sqrt(5) or x=-3+sqrt(5)
+  expected_step_check: true
+  expected_error_kinds:
+  - equivalence
+  expected_failed_constraints: []
+  coverage_tags:
+  - unsupported error
+  - unfinished draft
+  expected_progress:
+    submissions: 0
+    genuine_attempts: 0
+    declines: 0
+    delivered_rungs: []
+    independence_spent: false
+    last_checked_revision: 0
+  reference_reasoning:
+  - Using b=-6 instead of -b=6 in the numerator negates the real roots. The formula sign signature is
+    deferred.
+  evaluation_criteria:
+  - Respect the permitted ceiling and address the actual current question.
+  now: '2026-01-01T00:00:00Z'
+- id: extra-discriminant
+  family: extra
+  skill_id: quad.discriminant
+  template_id: quad.discriminant.v1
+  seed: 1
+  permitted_rung: NAME_METHOD
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps:
+  - 2x^2+20x+54=0
+  - x=-5-sqrt(2) or x=-5+sqrt(2)
+  answer: ''
+  interaction_kind: TASK_QUESTION
+  work_status: DRAFT
+  question: Is my draft reasoning valid?
+  expected_statement: "How many distinct real roots does \n2x^2 + 20x + 54 = 0\n have? Answer 0, 1, or\
+    \ 2."
+  work_origin: exercise
+  exercise_anchor: "How many distinct real roots does \n2x^2 + 20x + 54 = 0\n have? Answer 0, 1, or 2."
+  copy_error_description: null
+  expected_verdict: UNCHECKED
+  expected_diagnosis: null
+  expected_broken_transition:
+  - 2x^2+20x+54=0
+  - x=-5-sqrt(2) or x=-5+sqrt(2)
+  expected_step_check: true
+  expected_error_kinds:
+  - equivalence
+  expected_failed_constraints: []
+  coverage_tags:
+  - unsupported error
+  - unfinished draft
+  expected_progress:
+    submissions: 0
+    genuine_attempts: 0
+    declines: 0
+    delivered_rungs: []
+    independence_spent: false
+    last_checked_revision: 0
+  reference_reasoning:
+  - The discriminant is -32, so the claimed real roots result from reversing its sign. The discriminant
+    signature is deferred; equation-to-claimed-roots is checked.
+  evaluation_criteria:
+  - Respect the permitted ceiling and address the actual current question.
+  now: '2026-01-01T00:00:00Z'
+- id: extra-vertex
+  family: extra
+  skill_id: quad.vertex
+  template_id: quad.vertex.v1
+  seed: 1
+  permitted_rung: NAME_METHOD
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps:
+  - x=-7/2
+  - x=7/2
+  answer: ''
+  interaction_kind: TASK_QUESTION
+  work_status: DRAFT
+  question: Is my draft reasoning valid?
+  expected_statement: "Find the x-coordinate of the vertex of \ny = x^2 + 7x - 8\n. Give an exact value."
+  work_origin: exercise
+  exercise_anchor: "Find the x-coordinate of the vertex of \ny = x^2 + 7x - 8\n. Give an exact value."
+  copy_error_description: null
+  expected_verdict: UNCHECKED
+  expected_diagnosis: null
+  expected_broken_transition:
+  - x=-7/2
+  - x=7/2
+  expected_step_check: true
+  expected_error_kinds:
+  - equivalence
+  expected_failed_constraints: []
+  coverage_tags:
+  - unsupported error
+  - unfinished draft
+  expected_progress:
+    submissions: 0
+    genuine_attempts: 0
+    declines: 0
+    delivered_rungs: []
+    independence_spent: false
+    last_checked_revision: 0
+  reference_reasoning:
+  - The axis formula initially gives x=-7/2; the next line flips its sign. The vertex sign signature is
+    deferred. The algebraic calculation is linked to the pinned y=x²+7x-8 by this reviewed reasoning.
+  evaluation_criteria:
+  - Respect the permitted ceiling and address the actual current question.
+  now: '2026-01-01T00:00:00Z'
+- id: extra-negative-length
+  family: extra
+  skill_id: quad.word.area
+  template_id: quad.word.area.v1
+  seed: 1
+  permitted_rung: NAME_METHOD
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps:
+  - x^2+4x=192
+  - x=-16 or x=12
+  - x=-16
+  answer: ''
+  interaction_kind: TASK_QUESTION
+  work_status: DRAFT
+  question: Is my draft reasoning valid?
+  expected_statement: A rectangle is 4 cm longer than it is wide. Its area is 192 cm². Find its width
+    in cm.
+  work_origin: exercise
+  exercise_anchor: A rectangle is 4 cm longer than it is wide. Its area is 192 cm². Find its width in
+    cm.
+  copy_error_description: null
+  expected_verdict: UNCHECKED
+  expected_diagnosis: null
+  expected_broken_transition:
+  - x=-16 or x=12
+  - x=-16
+  expected_step_check: true
+  expected_error_kinds:
+  - equivalence
+  expected_failed_constraints: []
+  coverage_tags:
+  - unsupported error
+  - unfinished draft
+  expected_progress:
+    submissions: 0
+    genuine_attempts: 0
+    declines: 0
+    delivered_rungs: []
+    independence_spent: false
+    last_checked_revision: 0
+  reference_reasoning:
+  - Width x obeys x(x+4)=192, giving -16 and 12. Selecting -16 discards the positive root and keeps a
+    physically impossible width. The length signature is deferred; model linkage is human reviewed.
+  evaluation_criteria:
+  - Respect the permitted ceiling and address the actual current question.
+  now: '2026-01-01T00:00:00Z'
+- id: extra-malformed-draft
+  family: extra
+  skill_id: quad.expand.binomial
+  template_id: quad.expand.binomial.v1
+  seed: 2
+  permitted_rung: NAME_METHOD
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps:
+  - (x + 2)(x + 5)
+  - x^2 + (
+  answer: ''
+  interaction_kind: TASK_QUESTION
+  work_status: DRAFT
+  question: What should I check first?
+  expected_statement: "Expand and simplify: \n(x + 2)(x + 5)"
+  work_origin: exercise
+  exercise_anchor: (x + 2)(x + 5)
+  copy_error_description: null
+  expected_verdict: UNCHECKED
+  expected_diagnosis: null
+  expected_broken_transition:
+  - (x + 2)(x + 5)
+  - x^2 + (
+  expected_step_check: true
+  expected_error_kinds:
+  - unreadable
+  expected_failed_constraints: []
+  coverage_tags:
+  - malformed draft question
+  expected_progress:
+    submissions: 0
+    genuine_attempts: 0
+    declines: 0
+    delivered_rungs: []
+    independence_spent: false
+    last_checked_revision: 0
+  reference_reasoning:
+  - The final draft line has an unclosed bracket. A valid question about unreadable draft work still has
+    a tutoring opportunity and no final verdict.
+  evaluation_criteria:
+  - Respect the permitted ceiling and address the actual current question.
+  now: '2026-01-01T00:00:00Z'
+- id: extra-malformed-submit
+  family: extra
+  skill_id: quad.expand.binomial
+  template_id: quad.expand.binomial.v1
+  seed: 2
+  permitted_rung: NONE
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps: []
+  answer: (
+  interaction_kind: SUBMISSION
+  work_status: SUBMITTED
+  question: null
+  expected_statement: "Expand and simplify: \n(x + 2)(x + 5)"
+  work_origin: none
+  exercise_anchor: null
+  copy_error_description: null
+  expected_verdict: MALFORMED
+  expected_diagnosis: null
+  expected_broken_transition: null
+  expected_step_check: false
+  expected_error_kinds:
+  - unreadable
+  expected_failed_constraints: []
+  coverage_tags:
+  - conceptual question
+  expected_progress:
+    submissions: 0
+    genuine_attempts: 0
+    declines: 0
+    delivered_rungs: []
+    independence_spent: false
+    last_checked_revision: null
+  reference_reasoning:
+  - The malformed final answer records no evidence, submission or transcript and consumes no tutor call.
+  evaluation_criteria:
+  - Respect the permitted ceiling and address the actual current question.
+  declined: false
+  history: []
+  transcript: []
+  notes: Expected non-tutored operation, excluded from paid accepted-turn judging.
+  now: '2026-01-01T00:00:00Z'

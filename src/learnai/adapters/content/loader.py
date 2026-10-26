@@ -105,6 +105,10 @@ def parse_cluster(raw: Mapping[str, Any]) -> LoadedCluster:
                 raise ContentError(f"{sid} references unknown concept {cid}")
             concept_users[cid].add(sid)
 
+        notes = entry.get("teaching_notes")
+        if not (isinstance(notes, str) and notes.strip()):
+            raise ContentError(f"skill {sid} has no teaching_notes")
+
         skills.append(
             Skill(
                 id=sid,
@@ -116,6 +120,7 @@ def parse_cluster(raw: Mapping[str, Any]) -> LoadedCluster:
                 ),
                 concept_ids=concept_ids,
                 misconception_ids=mc_ids,
+                teaching_notes=notes,
             )
         )
         for pre in entry.get("prereqs", []):

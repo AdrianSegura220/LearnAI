@@ -16,13 +16,16 @@ class HelpState:
     """Readable submissions recorded, declines included. Distinct from `attempts`:
     a decline spends a task's cold attempt but is not documented effort."""
 
+    assistance_received: bool = False
+    """Delivered task tutoring, independently of ladder progression."""
+
     @property
     def highest_rung(self) -> HelpRung:
         return max(self.rungs_used, default=HelpRung.NONE)
 
     @property
     def help_taken(self) -> bool:
-        return bool(self.rungs_used)
+        return self.assistance_received or bool(self.rungs_used)
 
 
 def ladder_exhausted(contract: ModeContract, state: HelpState) -> bool:

@@ -54,6 +54,10 @@ class Skill:
     verification_kind: VerificationKind
     concept_ids: tuple[ConceptId, ...]
     misconception_ids: tuple[MisconceptionId, ...]
+    teaching_notes: str = ""
+    """How to teach this skill — the tutor's cached skill-pack content.
+    The loader requires it non-empty; the domain default keeps the field
+    additive for direct constructions in tests."""
 
 
 @dataclass(frozen=True, slots=True)

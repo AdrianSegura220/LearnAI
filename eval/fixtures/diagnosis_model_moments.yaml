@@ -1,0 +1,536 @@
+- id: diagnosis-cross-1-help
+  family: diagnosis
+  skill_id: quad.expand.binomial
+  template_id: quad.expand.binomial.v1
+  seed: 1
+  permitted_rung: NUDGE
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps:
+  - (x - 8)(x - 6)
+  - x^2+48
+  answer: x^2+48
+  interaction_kind: HELP_REQUEST
+  work_status: SUBMITTED
+  question: null
+  expected_statement: "Expand and simplify: \n(x - 8)(x - 6)"
+  work_origin: exercise
+  exercise_anchor: (x - 8)(x - 6)
+  copy_error_description: null
+  expected_verdict: WRONG
+  expected_diagnosis: mc.foil.drops.cross
+  expected_broken_transition:
+  - (x - 8)(x - 6)
+  - x^2+48
+  expected_step_check: true
+  expected_error_kinds:
+  - equivalence
+  expected_failed_constraints: []
+  coverage_tags:
+  - wrong submission
+  - supported diagnosis
+  - actual diagnostic opportunity
+  expected_progress:
+    submissions: 1
+    genuine_attempts: 1
+    declines: 0
+    delivered_rungs: []
+    independence_spent: true
+    last_checked_revision: 0
+  reference_reasoning:
+  - The constant product is retained, but both cross products and their linear total are missing.
+  - The first worked error was checked without tutor intervention; this current request or second submission
+    is a real opportunity under PRACTICE.
+  evaluation_criteria:
+  - Use the checked current diagnosis to orient the learner at NUDGE level; do not give the solution.
+  declined: false
+  now: '2026-01-01T00:00:00Z'
+  notes: Model-facing companion; original engine regression remains in the corpus.
+  history_actions:
+  - operation: submit
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:diagnosis-cross-1-help
+    template_id: quad.expand.binomial.v1
+    seed: 1
+    tutor_script: []
+    confidence: UNSURE
+    interaction:
+      task_id: eval-task:diagnosis-cross-1-help
+      revision: 0
+      kind: SUBMISSION
+      status: SUBMITTED
+      steps:
+      - (x - 8)(x - 6)
+      - x^2+48
+      answer: x^2+48
+- id: diagnosis-cross-2-second
+  family: diagnosis
+  skill_id: quad.expand.binomial
+  template_id: quad.expand.binomial.v1
+  seed: 2
+  permitted_rung: NUDGE
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps:
+  - (x + 2)(x + 5)
+  - x^2+10
+  answer: x^2+10
+  interaction_kind: SUBMISSION
+  work_status: SUBMITTED
+  question: null
+  expected_statement: "Expand and simplify: \n(x + 2)(x + 5)"
+  work_origin: exercise
+  exercise_anchor: (x + 2)(x + 5)
+  copy_error_description: null
+  expected_verdict: WRONG
+  expected_diagnosis: mc.foil.drops.cross
+  expected_broken_transition:
+  - (x + 2)(x + 5)
+  - x^2+10
+  expected_step_check: true
+  expected_error_kinds:
+  - equivalence
+  expected_failed_constraints: []
+  coverage_tags:
+  - wrong submission
+  - supported diagnosis
+  - actual diagnostic opportunity
+  expected_progress:
+    submissions: 2
+    genuine_attempts: 2
+    declines: 0
+    delivered_rungs: []
+    independence_spent: true
+    last_checked_revision: 0
+  reference_reasoning:
+  - The constant product is retained, but both cross products and their linear total are missing.
+  - The first worked error was checked without tutor intervention; this current request or second submission
+    is a real opportunity under PRACTICE.
+  evaluation_criteria:
+  - The second worked error now merits feedback; address the diagnosed mistake at NUDGE level.
+  declined: false
+  now: '2026-01-01T00:00:00Z'
+  notes: Model-facing companion; original engine regression remains in the corpus.
+  history_actions:
+  - operation: submit
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:diagnosis-cross-2-second
+    template_id: quad.expand.binomial.v1
+    seed: 2
+    tutor_script: []
+    confidence: UNSURE
+    interaction:
+      task_id: eval-task:diagnosis-cross-2-second
+      revision: 0
+      kind: SUBMISSION
+      status: SUBMITTED
+      steps:
+      - (x + 2)(x + 5)
+      - x^2+10
+      answer: x^2+10
+- id: diagnosis-square-1-help
+  family: diagnosis
+  skill_id: quad.expand.square
+  template_id: quad.expand.square.v1
+  seed: 1
+  permitted_rung: NUDGE
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps:
+  - (x + 6)^2
+  - x^2+36
+  answer: x^2+36
+  interaction_kind: HELP_REQUEST
+  work_status: SUBMITTED
+  question: null
+  expected_statement: "Expand and simplify: \n(x + 6)^2"
+  work_origin: exercise
+  exercise_anchor: (x + 6)^2
+  copy_error_description: null
+  expected_verdict: WRONG
+  expected_diagnosis: mc.square.distributes
+  expected_broken_transition:
+  - (x + 6)^2
+  - x^2+36
+  expected_step_check: true
+  expected_error_kinds:
+  - equivalence
+  expected_failed_constraints: []
+  coverage_tags:
+  - wrong submission
+  - supported diagnosis
+  - actual diagnostic opportunity
+  expected_progress:
+    submissions: 1
+    genuine_attempts: 1
+    declines: 0
+    delivered_rungs: []
+    independence_spent: true
+    last_checked_revision: 0
+  reference_reasoning:
+  - Squaring each addend separately omits the middle product 2ax.
+  - The first worked error was checked without tutor intervention; this current request or second submission
+    is a real opportunity under PRACTICE.
+  evaluation_criteria:
+  - Use the checked current diagnosis to orient the learner at NUDGE level; do not give the solution.
+  declined: false
+  now: '2026-01-01T00:00:00Z'
+  notes: Model-facing companion; original engine regression remains in the corpus.
+  history_actions:
+  - operation: submit
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:diagnosis-square-1-help
+    template_id: quad.expand.square.v1
+    seed: 1
+    tutor_script: []
+    confidence: UNSURE
+    interaction:
+      task_id: eval-task:diagnosis-square-1-help
+      revision: 0
+      kind: SUBMISSION
+      status: SUBMITTED
+      steps:
+      - (x + 6)^2
+      - x^2+36
+      answer: x^2+36
+- id: diagnosis-square-2-second
+  family: diagnosis
+  skill_id: quad.expand.square
+  template_id: quad.expand.square.v1
+  seed: 2
+  permitted_rung: NUDGE
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps:
+  - (x + 9)^2
+  - x^2+81
+  answer: x^2+81
+  interaction_kind: SUBMISSION
+  work_status: SUBMITTED
+  question: null
+  expected_statement: "Expand and simplify: \n(x + 9)^2"
+  work_origin: exercise
+  exercise_anchor: (x + 9)^2
+  copy_error_description: null
+  expected_verdict: WRONG
+  expected_diagnosis: mc.square.distributes
+  expected_broken_transition:
+  - (x + 9)^2
+  - x^2+81
+  expected_step_check: true
+  expected_error_kinds:
+  - equivalence
+  expected_failed_constraints: []
+  coverage_tags:
+  - wrong submission
+  - supported diagnosis
+  - actual diagnostic opportunity
+  expected_progress:
+    submissions: 2
+    genuine_attempts: 2
+    declines: 0
+    delivered_rungs: []
+    independence_spent: true
+    last_checked_revision: 0
+  reference_reasoning:
+  - Squaring each addend separately omits the middle product 2ax.
+  - The first worked error was checked without tutor intervention; this current request or second submission
+    is a real opportunity under PRACTICE.
+  evaluation_criteria:
+  - The second worked error now merits feedback; address the diagnosed mistake at NUDGE level.
+  declined: false
+  now: '2026-01-01T00:00:00Z'
+  notes: Model-facing companion; original engine regression remains in the corpus.
+  history_actions:
+  - operation: submit
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:diagnosis-square-2-second
+    template_id: quad.expand.square.v1
+    seed: 2
+    tutor_script: []
+    confidence: UNSURE
+    interaction:
+      task_id: eval-task:diagnosis-square-2-second
+      revision: 0
+      kind: SUBMISSION
+      status: SUBMITTED
+      steps:
+      - (x + 9)^2
+      - x^2+81
+      answer: x^2+81
+- id: diagnosis-partial-1-help
+  family: diagnosis
+  skill_id: quad.factor.common
+  template_id: quad.factor.common.v1
+  seed: 1
+  permitted_rung: NUDGE
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps:
+  - 30x^2 - 25x
+  - x*(30x-25)
+  answer: x*(30x-25)
+  interaction_kind: HELP_REQUEST
+  work_status: SUBMITTED
+  question: null
+  expected_statement: "Factor completely: \n30x^2 - 25x"
+  work_origin: exercise
+  exercise_anchor: 30x^2 - 25x
+  copy_error_description: null
+  expected_verdict: WRONG
+  expected_diagnosis: mc.gcf.partial
+  expected_broken_transition: null
+  expected_step_check: true
+  expected_error_kinds:
+  - form_constraint
+  expected_failed_constraints:
+  - fully_factored
+  coverage_tags:
+  - wrong submission
+  - supported diagnosis
+  - actual diagnostic opportunity
+  expected_progress:
+    submissions: 1
+    genuine_attempts: 1
+    declines: 0
+    delivered_rungs: []
+    independence_spent: true
+    last_checked_revision: 0
+  reference_reasoning:
+  - This transformation preserves equivalence, but a common factor remains inside the brackets (5, respectively
+    3). The final-transition fallback names partial extraction without inventing an equivalence break.
+  - The first worked error was checked without tutor intervention; this current request or second submission
+    is a real opportunity under PRACTICE.
+  evaluation_criteria:
+  - Use the checked current diagnosis to orient the learner at NUDGE level; do not give the solution.
+  declined: false
+  now: '2026-01-01T00:00:00Z'
+  notes: Model-facing companion; original engine regression remains in the corpus.
+  history_actions:
+  - operation: submit
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:diagnosis-partial-1-help
+    template_id: quad.factor.common.v1
+    seed: 1
+    tutor_script: []
+    confidence: UNSURE
+    interaction:
+      task_id: eval-task:diagnosis-partial-1-help
+      revision: 0
+      kind: SUBMISSION
+      status: SUBMITTED
+      steps:
+      - 30x^2 - 25x
+      - x*(30x-25)
+      answer: x*(30x-25)
+- id: diagnosis-partial-2-second
+  family: diagnosis
+  skill_id: quad.factor.common
+  template_id: quad.factor.common.v1
+  seed: 2
+  permitted_rung: NUDGE
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps:
+  - 30x + 42
+  - 2*(15x+21)
+  answer: 2*(15x+21)
+  interaction_kind: SUBMISSION
+  work_status: SUBMITTED
+  question: null
+  expected_statement: "Factor completely: \n30x + 42"
+  work_origin: exercise
+  exercise_anchor: 30x + 42
+  copy_error_description: null
+  expected_verdict: WRONG
+  expected_diagnosis: mc.gcf.partial
+  expected_broken_transition: null
+  expected_step_check: true
+  expected_error_kinds:
+  - form_constraint
+  expected_failed_constraints:
+  - fully_factored
+  coverage_tags:
+  - wrong submission
+  - supported diagnosis
+  - actual diagnostic opportunity
+  expected_progress:
+    submissions: 2
+    genuine_attempts: 2
+    declines: 0
+    delivered_rungs: []
+    independence_spent: true
+    last_checked_revision: 0
+  reference_reasoning:
+  - This transformation preserves equivalence, but a common factor remains inside the brackets (5, respectively
+    3). The final-transition fallback names partial extraction without inventing an equivalence break.
+  - The first worked error was checked without tutor intervention; this current request or second submission
+    is a real opportunity under PRACTICE.
+  evaluation_criteria:
+  - The second worked error now merits feedback; address the diagnosed mistake at NUDGE level.
+  declined: false
+  now: '2026-01-01T00:00:00Z'
+  notes: Model-facing companion; original engine regression remains in the corpus.
+  history_actions:
+  - operation: submit
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:diagnosis-partial-2-second
+    template_id: quad.factor.common.v1
+    seed: 2
+    tutor_script: []
+    confidence: UNSURE
+    interaction:
+      task_id: eval-task:diagnosis-partial-2-second
+      revision: 0
+      kind: SUBMISSION
+      status: SUBMITTED
+      steps:
+      - 30x + 42
+      - 2*(15x+21)
+      answer: 2*(15x+21)
+- id: diagnosis-sign-1-help
+  family: diagnosis
+  skill_id: quad.factor.monic
+  template_id: quad.factor.monic.v1
+  seed: 1
+  permitted_rung: NUDGE
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps:
+  - x^2 + 6x - 16
+  - (x+2)(x-8)
+  answer: (x+2)(x-8)
+  interaction_kind: HELP_REQUEST
+  work_status: SUBMITTED
+  question: null
+  expected_statement: "Factor: \nx^2 + 6x - 16"
+  work_origin: exercise
+  exercise_anchor: x^2 + 6x - 16
+  copy_error_description: null
+  expected_verdict: WRONG
+  expected_diagnosis: mc.factor.sign
+  expected_broken_transition:
+  - x^2 + 6x - 16
+  - (x+2)(x-8)
+  expected_step_check: true
+  expected_error_kinds:
+  - equivalence
+  expected_failed_constraints: []
+  coverage_tags:
+  - wrong submission
+  - supported diagnosis
+  - actual diagnostic opportunity
+  expected_progress:
+    submissions: 1
+    genuine_attempts: 1
+    declines: 0
+    delivered_rungs: []
+    independence_spent: true
+    last_checked_revision: 0
+  reference_reasoning:
+  - The constant product is right, but the linear coefficient has the opposite sign.
+  - The first worked error was checked without tutor intervention; this current request or second submission
+    is a real opportunity under PRACTICE.
+  evaluation_criteria:
+  - Use the checked current diagnosis to orient the learner at NUDGE level; do not give the solution.
+  declined: false
+  now: '2026-01-01T00:00:00Z'
+  notes: Model-facing companion; original engine regression remains in the corpus.
+  history_actions:
+  - operation: submit
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:diagnosis-sign-1-help
+    template_id: quad.factor.monic.v1
+    seed: 1
+    tutor_script: []
+    confidence: UNSURE
+    interaction:
+      task_id: eval-task:diagnosis-sign-1-help
+      revision: 0
+      kind: SUBMISSION
+      status: SUBMITTED
+      steps:
+      - x^2 + 6x - 16
+      - (x+2)(x-8)
+      answer: (x+2)(x-8)
+- id: diagnosis-sign-2-second
+  family: diagnosis
+  skill_id: quad.factor.monic
+  template_id: quad.factor.monic.v1
+  seed: 2
+  permitted_rung: NUDGE
+  strength: 0.4
+  is_fresh: true
+  calibration_gap: 0.1
+  prior_misconceptions: []
+  steps:
+  - x^2 - x - 72
+  - (x+9)(x-8)
+  answer: (x+9)(x-8)
+  interaction_kind: SUBMISSION
+  work_status: SUBMITTED
+  question: null
+  expected_statement: "Factor: \nx^2 - x - 72"
+  work_origin: exercise
+  exercise_anchor: x^2 - x - 72
+  copy_error_description: null
+  expected_verdict: WRONG
+  expected_diagnosis: mc.factor.sign
+  expected_broken_transition:
+  - x^2 - x - 72
+  - (x+9)(x-8)
+  expected_step_check: true
+  expected_error_kinds:
+  - equivalence
+  expected_failed_constraints: []
+  coverage_tags:
+  - wrong submission
+  - supported diagnosis
+  - actual diagnostic opportunity
+  expected_progress:
+    submissions: 2
+    genuine_attempts: 2
+    declines: 0
+    delivered_rungs: []
+    independence_spent: true
+    last_checked_revision: 0
+  reference_reasoning:
+  - The constant product is right, but the linear coefficient has the opposite sign.
+  - The first worked error was checked without tutor intervention; this current request or second submission
+    is a real opportunity under PRACTICE.
+  evaluation_criteria:
+  - The second worked error now merits feedback; address the diagnosed mistake at NUDGE level.
+  declined: false
+  now: '2026-01-01T00:00:00Z'
+  notes: Model-facing companion; original engine regression remains in the corpus.
+  history_actions:
+  - operation: submit
+    at: '2025-12-31T00:00:00Z'
+    task_id: eval-task:diagnosis-sign-2-second
+    template_id: quad.factor.monic.v1
+    seed: 2
+    tutor_script: []
+    confidence: UNSURE
+    interaction:
+      task_id: eval-task:diagnosis-sign-2-second
+      revision: 0
+      kind: SUBMISSION
+      status: SUBMITTED
+      steps:
+      - x^2 - x - 72
+      - (x+9)(x-8)
+      answer: (x+9)(x-8)

@@ -58,8 +58,8 @@ def test_misconceptions_are_subject_scoped_not_skill_owned():
 
 MC = {"id": "m1", "name": "M", "description": "d", "signature": "s"}
 CONCEPT = {"id": "c1", "kind": "definition", "prompt": "p", "answer": "a"}
-SKILL_A = {"id": "a", "name": "A", "can_do": "does a", "misconceptions": ["m1"]}
-SKILL_B = {"id": "b", "name": "B", "can_do": "does b", "misconceptions": ["m1"]}
+SKILL_A = {"id": "a", "name": "A", "can_do": "does a", "misconceptions": ["m1"], "teaching_notes": "notes for A"}
+SKILL_B = {"id": "b", "name": "B", "can_do": "does b", "misconceptions": ["m1"], "teaching_notes": "notes for B"}
 
 
 def cluster(**overrides) -> dict:
@@ -108,9 +108,23 @@ def test_a_prereq_cycle_is_rejected_with_its_path():
 
 def test_a_skill_without_misconceptions_is_accepted():
     """Diagnosis treats an unmatched error as novel; requiring an entry would invite invented ones."""
-    bare = {"id": "a", "name": "A", "can_do": "does a"}
+    bare = {"id": "a", "name": "A", "can_do": "does a", "teaching_notes": "notes for A"}
     loaded = parse_cluster(cluster(misconceptions=[], skills=[bare]))
     assert loaded.graph.skills[SkillId("a")].misconception_ids == ()
+
+
+def test_a_skill_without_teaching_notes_is_rejected():
+    raw = cluster(
+        skills=[{key: value for key, value in SKILL_A.items() if key != "teaching_notes"}]
+    )
+    with pytest.raises(ContentError, match="teaching_notes"):
+        parse_cluster(raw)
+
+
+def test_blank_teaching_notes_are_rejected():
+    raw = cluster(skills=[SKILL_A | {"teaching_notes": "   "}])
+    with pytest.raises(ContentError, match="teaching_notes"):
+        parse_cluster(raw)
 
 
 def test_a_dangling_misconception_reference_is_rejected():

@@ -7,6 +7,9 @@ from learnai.domain.contracts import ModeContract
 from learnai.domain.help import HelpState
 from learnai.domain.ids import CourseId, MisconceptionId, SessionId, SkillId, StudentId, TaskId
 from learnai.domain.items import Item, StepDiff
+from learnai.domain.history import HistoryRecord
+from learnai.domain.interaction import StudentInteraction, VerificationSnapshot
+from learnai.domain.turn import TranscriptEntry
 
 
 class TaskState(Enum):
@@ -26,8 +29,11 @@ class Task:
     help_state: HelpState = HelpState()
     last_step_diff: StepDiff | None = None
     last_diagnosis: MisconceptionId | None = None
-    """The last wrong submission's break, kept for the tutor's walk-back on a
-    later help request (Task 17's LET_RUN policy). Declines do not touch them."""
+    """Current-revision findings, also used for a later help-request walk-back."""
+
+    work_revision: int = 0
+    current_interaction: StudentInteraction | None = None
+    last_verification: VerificationSnapshot | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,6 +48,9 @@ class Session:
     ended_at: datetime | None = None
     skills_taught: frozenset[SkillId] = frozenset()
     """Skills instructed during this session; drives post_instruction weighting."""
+
+    transcript: tuple[TranscriptEntry, ...] = ()
+    history: tuple[HistoryRecord, ...] = ()
 
     @property
     def current_task(self) -> Task | None:

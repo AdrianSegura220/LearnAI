@@ -62,19 +62,27 @@ skills:
   - id: quad.expand.binomial
     name: Expand a product of two binomials
     can_do: Expand (x + a)(x + b) into standard form.
+    teaching_notes: >-
+      Expand (x + a)(x + b) by distributing — each term of the first binomial times each term of the second — then collect like terms. First move: multiply the two 'first' terms, then the two cross products, then the two 'last' terms. The classic slip is dropping the cross terms: a student who writes only x² + ab has the Foil-drops-cross belief — help them see the two inner and outer products explicitly. Check work by substituting a small value of x into both forms.
     misconceptions: [mc.foil.drops.cross]
   - id: quad.expand.square
     name: Expand a squared binomial
     can_do: Expand (x + a)^2 into standard form.
+    teaching_notes: >-
+      (x + a)² means (x + a)(x + a), never x² + a². The middle term 2ax is always present. First move: write the square as an explicit product. If the student squared each term separately (the square-distributes belief), show a numeric example — (3 + 4)² — that makes the missing 24 visible, then redo the algebra. Check by expanding one cross term at a time.
     prereqs: [{skill: quad.expand.binomial, strength: hard}]
     misconceptions: [mc.square.distributes]
   - id: quad.factor.common
     name: Factor out a common monomial
     can_do: Factor the greatest common monomial from a polynomial.
+    teaching_notes: >-
+      Nearly every factoring starts by pulling out the greatest common monomial: 12x² + 18x = 6x(2x + 3). First move: look at the coefficients and each variable's smallest power. The classic error is partial extraction — pulling 2x instead of 6x — which leaves a common factor inside the bracket; ask 'is there anything still common inside?'. Check by expanding back.
     misconceptions: [mc.gcf.partial]
   - id: quad.factor.monic
     name: Factor a monic quadratic
     can_do: Factor x^2 + bx + c into two binomials.
+    teaching_notes: >-
+      For x² + bx + c, find two numbers whose product is c and whose sum is b, then write (x + p)(x + q). First move: list factor pairs of c. Sign logic: c > 0 and b < 0 means both numbers are negative; c < 0 means the numbers have opposite signs. The classic error is a sign slip (right magnitudes, wrong signs) — have the student re-check the SUM, not just the product. Check by expanding.
     prereqs:
       - {skill: quad.expand.binomial, strength: hard}
       - {skill: quad.factor.common, strength: soft}
@@ -82,40 +90,56 @@ skills:
   - id: quad.factor.diffsquares
     name: Factor a difference of squares
     can_do: Factor a^2 - b^2 as (a - b)(a + b).
+    teaching_notes: >-
+      a² − b² = (a − b)(a + b), for any squares: 4x² − 9 = (2x − 3)(2x + 3). First move: write both terms as squares (what is squared to give 4x²?). The telling slip is treating a² + b² the same way — sums of squares do not factor over the reals, so the student must notice the minus before choosing the pattern. Check by expanding.
     prereqs: [{skill: quad.expand.binomial, strength: hard}]
     misconceptions: [mc.diffsquares.sum]
   - id: quad.factor.nonmonic
     name: Factor a non-monic quadratic
     can_do: Factor ax^2 + bx + c where a is not 1.
+    teaching_notes: >-
+      For ax² + bx + c with a ≠ 1: use the ac-method — find two numbers with product a·c and sum b, split the middle term, then factor in pairs — or trial-and-error with factor pairs of a and c. First move: compute a·c; the pair of numbers does the work. The classic error is factoring as though a were 1, which leaves the expansion short by the leading factor. Check by expanding; the leading term must come out right.
     prereqs: [{skill: quad.factor.monic, strength: hard}]
     misconceptions: [mc.nonmonic.ignores.lead]
   - id: quad.solve.factoring
     name: Solve a quadratic by factoring
     can_do: Solve a quadratic equation using the zero-product property.
+    teaching_notes: >-
+      Solving by factoring has a strict order: move everything to one side so the right side is exactly 0, factor, then set EACH factor to zero (the zero-product property applies only to a zero product). First move: get the 0 first. Two classic errors: applying zero-product to a non-zero right side, and dividing by the variable (which throws a root away). Check by substituting each root back.
     prereqs: [{skill: quad.factor.monic, strength: hard}]
     misconceptions: [mc.zeroproduct.misapplied]
   - id: quad.completesquare
     name: Complete the square
     can_do: Rewrite x^2 + bx + c in the form (x + p)^2 + q.
+    teaching_notes: >-
+      Rewrite x² + bx by taking half of b, squaring it, and adding AND subtracting it: x² + bx + (b/2)² − (b/2)², then collapse to (x + b/2)² − (b/2)². First move: half of b — it drives everything. The classic error adds the square without subtracting it, changing the expression's value; remind the student that adding zero keeps things equal. Check by expanding back to the original.
     prereqs: [{skill: quad.expand.square, strength: hard}]
     misconceptions: [mc.complete.forgets.subtract, mc.square.distributes]
   - id: quad.formula.apply
     name: Apply the quadratic formula
     can_do: Solve any quadratic using the quadratic formula.
+    teaching_notes: >-
+      Get the equation into standard form first, then identify a, b, c with their signs, and substitute into x = (−b ± √(b² − 4ac)) / 2a. First move: write a, b, c on a line before touching the formula. The classic error drops the negation of b — the numerator starts with −b, the whole b including its sign flipped. Check: substitute the roots back, or sanity-check the discriminant's sign.
     prereqs: [{skill: quad.completesquare, strength: soft}, {skill: quad.solve.factoring, strength: hard}]
     misconceptions: [mc.formula.sign.b]
   - id: quad.discriminant
     name: Interpret the discriminant
     can_do: Determine the number and nature of roots from b^2 - 4ac.
+    teaching_notes: >-
+      The discriminant b² − 4ac decides the count: positive — two real roots; zero — one repeated root; negative — no real roots. First move: compute b² − 4ac carefully (mind the signs of b and c). The classic error is reversed cases — reading a negative discriminant as two real roots. Check: evaluate the quadratic at its vertex, or sketch — a negative discriminant means the parabola misses the x-axis.
     prereqs: [{skill: quad.formula.apply, strength: hard}]
     misconceptions: [mc.discriminant.sign]
   - id: quad.vertex
     name: Find the vertex of a parabola
     can_do: Find the vertex of a quadratic from its equation.
+    teaching_notes: >-
+      Two shapes, two methods. In vertex form y = a(x − h)² + k the vertex is (h, k) — the sign inside the bracket flips when read out. In standard form, x = −b/(2a) gives the axis of symmetry, then substitute to get y. First move: identify which form the equation is in. The classic error is the sign flip reading (x − h) as (−h). Check by substituting the vertex's x back.
     prereqs: [{skill: quad.completesquare, strength: hard}]
     misconceptions: [mc.vertex.sign]
   - id: quad.word.area
     name: Solve an area word problem with a quadratic
     can_do: Model and solve an area problem that reduces to a quadratic.
+    teaching_notes: >-
+      Model area problems explicitly: name the unknown (width = w), express the other dimension through it (length = w + 3), write area = product, expand to a quadratic, solve, then interpret. First move: write the 'let' statement. The classic error keeps a negative root as a valid length — dimensions must be positive; reject it and say why. Check by substituting back into the problem's words, not just the equation.
     prereqs: [{skill: quad.solve.factoring, strength: hard}]
     misconceptions: [mc.word.keeps.negative]
