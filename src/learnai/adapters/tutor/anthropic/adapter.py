@@ -15,6 +15,8 @@ import httpx2
 from learnai.adapters.content.registry import GeneratorRegistry
 from learnai.adapters.persistence.in_memory_history import InMemoryHistoryReader
 from learnai.adapters.tutor.anthropic.config import request_settings, validate_route
+from learnai.adapters.tutor.anthropic.usage import normalize_anthropic_usage
+from learnai.adapters.tutor.observations import TraceSink
 from learnai.adapters.tutor.anthropic.prompt import SystemBlock, build_prompt, correction_text
 from learnai.adapters.tutor.anthropic.tool_schema import encode_tools
 from learnai.adapters.tutor.anthropic.turn_schema import TURN_SCHEMA
@@ -62,7 +64,7 @@ class AnthropicTutor:
                  route_name: str | None = None, prompts_root: Path = PROMPTS_ROOT,
                  monotonic: Callable[[], float] = time.monotonic,
                  count_tokens: Callable[[str], int] | None = None,
-                 trace_sink: Callable[[TurnTrace], None] | None = None,
+                 trace_sink: TraceSink | None = None,
                  sleep: Callable[[float], None] = time.sleep) -> None:
         self.routes = dict(routes)
         self.client = client.with_options(max_retries=0)
@@ -120,7 +122,8 @@ class _AnthropicExchange:
         self.trace = TurnTrace(str(uuid4()), scope.student_id if scope else None,
             scope.session_id if scope else None, interaction.task_id if interaction else None,
             context.item.id, interaction.revision if interaction else None,
-            (policy.id,), route.model, _request_kwargs(route))
+            (policy.id,), route.model, _request_kwargs(route),
+            provider="anthropic", api_family="messages")
         system = [SystemBlock(policy.text, cache=True), SystemBlock(render_skill_pack(context), cache=True)]
         if preamble := render_session_preamble(context):
             system.append(SystemBlock(preamble, cache=True))
@@ -203,7 +206,9 @@ class _AnthropicExchange:
                 return None
             self.trace.provider_requests.append(deepcopy(payload))
             self.trace.attempts.append(ProviderAttempt(len(self.trace.provider_requests) - 1,
-                started_at=datetime.now(UTC).isoformat(), retry=attempt > 0 or self._retry_pending))
+                started_at=datetime.now(UTC).isoformat(), retry=attempt > 0 or self._retry_pending,
+                normalized_usage=normalize_anthropic_usage(None, status=UsageStatus.MISSING,
+                    request_settings=payload)))
             self._retry_pending = False
             self.budget.record_model_call(0)
             attempt_started = self.budget.monotonic()
@@ -262,10 +267,15 @@ class _AnthropicExchange:
 
     def _record_response(self, response: anthropic.types.Message, *, complete: bool = True) -> None:
         attempt = self.trace.attempts[-1]
-        attempt.usage_status = UsageStatus.COMPLETE if complete else UsageStatus.PARTIAL
-        attempt.usage = response.usage.model_dump(mode="json", exclude_unset=True)
         attempt.provider_request_id = getattr(response, "_request_id", None) or attempt.provider_request_id
         raw = response.model_dump(mode="json", exclude_unset=True)
+        usage = raw.get("usage")
+        attempt.usage = deepcopy(usage) if isinstance(usage, dict) else None
+        attempt.normalized_usage = normalize_anthropic_usage(attempt.usage,
+            status=UsageStatus.COMPLETE if complete else UsageStatus.PARTIAL,
+            response_metadata=raw,
+            request_settings=self.trace.provider_requests[attempt.request_index])
+        attempt.usage_status = attempt.normalized_usage.status
         attempt.response = deepcopy(raw)
         attempt.response_model = raw.get("model")
         attempt.outcome = raw.get("stop_reason") or "partial_response"

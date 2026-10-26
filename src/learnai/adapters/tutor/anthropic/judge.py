@@ -6,7 +6,7 @@ This module owns only SDK framing, bounded retries and private usage traces.
 from collections.abc import Callable, Mapping
 from copy import deepcopy
 from datetime import UTC, datetime
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass
 import json
 import time
 from typing import Any, NoReturn
@@ -16,11 +16,13 @@ import anthropic
 import httpx2
 
 from learnai.adapters.tutor.anthropic.config import request_settings, validate_route
+from learnai.adapters.tutor.anthropic.usage import normalize_anthropic_usage
+from learnai.adapters.tutor.observations import JudgeTrace, TraceSink
 from learnai.adapters.tutor.prompts import TutorPrompt
 from learnai.adapters.tutor.routing import BudgetProfile, Route
 from learnai.adapters.tutor.runtime import (
     DEFAULT_BUDGET_PROFILES, ProviderAttempt, ResponseBudget, TerminationReason,
-    UsageStatus, _json_value, conservative_token_count,
+    UsageStatus, conservative_token_count,
 )
 
 MAX_API_ATTEMPTS = 3
@@ -34,31 +36,6 @@ class JudgeTransportError(ValueError):
 @dataclass
 class JudgeAttempt(ProviderAttempt):
     """Compatibility name for the shared attempt metadata."""
-
-
-@dataclass
-class JudgeTrace:
-    """Request-local observations; missing/partial usage is never a known zero."""
-    request_id: str
-    prompt_ids: tuple[str, ...]
-    model: str
-    settings: dict[str, Any]
-    attempts: list[JudgeAttempt] = field(default_factory=list)
-    provider_requests: list[dict[str, Any]] = field(default_factory=list)
-    provider_responses: list[dict[str, Any]] = field(default_factory=list)
-    usages: list[dict[str, Any]] = field(default_factory=list)
-    events: list[dict[str, Any]] = field(default_factory=list)
-    api_errors: list[dict[str, Any]] = field(default_factory=list)
-    messages: list[dict[str, Any]] = field(default_factory=list)
-    elapsed_seconds: float = 0.0
-    model_calls: int = 0
-    output_tokens: int = 0
-    api_retries: int = 0
-    format_retries: int = 0
-    termination_reason: TerminationReason | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        return _json_value(asdict(self))
 
 
 def _settings(route: Route, schema: dict[str, Any]) -> dict[str, Any]:
@@ -83,7 +60,8 @@ class _JudgeExchange:
         self.sleep = sleep
         self.budget = ResponseBudget(profile, monotonic=monotonic)
         self.settings = _settings(route, schema)
-        self.trace = JudgeTrace(str(uuid4()), (prompt.id,), route.model, deepcopy(self.settings))
+        self.trace = JudgeTrace(str(uuid4()), (prompt.id,), route.model, deepcopy(self.settings),
+                                provider="anthropic", api_family="messages")
 
     def _fail(self, reason: TerminationReason, detail: str | None = None) -> NoReturn:
         self.trace.termination_reason = reason
@@ -106,12 +84,15 @@ class _JudgeExchange:
         attempt.outcome = raw_response.get("stop_reason") or "partial_response"
         self.trace.provider_responses.append(raw_response)
         raw = raw_response.get("usage")
+        attempt.normalized_usage = normalize_anthropic_usage(
+            raw if isinstance(raw, dict) else None,
+            status=UsageStatus.COMPLETE if complete else UsageStatus.PARTIAL,
+            response_metadata=raw_response,
+            request_settings=self.trace.provider_requests[attempt.request_index])
+        attempt.usage_status = attempt.normalized_usage.status
         if not isinstance(raw, dict):
             self._fail(TerminationReason.API_ERROR, "missing or invalid usage")
         attempt.usage = raw
-        observed = all(type(raw.get(name)) is int and raw[name] >= 0
-                       for name in ("input_tokens", "output_tokens"))
-        attempt.usage_status = UsageStatus.COMPLETE if complete and observed else UsageStatus.PARTIAL
         self.trace.usages.append(deepcopy(raw))
         output = raw.get("output_tokens")
         if type(output) is not int or output < 0:
@@ -160,7 +141,9 @@ class _JudgeExchange:
                 self._fail(TerminationReason.DEADLINE)
             self.trace.provider_requests.append(deepcopy(payload))
             self.trace.attempts.append(JudgeAttempt(len(self.trace.provider_requests) - 1,
-                started_at=datetime.now(UTC).isoformat(), retry=attempt > 0 or self.trace.format_retries > 0))
+                started_at=datetime.now(UTC).isoformat(), retry=attempt > 0 or self.trace.format_retries > 0,
+                normalized_usage=normalize_anthropic_usage(None, status=UsageStatus.MISSING,
+                    request_settings=payload)))
             self.budget.record_model_call(0)
             attempt_started = self.budget.monotonic()
             try:
@@ -243,7 +226,7 @@ def request_judgment[T](
     monotonic: Callable[[], float] = time.monotonic,
     count_tokens: Callable[[str], int] = conservative_token_count,
     sleep: Callable[[float], None] = time.sleep,
-    trace_sink: Callable[[JudgeTrace], None] | None = None,
+    trace_sink: TraceSink | None = None,
 ) -> T:
     """Retain every attempted provider call; deliver only completed parsed output."""
     validate_route(route, role="judge")

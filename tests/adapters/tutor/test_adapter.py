@@ -386,11 +386,15 @@ def test_response_job_selects_route_and_direct_override_remains_available():
     assert sdk.requests[0]["output_config"]["effort"] == "low"
 
 
-def test_attempt_usage_completeness_distinguishes_missing_from_complete_zero():
+def test_attempt_usage_distinguishes_missing_from_observed_zero_with_unknown_cache_duration():
     tutor, sdk, traces, _ = setup([Reply([], status=500), final(output_tokens=0)])
     assert tutor.respond(make_context()) is not None
     attempts = traces[0].to_dict()["attempts"]
-    assert [a["usage_status"] for a in attempts] == ["missing", "complete"]
+    assert [a["usage_status"] for a in attempts] == ["missing", "partial"]
+    assert [a["normalized_usage"]["status"] for a in attempts] == ["missing", "partial"]
+    assert attempts[0]["normalized_usage"]["counts"] == {}
+    assert attempts[1]["normalized_usage"]["counts"] == {"input": 100, "output": 0, "cache_read": 80}
+    assert "cache creation duration unknown" in attempts[1]["normalized_usage"]["reasons"]
     assert [a["request_index"] for a in attempts] == [0, 1]
     assert attempts[0]["usage"] is None
     assert attempts[1]["usage"]["output_tokens"] == 0
@@ -402,6 +406,8 @@ def test_partial_zero_stream_usage_is_not_treated_as_complete_zero():
     assert tutor.respond(make_context()) is None
     attempt = traces[0].to_dict()["attempts"][0]
     assert attempt["usage_status"] == "partial"
+    assert attempt["normalized_usage"]["status"] == "partial"
+    assert attempt["normalized_usage"]["counts"]["output"] == 0
     assert attempt["usage"]["output_tokens"] == 0
     assert tutor.usages[0].output_tokens == 0
 
@@ -413,3 +419,30 @@ def test_stream_eof_without_message_stop_has_partial_usage_and_is_not_retried():
     assert traces[0].termination_reason is TerminationReason.NETWORK_EXHAUSTED
     assert traces[0].model_calls == 1
     assert traces[0].to_dict()["attempts"][0]["usage_status"] == "partial"
+
+
+def test_response_metadata_reaches_attempt_normalization():
+    import httpx2
+    from learnai.adapters.tutor.observations import RequestTrace
+
+    class MetadataAnthropic(ScriptedAnthropic):
+        def _handle(self, request):
+            response = super()._handle(request)
+            data = response.json()
+            data['service_tier'] = 'returned-tier'
+            return httpx2.Response(response.status_code, json=data, headers=response.headers)
+
+    configured, _, traces, _ = setup([])
+    sdk = MetadataAnthropic([final()])
+    tutor = AnthropicTutor(configured.routes, sdk.client, GeneratorRegistry(()), {},
+        budget_profiles={'normal': PROFILE}, monotonic=sdk.clock, sleep=sdk.clock.sleep,
+        trace_sink=traces.append)
+    assert tutor.respond(make_context()) is not None
+    trace = traces[0]
+    assert isinstance(trace, RequestTrace)
+    assert trace.provider == 'anthropic' and trace.api_family == 'messages'
+    observation = trace.attempts[0].normalized_usage
+    assert observation.counts == {'input': 100, 'output': 40, 'cache_read': 80}
+    assert observation.billing_conditions['service_tier'].value == 'returned-tier'
+    assert observation.billing_conditions['service_tier'].source == 'returned'
+    assert 'response.service_tier' in observation.billing_conditions['service_tier'].evidence

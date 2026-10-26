@@ -228,7 +228,8 @@ def test_run_judge_uses_packet_route_and_versioned_prompt(tmp_path):
     assert "tools" not in sdk.wire_requests[0] and "tool_choice" not in sdk.wire_requests[0]
     assert "temperature" not in request
     assert traces[0].prompt_ids == ("custom_judge@2",)
-    assert traces[0].attempts[0].usage_status is UsageStatus.COMPLETE
+    assert traces[0].attempts[0].usage_status is UsageStatus.PARTIAL
+    assert "cache creation duration unknown" in traces[0].attempts[0].normalized_usage.reasons
     assert traces[0].attempts[0].usage["cache_read_input_tokens"] == 80
     assert traces[0].attempts[0].provider_request_id == "req-1"
     assert traces[0].attempts[0].response_model == route.model
@@ -266,7 +267,7 @@ def test_api_and_format_retries_share_trace_and_budget():
     assert result.status == "scored"
     trace = traces[0]
     assert trace.model_calls == 3 and trace.api_retries == 1 and trace.format_retries == 1
-    assert [a.usage_status for a in trace.attempts] == [UsageStatus.MISSING, UsageStatus.COMPLETE, UsageStatus.COMPLETE]
+    assert [a.usage_status for a in trace.attempts] == [UsageStatus.MISSING, UsageStatus.PARTIAL, UsageStatus.PARTIAL]
     assert trace.output_tokens == 80
     assert len(trace.provider_requests) == 3 and len(trace.provider_responses) == 2
     assert clock.sleeps == [0.25]
@@ -279,7 +280,8 @@ def test_deadline_rejects_late_scores_but_retains_usage():
     with pytest.raises(JudgeError, match="deadline"):
         run_judge(sdk.client, routes, packet=packet(), **options)
     assert traces[0].output_tokens == 40
-    assert traces[0].attempts[0].usage_status is UsageStatus.COMPLETE
+    assert traces[0].attempts[0].usage_status is UsageStatus.PARTIAL
+    assert "cache creation duration unknown" in traces[0].attempts[0].normalized_usage.reasons
 
 
 def test_format_exhaustion_is_error_not_abstention():
@@ -326,12 +328,13 @@ def test_nested_sink_keeps_request_local_trace():
     assert all(t.model_calls == 1 and t.output_tokens == 40 for t in traces)
 
 
-def test_streaming_judge_preserves_complete_usage():
+def test_streaming_judge_preserves_observed_usage_with_unknown_cache_duration():
     route = Route("rubric_judge", "anthropic", "scripted", prompt="rubric_judge@1", stream=True)
     sdk, routes, options, traces, _ = setup([reply()], route=route)
     assert run_judge(sdk.client, routes, packet=packet(), **options).mathematics == 2
     assert sdk.requests[0]["stream"] is True
-    assert traces[0].attempts[0].usage_status is UsageStatus.COMPLETE
+    assert traces[0].attempts[0].usage_status is UsageStatus.PARTIAL
+    assert "cache creation duration unknown" in traces[0].attempts[0].normalized_usage.reasons
     assert traces[0].output_tokens == 40
     assert traces[0].events[-1]["type"] == "message_stop"
 
@@ -345,6 +348,8 @@ def test_stream_failure_keeps_partial_usage_without_retrying(options_override):
     assert len(sdk.requests) == 1
     assert traces[0].attempts[0].usage_status is UsageStatus.PARTIAL
     assert traces[0].attempts[0].usage["output_tokens"] == 2
+    assert traces[0].attempts[0].normalized_usage.counts["output"] == 2
+    assert traces[0].attempts[0].normalized_usage.status is UsageStatus.PARTIAL
     assert traces[0].output_tokens == 2
 
 
@@ -362,6 +367,9 @@ def test_usage_retains_vendor_fields_and_marks_partial_input_observation():
     assert run_judge(sdk.client, routes, packet=packet(), **options).status == "scored"
     attempt = traces[0].attempts[0]
     assert attempt.usage_status is UsageStatus.PARTIAL
+    assert attempt.normalized_usage.status is UsageStatus.PARTIAL
+    assert attempt.normalized_usage.counts == {"output": 40, "cache_read": 80,
+                                               "cache_write_5m": 20, "cache_write_1h": 0}
     assert "input_tokens" not in attempt.usage
     assert attempt.usage["cache_creation"] == {"ephemeral_5m_input_tokens": 20, "ephemeral_1h_input_tokens": 0}
 
@@ -426,7 +434,8 @@ def test_malformed_provider_text_is_judge_error_with_observed_attempt():
     with pytest.raises(JudgeError, match="api_error"):
         run_judge(sdk.client, routes, packet=packet(), **options)
     assert len(traces[0].attempts) == 1
-    assert traces[0].attempts[0].usage_status is UsageStatus.COMPLETE
+    assert traces[0].attempts[0].usage_status is UsageStatus.PARTIAL
+    assert "cache creation duration unknown" in traces[0].attempts[0].normalized_usage.reasons
 
 
 def test_missing_provider_content_is_operational_failure():
@@ -464,3 +473,28 @@ def test_provider_wire_schema_omits_unsupported_numerical_constraints(stream):
     check_schema(schema)
     for dimension in ("mathematics", "help_level", "diagnosis", "tone"):
         assert schema["properties"][dimension]["type"] == ["integer", "null"]
+
+
+def test_judge_response_metadata_reaches_neutral_normalization():
+    import httpx2
+    from learnai.adapters.tutor.observations import JudgeTrace, RequestTrace
+    from learnai.adapters.tutor.anthropic.judge import JudgeTrace as CompatibilityTrace
+
+    class MetadataJudge(ScriptedJudge):
+        def _handle(self, request):
+            response = super()._handle(request)
+            data = response.json()
+            data['service_tier'] = 'returned-tier'
+            return httpx2.Response(response.status_code, json=data, headers=response.headers)
+
+    _, routes, options, traces, clock = setup([])
+    sdk = MetadataJudge([reply()], clock=clock)
+    assert run_judge(sdk.client, routes, packet=packet(), **options).status == 'scored'
+    trace = traces[0]
+    assert CompatibilityTrace is JudgeTrace
+    assert isinstance(trace, RequestTrace)
+    assert trace.provider == 'anthropic' and trace.api_family == 'messages'
+    observation = trace.attempts[0].normalized_usage
+    assert observation.counts == {'input': 100, 'output': 40, 'cache_read': 80}
+    assert observation.billing_conditions['service_tier'].value == 'returned-tier'
+    assert observation.billing_conditions['service_tier'].source == 'returned'

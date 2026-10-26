@@ -219,9 +219,9 @@ def test_trace_keeps_tools_rejections_accepted_text_and_all_usage(dependencies):
     assert "PRIVATE REJECTED" not in repr(result.context.history)
     assert result.usage == dict(input_tokens=300, output_tokens=120,
         cache_read_input_tokens=240, cache_creation_input_tokens=60,
-        complete_usage_attempts=3, partial_usage_attempts=0, missing_usage_attempts=0)
+        complete_usage_attempts=0, partial_usage_attempts=3, missing_usage_attempts=0)
     assert result.trace.usages[0]["cache_creation_input_tokens"] == 20
-    assert all(a.usage_status is UsageStatus.COMPLETE for a in result.trace.attempts)
+    assert all(a.usage_status is UsageStatus.PARTIAL for a in result.trace.attempts)
     assert len(tutor.usages) == len(sdk.requests) == 3
 
 
@@ -254,6 +254,8 @@ def test_nested_request_during_finish_cannot_replace_outer_trace(dependencies):
     assert nested[0].trace.task_id == nested[0].scenario.task_id
     assert outer.usage["output_tokens"] == 40 and nested[0].usage["output_tokens"] == 70
     assert outer.trace.request_id != nested[0].trace.request_id
+    assert outer.trace.attempts[0].normalized_usage.counts == {"input": 100, "output": 40, "cache_read": 80}
+    assert nested[0].trace.attempts[0].normalized_usage.counts == {"input": 100, "output": 70, "cache_read": 80}
 
 
 @pytest.mark.parametrize("reply,status,observed_output", [
