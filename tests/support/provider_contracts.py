@@ -1,5 +1,5 @@
 """Actual-SDK provider pairs; identity capture stays entirely in test delegates."""
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 from pathlib import Path
 
@@ -9,9 +9,6 @@ from learnai.adapters.tutor.anthropic.wiring import AnthropicFactory
 from learnai.adapters.tutor.openai.wiring import OpenAIFactory
 from learnai.application.artifacts import load_saved_run
 from learnai.eval import __main__ as cli
-from tests.eval.test_judge import ScriptedJudge, reply, score_data
-from tests.support.scripted_client import final as anthropic_final
-from tests.support.scripted_openai import ResponseReply, ScriptedOpenAI, final as openai_final, message
 
 ROOT = Path(__file__).resolve().parents[2]
 PAIR_CASES = ('leak-solve.factoring', 'extra-nonmonic')
@@ -81,6 +78,9 @@ def scripted_factories(sdks, *, packets=None, constructed=None):
 
 
 def run_scripted_pair(*, tutor_provider: str, judge_provider: str, tmp_path: Path, monkeypatch) -> PairRun:
+    from tests.eval.test_judge import ScriptedJudge, reply, score_data
+    from tests.support.scripted_client import final as anthropic_final
+    from tests.support.scripted_openai import ResponseReply, ScriptedOpenAI, final as openai_final, message
     scripts = {'anthropic': [], 'openai': []}
     final = anthropic_final if tutor_provider == 'anthropic' else openai_final
     scripts[tutor_provider].extend([final('Check the factors.'), final('Compare the coefficients.')])
@@ -121,3 +121,108 @@ def run_scripted_pair(*, tutor_provider: str, judge_provider: str, tmp_path: Pat
             payloads.append(json.loads(body['input' if provider == 'openai' else 'messages'][0]['content']))
     return PairRun(outcomes, packets, tuple(roles), tuple(provider for provider, _ in wire),
                    tuple(payloads), saved.records, run, sdks, code)
+
+
+def prepare_role(factory, config, *, context=None, dependencies=None, packet=None):
+    """Measure the real resolved role encoder without constructing any client."""
+    if config.role == 'tutor':
+        return factory.prepare_tutor(config, context=context, dependencies=dependencies)
+    return factory.prepare_judge(config, packet=packet)
+
+
+def provider_route(route, provider):
+    """Keep configured identity and limits with explicit provider test controls."""
+    return replace(route, adapter=provider,
+        model='scripted-openai-model' if provider == 'openai' else route.model,
+        thinking=None if provider == 'openai' else route.thinking)
+
+
+@dataclass
+class ProviderEngine:
+    provider: str
+    engine: object
+    session: object
+    sdk: object
+    tutor: object
+    traces: list
+    contexts: list
+    configs: list
+    factory: object
+    dependencies: object
+
+    def context(self, request_index=0):
+        request = self.sdk.requests[request_index]
+        return json.loads(request['input' if self.provider == 'openai' else 'messages'][0]['content'])
+
+    def results(self, request_index=-1):
+        """Expose paired tool identifiers and semantic results from native captures."""
+        request = self.sdk.requests[request_index]
+        if self.provider == 'openai':
+            return [(item['call_id'], json.loads(item['output'])) for item in request['input']
+                    if item.get('type') == 'function_call_output']
+        return [(block['tool_use_id'], json.loads(block['content']))
+                for message in request['messages'] if isinstance(message['content'], list)
+                for block in message['content'] if block['type'] == 'tool_result']
+
+
+def scripted_engine(provider, replies, *, profiles=None):
+    """Real engine/router/adapters and official SDKs; only HTTP and clock are scripted.
+
+    Replies use the existing Anthropic test script vocabulary. Translation affects
+    replies only; requests are always captured directly from each native SDK.
+    """
+    from learnai.adapters.content.generators.quadratics import QUADRATICS_TEMPLATES
+    from learnai.adapters.content.registry import GeneratorRegistry
+    from learnai.adapters.tutor.anthropic.adapter import AnthropicTutor
+    from learnai.adapters.tutor.openai.adapter import OpenAITutor
+    from learnai.adapters.tutor.prompts import PROMPTS_ROOT
+    from learnai.adapters.tutor.routing import load_budget_profiles, load_routes, resolve_tutor_route
+    from learnai.application.ports import TutorDependencies
+    from learnai.application.tutor_router import TutorRouter
+    from learnai.domain.interaction import ResponseJob
+    from tests.domain.test_engine import CLUSTER, build
+    from tests.support.scripted_client import ScriptedAnthropic
+    from tests.support.scripted_openai import ResponseReply, ScriptedOpenAI, call, message, usage
+
+    if provider == 'anthropic':
+        sdk = ScriptedAnthropic(replies)
+        factory = AnthropicFactory()
+    else:
+        native = []
+        for index, reply in enumerate(replies, start=1):
+            output = []
+            for position, block in enumerate(reply.content):
+                if block['type'] == 'tool_use':
+                    if block['name'] == 'submit_turn':
+                        output.append(message(json.dumps({'diagnosis': None, 'proposals': [], **block['input']})))
+                    else:
+                        identifier = block.get('id', f'tool-{index}-{position}')
+                        output.append(call(block['name'], block['input'], call_id=identifier, id='fc-' + identifier))
+                else:
+                    output.append(message(block['text']))
+            native.append(ResponseReply(output, elapsed=reply.elapsed, http_status=reply.status,
+                                        usage=usage(output_tokens=reply.output_tokens)))
+        sdk = ScriptedOpenAI(native)
+        factory = OpenAIFactory()
+    routes = load_routes(ROOT / 'config/llm_routes.yaml')
+    profiles = profiles if profiles is not None else load_budget_profiles(ROOT / 'config/llm_routes.yaml')
+    deps = TutorDependencies(GeneratorRegistry(QUADRATICS_TEMPLATES), CLUSTER.misconceptions)
+    traces, contexts, configs = [], [], []
+    selected = {}
+    for job in (ResponseJob.BRIEF, ResponseJob.NORMAL, ResponseJob.SUBSTANTIAL):
+        route = resolve_tutor_route(routes, job)
+        selected[job] = provider_route(route, provider)
+
+    def create(route, context):
+        config = factory.resolve_config(route, role='tutor', profiles=profiles, prompts_root=PROMPTS_ROOT)
+        contexts.append(context)
+        configs.append(config)
+        options = dict(monotonic=sdk.clock, sleep=sdk.clock.sleep, trace_sink=traces.append)
+        if provider == 'anthropic':
+            return AnthropicTutor({route.name: route}, sdk.client, deps.items, deps.catalogue,
+                                  resolved_config=config, **options)
+        return OpenAITutor(config, sdk.client, deps.items, deps.catalogue, **options)
+
+    tutor = TutorRouter(selected, create)
+    engine, session, _ = build(tutor)
+    return ProviderEngine(provider, engine, session, sdk, tutor, traces, contexts, configs, factory, deps)
