@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
-from learnai.adapters.tutor.anthropic.routing import BudgetProfile
+from learnai.adapters.tutor.routing import BudgetProfile
 from learnai.adapters.tutor.context import ContextView
 from learnai.domain.turn import TutorTurn, ValidationResult
 

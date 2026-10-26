@@ -14,18 +14,20 @@ import httpx2
 
 from learnai.adapters.content.registry import GeneratorRegistry
 from learnai.adapters.persistence.in_memory_history import InMemoryHistoryReader
+from learnai.adapters.tutor.anthropic.config import request_settings, validate_route
 from learnai.adapters.tutor.anthropic.prompt import SystemBlock, build_prompt, correction_text
-from learnai.adapters.tutor.anthropic.routing import BudgetProfile, Route, resolve_route, resolve_tutor_route
 from learnai.adapters.tutor.anthropic.tool_schema import encode_tools
-from learnai.adapters.tutor.anthropic.turn_schema import TURN_SCHEMA, TurnSchemaError, parse_turn
+from learnai.adapters.tutor.anthropic.turn_schema import TURN_SCHEMA
 from learnai.adapters.tutor.context import ContextLimitError
 from learnai.adapters.tutor.prompts import PROMPTS_ROOT, TutorPrompt, load_prompt
 from learnai.adapters.tutor.rendering import render_session_preamble, render_skill_pack
+from learnai.adapters.tutor.routing import BudgetProfile, Route, resolve_route, resolve_tutor_route
 from learnai.adapters.tutor.runtime import (
     DEFAULT_BUDGET_PROFILES, ProviderAttempt, ResponseBudget, TerminationReason, TurnTrace,
     UsageStatus, conservative_token_count,
 )
 from learnai.adapters.tutor.tools import ToolError, Toolbox
+from learnai.adapters.tutor.turn_schema import TurnSchemaError, parse_turn
 from learnai.domain.ids import MisconceptionId
 from learnai.domain.skills import Misconception
 from learnai.domain.turn import TurnContext, TurnFeedback, TutorTurn, ValidationResult
@@ -47,16 +49,9 @@ def _system_block(block: SystemBlock) -> dict[str, Any]:
 
 
 def _request_kwargs(route: Route) -> dict[str, Any]:
-    result: dict[str, Any] = {"model": route.model, "max_tokens": route.max_tokens,
-        "stream": route.stream, "output_config": {"format": {
-            "type": "json_schema", "schema": deepcopy(TURN_SCHEMA)}}}
-    if route.effort is not None:
-        result["output_config"]["effort"] = route.effort
-    if route.thinking is not None:
-        result["thinking"] = {"type": route.thinking}
-    # Sampling controls are not supported by the configured adaptive model.
-    if route.temperature is not None:
-        raise ValueError("tutor routes must omit temperature")
+    result: dict[str, Any] = request_settings(route)
+    result.setdefault("output_config", {})["format"] = {
+        "type": "json_schema", "schema": deepcopy(TURN_SCHEMA)}
     return result
 
 
@@ -85,9 +80,7 @@ class AnthropicTutor:
         selected = (resolve_route(self.routes, route_name),) if route_name is not None else tuple(
             route for name, route in self.routes.items() if name.startswith("tutor_"))
         for route in selected:
-            if route.prompt is None:
-                raise ValueError(f"tutor route {route.name} requires an explicit prompt")
-            _request_kwargs(route)
+            validate_route(route, role="tutor")
             if route.budget_profile not in self.profiles:
                 raise ValueError(f"unknown budget profile: {route.budget_profile}")
             self.prompts[route.name] = load_prompt(route.prompt, root=prompts_root)

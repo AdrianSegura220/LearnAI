@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from learnai.adapters.tutor.anthropic.routing import (
+from learnai.adapters.tutor.routing import (
     load_budget_profiles,
     load_routes,
     parse_routes,
@@ -96,11 +96,10 @@ def test_complex_requires_an_explicit_route(raw):
 
 @pytest.mark.parametrize("field,value", [
     ("budget_profile", "absent"), ("max_tool_iterations", 3),
-    ("adapter", "unknown"), ("model", ""), ("model", None),
+    ("adapter", ""), ("model", ""), ("model", None),
     ("max_tokens", True), ("max_tokens", 0), ("max_tokens", 1.5),
-    ("stream", "false"), ("effort", "urgent"), ("thinking", "magic"),
+    ("stream", "false"), ("effort", 1), ("thinking", False),
     ("temperature", True), ("temperature", float("nan")),
-    ("temperature", -1), ("temperature", 2),
     ("prompt", "../tutor_math@1"), ("prompt", "tutor_math@0"),
 ])
 def test_unknown_profile_and_old_iteration_key_fail(raw, field, value):

@@ -15,8 +15,9 @@ from uuid import uuid4
 import anthropic
 import httpx2
 
-from learnai.adapters.tutor.anthropic.routing import BudgetProfile, Route
+from learnai.adapters.tutor.anthropic.config import request_settings, validate_route
 from learnai.adapters.tutor.prompts import TutorPrompt
+from learnai.adapters.tutor.routing import BudgetProfile, Route
 from learnai.adapters.tutor.runtime import (
     DEFAULT_BUDGET_PROFILES, ProviderAttempt, ResponseBudget, TerminationReason,
     UsageStatus, _json_value, conservative_token_count,
@@ -61,16 +62,9 @@ class JudgeTrace:
 
 
 def _settings(route: Route, schema: dict[str, Any]) -> dict[str, Any]:
-    if route.temperature is not None:
-        raise JudgeTransportError("judge routes must omit temperature")
-    result: dict[str, Any] = {
-        "model": route.model, "max_tokens": route.max_tokens, "stream": route.stream,
-        "output_config": {"format": {"type": "json_schema", "schema": deepcopy(schema)}},
-    }
-    if route.effort is not None:
-        result["output_config"]["effort"] = route.effort
-    if route.thinking is not None:
-        result["thinking"] = {"type": route.thinking}
+    result: dict[str, Any] = request_settings(route)
+    result.setdefault("output_config", {})["format"] = {
+        "type": "json_schema", "schema": deepcopy(schema)}
     return result
 
 
@@ -252,6 +246,7 @@ def request_judgment[T](
     trace_sink: Callable[[JudgeTrace], None] | None = None,
 ) -> T:
     """Retain every attempted provider call; deliver only completed parsed output."""
+    validate_route(route, role="judge")
     profiles = DEFAULT_BUDGET_PROFILES if budget_profiles is None else budget_profiles
     if route.budget_profile not in profiles:
         raise JudgeTransportError(f"unknown budget profile: {route.budget_profile}")
