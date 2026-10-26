@@ -110,6 +110,33 @@ def run_artifact(tmp_path):
     return next((tmp_path / 'runs').iterdir())
 
 
+def test_cli_real_persona_smoke_records_each_call_only_in_smoke_phase(tmp_path, monkeypatch):
+    monkeypatch.setenv('ANTHROPIC_API_KEY', 'fake-key')
+    sdk = ScriptedJudge([final('Check the factors.'), reply(),
+                         *[final('Consider the next step.') for _ in range(6)]])
+    args = cli_args(tmp_path, routes_file(tmp_path), only='leak-solve.factoring')
+    args.remove('--no-smoke')
+    assert main(args, client_factory=lambda **kwargs: sdk.client) == 0
+    run = run_artifact(tmp_path)
+    entries = [json.loads(line) for line in (run / 'requests.jsonl').read_text().splitlines()]
+    assert len(sdk.wire_requests) == len(entries) == 8
+    assert [entry['phase'] for entry in entries] == ['tutor', 'judge', *['smoke'] * 6]
+    assert len({entry['request_id'] for entry in entries}) == 8
+    assert [entry['session_id'] for entry in entries[2:]] == [
+        *['smoke:help_seeker:0'] * 3, *['smoke:help_seeker:1'] * 3]
+    data = json.loads((run / 'report.json').read_text())
+    smoke = data['persona_smoke']
+    assert smoke['status'] == 'complete'
+    assert smoke['results']['diligent']['cold_wrong'] == 6
+    assert smoke['results']['help_seeker']['items_completed'] == 6
+    assert smoke['results']['help_seeker']['tutor_turns'] == 6
+    assert smoke['results']['help_seeker']['strength_total'] == 0
+    assert smoke['results']['help_seeker']['traced_turns'] == 6
+    assert data['cost']['by_phase'] == {'tutor': '0.00044', 'judge': '0.00044', 'smoke': '0.00264'}
+    assert data['cost']['known_subtotal'] == '0.00352'
+    assert data['cost']['total'] is None  # Transport omits the cache write duration.
+
+
 def test_cli_runs_all_tutors_then_matching_judges_and_rejudge_never_generates(tmp_path, monkeypatch):
     monkeypatch.setenv('ANTHROPIC_API_KEY', 'fake-key')
     routes = routes_file(tmp_path)
