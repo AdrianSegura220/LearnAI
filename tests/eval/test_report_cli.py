@@ -95,7 +95,7 @@ def routes_file(tmp_path):
     config['pricing'] = {'version': 'test@1', 'date': '2026-10-26', 'currency': 'USD', 'unit': 1000000,
         'rates': {'fiction-model': {'input': 2, 'cache_read': 1, 'cache_write_5m': 3, 'output': 4}},
         'source_url': 'https://example.test/pricing', 'retrieved_at': '2026-10-26',
-        'conditions': {'service_tier': 'standard'}}
+        'conditions': {}}
     path = tmp_path / 'routes.yaml'
     path.write_text(yaml.safe_dump(config))
     return path
@@ -320,7 +320,7 @@ def test_manifest_has_actual_rendered_prompts_and_judge_trace_artifacts(tmp_path
 
 def test_cost_unknown_conditions_and_malformed_cache_counters_do_not_crash():
     from learnai.eval.accounting import estimate_cost
-    from tests.eval.test_accounting import record
+    from tests.eval.test_accounting import record, changed_record
     ledger = RequestLedger()
     ledger.record(record(usage={'input_tokens': 1, 'output_tokens': 2, 'server_tool_use': 'invalid'}))
     result = estimate_cost(ledger, prices())
@@ -348,11 +348,11 @@ def test_partial_report_keeps_selected_case_denominator_and_unexecuted_ids(tmp_p
 
 def test_unknown_price_model_keeps_rejected_retry_usage_in_phase_subtotal():
     from learnai.eval.accounting import estimate_cost
-    from tests.eval.test_accounting import record
+    from tests.eval.test_accounting import record, changed_record
     ledger = RequestLedger()
     ledger.record(record(outcome='validation_rejected'))
     ledger.record(record('retry', retry=True, outcome='accepted'))
-    ledger.record(replace(record('unknown', phase='smoke'), returned_model=None, raw_usage=None, usage_status='missing'))
+    ledger.record(changed_record(record('unknown', phase='smoke'), returned_model=None, raw_usage=None, usage_status='missing'))
     result = estimate_cost(ledger, prices())
     assert result.by_phase['tutor'] == Decimal('0.0058')
     assert result.retry_subtotal == Decimal('0.0029')
@@ -539,8 +539,12 @@ def test_malformed_nested_saved_packet_is_a_local_validation_failure(tmp_path, m
 
 
 def write_returned_models(run, *, tutor='tutor-version-a', judge_model='judge-version-a'):
-    entries = [{'scenario_id': 'one', 'phase': 'tutor', 'requested_model': 'tutor-alias', 'returned_model': tutor},
-               {'scenario_id': 'one', 'phase': 'judge', 'requested_model': 'judge-alias', 'returned_model': judge_model}]
+    from dataclasses import asdict
+    from tests.eval.test_accounting import record
+    entries = [asdict(replace(record('tutor'),scenario_id='one',requested_model='tutor-alias',returned_model=tutor)),
+               asdict(replace(record('judge',phase='judge'),scenario_id='one',requested_model='judge-alias',returned_model=judge_model))]
+    for entry in entries:
+        entry['normalized_tokens'] = entry['normalized_usage']['counts']
     (run / 'requests.jsonl').write_text(''.join(json.dumps(entry) + '\n' for entry in entries))
 
 
@@ -551,8 +555,8 @@ def test_actual_returned_judge_change_invalidates_fixed_evaluator_comparison(tmp
     compared = compare_runs(left, right)
     assert compared['evaluator_or_reference_changed'] is True
     assert compared['evaluator_differences']['returned_judge_models'] == {
-        'left': [['one', 'judge-alias', 'judge-version-a']],
-        'right': [['one', 'judge-alias', 'judge-version-b']]}
+        'left': [['one', 'judge-alias', 'judge-version-a', 'anthropic', 'messages']],
+        'right': [['one', 'judge-alias', 'judge-version-b', 'anthropic', 'messages']]}
     assert compared['direct_comparison_inputs_held_fixed'] is False
     write_returned_models(right, tutor='tutor-version-b')
     compared = compare_runs(left, right)
@@ -592,3 +596,14 @@ def test_compare_surfaces_selected_order_seeds_and_runtime_provenance(tmp_path, 
     assert compared['execution_input_differences'][key] == expected
     assert compared['selected_case_overlap'] == ['one', 'two']
     assert compared['direct_comparison_inputs_held_fixed'] is False
+
+
+def test_rejudge_rejects_unknown_source_version_before_client(tmp_path, monkeypatch):
+    monkeypatch.setenv('ANTHROPIC_API_KEY','fake-key')
+    run=saved_packet_run(tmp_path)
+    path=run/'manifest.json'
+    manifest=json.loads(path.read_text())
+    manifest['schema_version']=999
+    path.write_text(json.dumps(manifest))
+    assert main(['rejudge',str(run),'--routes',str(routes_file(tmp_path)),'--out',str(tmp_path/'rejudged')],
+        client_factory=lambda **kwargs:pytest.fail('unsupported version constructed a client'))==2

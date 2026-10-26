@@ -1,5 +1,6 @@
 """Strict typed packets for saved-response rejudging; never import artifact names."""
-from dataclasses import fields, is_dataclass
+from dataclasses import dataclass, fields, is_dataclass
+from collections.abc import Mapping
 from datetime import datetime
 from enum import Enum
 from functools import lru_cache
@@ -9,6 +10,9 @@ import math
 from pathlib import Path
 from types import UnionType
 from typing import Any, Literal, Union, get_args, get_origin, get_type_hints
+
+from learnai.adapters.tutor.observations import BillingCondition, UsageObservation, UsageStatus
+from learnai.eval.accounting import RequestLedger, RequestRecord
 
 from learnai.domain import enums, history, interaction, items, skills, turn
 from learnai.eval import fixtures, judge
@@ -201,3 +205,108 @@ def load_packets(directory: Path) -> dict[str, judge.JudgePacket]:
     if not packets or set(packets) != eligible:
         raise ValueError('source artifact has incomplete eligible packets')
     return packets
+
+
+@dataclass(frozen=True)
+class SavedRun:
+    directory: Path
+    manifest: Mapping[str, object]
+    records: tuple[RequestRecord, ...]
+    packets: Mapping[str, judge.JudgePacket]
+    report: Mapping[str, object]
+    compatibility_notes: tuple[str, ...] = ()
+
+
+def _run_structure(directory: Path, version: int) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
+    """Validate fixed artifact locations and all indexed relative paths locally."""
+    root = directory.resolve()
+    for name in ('manifest.json', 'report.json', 'requests.jsonl'):
+        if not (directory / name).resolve().is_relative_to(root):
+            raise ValueError('artifact path escapes source run')
+    manifest, report = read_json(directory / 'manifest.json'), read_json(directory / 'report.json')
+    if (not isinstance(manifest, dict) or not isinstance(report, dict)
+            or type(manifest.get('schema_version')) is not int or manifest['schema_version'] != version
+            or type(report.get('schema_version')) is not int or report['schema_version'] != version
+            or not isinstance(manifest.get('run_id'), str) or report.get('run_id') != manifest['run_id']
+            or not isinstance(manifest.get('material'), dict)
+            or not isinstance(manifest.get('selected_ids'), list)
+            or any(type(value) is not str for value in manifest['selected_ids'])
+            or len(set(manifest['selected_ids'])) != len(manifest['selected_ids'])
+            or not isinstance(manifest.get('seeds'), list)
+            or any(type(value) is not int for value in manifest['seeds'])):
+        raise ValueError('invalid saved run structure/version')
+    if (not isinstance(report.get('outcomes'), dict) or not isinstance(report.get('judge_packets'), dict)
+            or not isinstance(report.get('eligible_ids'), list)
+            or any(not isinstance(value, str) for value in report['eligible_ids'])
+            or len(set(report['eligible_ids'])) != len(report['eligible_ids'])):
+        raise ValueError('invalid saved run indices')
+    for entries in (manifest['material'].get('inputs', []), report.get('traces', []),
+                    list(report.get('outcomes', {}).values())):
+        if not isinstance(entries, list):
+            raise ValueError('invalid artifact index')
+        for entry in entries:
+            if not isinstance(entry, dict):
+                raise ValueError('invalid artifact index entry')
+            name = entry.get('artifact_path', entry.get('path'))
+            if not isinstance(name, str) or Path(name).is_absolute() or not (directory / name).resolve().is_relative_to(root):
+                raise ValueError('artifact path escapes source run')
+    try:
+        records = []
+        for line in (directory / 'requests.jsonl').read_text(encoding='utf-8').splitlines():
+            value = json.loads(line, parse_constant=lambda value: (_ for _ in ()).throw(ValueError('nonfinite JSON')))
+            if not isinstance(value, dict):
+                raise ValueError('invalid saved request')
+            records.append(value)
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError('invalid saved requests') from exc
+    return manifest, report, records
+
+
+def _request_record(raw: dict[str, Any]) -> RequestRecord:
+    """Decode only the fixed observation schema, never saved module names."""
+    try:
+        if type(raw.get('schema_version')) is not int or raw['schema_version'] != 2:
+            raise ValueError('invalid request schema version')
+        value = dict(raw)
+        usage = value['normalized_usage']
+        if not isinstance(usage, dict) or set(usage) != {'counts','status','reasons','details','billing_conditions'}:
+            raise ValueError('invalid normalized usage structure')
+        if not isinstance(usage['reasons'], list):
+            raise ValueError('invalid normalized usage reasons')
+        value['normalized_usage'] = UsageObservation(usage['counts'], UsageStatus(usage['status']),
+            tuple(usage['reasons']), usage['details'],
+            {key: BillingCondition(**condition) for key, condition in usage['billing_conditions'].items()})
+        for name in ('request_id','exchange_id','phase','requested_model','provider','api_family','usage_status','outcome'):
+            if not isinstance(value.get(name), str) or not value[name]:
+                raise ValueError('invalid request string')
+        for name in ('returned_model','scenario_id','session_id','provider_request_id','started_at','ended_at'):
+            if value.get(name) is not None and not isinstance(value[name], str):
+                raise ValueError('invalid optional request string')
+        for name in ('settings','normalized_tokens'):
+            if not isinstance(value.get(name), dict):
+                raise ValueError('invalid request mapping')
+        for name in ('raw_usage','request','response'):
+            if value.get(name) is not None and not isinstance(value[name], dict):
+                raise ValueError('invalid raw request mapping')
+        if type(value['retry']) is not bool or (value.get('elapsed_seconds') is not None and
+                (type(value['elapsed_seconds']) not in (int, float) or value['elapsed_seconds'] < 0)):
+            raise ValueError('invalid request timing/retry')
+        record = RequestRecord(**value)
+        if record.normalized_tokens != dict(record.normalized_usage.counts):
+            raise ValueError('saved normalized counters disagree')
+        ledger = RequestLedger()
+        ledger.record(record)
+        return ledger.records[0]
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise ValueError('invalid saved request observation') from exc
+
+
+def read_run_v2(directory: Path) -> SavedRun:
+    manifest, report, raw = _run_structure(directory, 2)
+    records = tuple(_request_record(entry) for entry in raw)
+    if len({entry.request_id for entry in records}) != len(records):
+        raise ValueError('duplicate saved request identity')
+    packets = load_packets(directory) if report.get('eligible_ids') else {}
+    if not report.get('eligible_ids') and report.get('judge_packets') != {}:
+        raise ValueError('invalid empty packet index')
+    return SavedRun(directory, manifest, records, packets, report)

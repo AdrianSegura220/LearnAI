@@ -22,13 +22,14 @@ from learnai.adapters.tutor.anthropic.adapter import AnthropicTutor, _request_kw
 from learnai.adapters.tutor.anthropic.routing import load_budget_profiles, load_routes, resolve_tutor_route
 from learnai.adapters.tutor.prompts import load_prompt
 from learnai.eval.accounting import RequestLedger, load_prices
-from learnai.eval.artifacts import encode, load_packets, read_json
+from learnai.eval.artifacts import encode
 from learnai.eval.fixtures import load_scenarios_dir, validate_corpus
 from learnai.eval.judge import JudgeError, JudgePacket, run_judge
 from learnai.eval.manifest import build_manifest, canonical_json
 from learnai.eval.reference import build_reference
 from learnai.eval.replay import prepare_scenario
-from learnai.eval.report import compare_runs, write_report
+from learnai.eval.report import TutorTreatment, compare_runs, write_report
+from learnai.application.artifacts import load_saved_run
 from learnai.eval.runner import run_scenario
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -64,6 +65,8 @@ def _parser() -> argparse.ArgumentParser:
     compare = operations.add_parser('compare')
     compare.add_argument('left', type=Path)
     compare.add_argument('right', type=Path)
+    compare.add_argument('--tutor-treatment', help='Comma-separated tutor route names')
+    compare.add_argument('--allow-tutor-dependency-changes', action='store_true')
     return parser
 
 
@@ -83,8 +86,8 @@ def _preflight(args: argparse.Namespace) -> dict[str, Any]:
     if args.operation == 'rejudge':
         packets, links = {}, []
         for source in args.sources:
-            saved_manifest = read_json(source / 'manifest.json')
-            saved = load_packets(source)
+            source_run = load_saved_run(source)
+            saved_manifest, saved = source_run.manifest, source_run.packets
             source_id = saved_manifest['run_id']
             links.append({'run_id': source_id,
                 'manifest_sha256': sha256(canonical_json(saved_manifest).encode('utf-8')).hexdigest(),
@@ -141,7 +144,12 @@ def main(argv: list[str] | None = None, *, client_factory: Callable[..., Any] | 
     args = _parser().parse_args(argv)
     if args.operation == 'compare':
         try:
-            print(json.dumps(compare_runs(args.left, args.right), ensure_ascii=False, indent=2))
+            if args.allow_tutor_dependency_changes and not args.tutor_treatment:
+                raise ValueError('--allow-tutor-dependency-changes requires --tutor-treatment')
+            treatment = (TutorTreatment(tuple(args.tutor_treatment.split(',')), args.allow_tutor_dependency_changes)
+                         if args.tutor_treatment else None)
+            result = compare_runs(load_saved_run(args.left), load_saved_run(args.right), treatment=treatment)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0
         except (ValueError, OSError, KeyError, TypeError) as exc:
             print(str(exc), file=sys.stderr)
@@ -161,7 +169,8 @@ def main(argv: list[str] | None = None, *, client_factory: Callable[..., Any] | 
             refs = {key: encode(packet.reference) for key, packet in prepared['packets'].items()}
         manifest = build_manifest(root=ROOT, selected_ids=selected, seeds=seeds,
             settings=prepared['settings'], prompts=prepared['prompts'], references=refs,
-            linked_sources=prepared.get('links', ()), supplemental_inputs=prepared['supplemental_inputs'])
+            linked_sources=prepared.get('links', ()), supplemental_inputs=prepared['supplemental_inputs'],
+            pricing_snapshots=prepared['prices'].to_dict())
         if manifest.missing_inputs:
             raise ValueError(f'missing captured inputs: {manifest.missing_inputs}')
         args.out.mkdir(parents=True, exist_ok=True)

@@ -95,16 +95,14 @@ class _RequestExchange:
 
 
 def _usage(trace: TurnTrace | None) -> dict[str, int]:
-    totals = dict(input_tokens=0, output_tokens=0, cache_read_input_tokens=0,
-                  cache_creation_input_tokens=0, complete_usage_attempts=0,
-                  partial_usage_attempts=0, missing_usage_attempts=0)
+    totals = dict(input=0, output=0, cache_read=0, cache_write_5m=0, cache_write_1h=0,
+                  complete_usage_attempts=0, partial_usage_attempts=0, missing_usage_attempts=0)
     if trace is not None:
         for attempt in trace.attempts:
-            totals[f"{attempt.usage_status.value}_usage_attempts"] += 1
-            if attempt.usage is not None:
-                for field in ("input_tokens", "output_tokens", "cache_read_input_tokens",
-                              "cache_creation_input_tokens"):
-                    totals[field] += attempt.usage.get(field) or 0
+            usage = attempt.normalized_usage
+            totals[f"{usage.status.value}_usage_attempts"] += 1
+            for category, count in usage.counts.items():
+                totals[category] = totals.get(category, 0) + count
     return totals
 
 

@@ -11,7 +11,7 @@ import subprocess
 from typing import Any, Iterable, Mapping
 from uuid import uuid4
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 # Explicit project inputs only. Never discover home directories, environment or Git internals.
 _INPUT_ROOTS = ('src', 'content', 'prompts', 'config', 'eval/fixtures')
 _INPUT_FILES = ('pyproject.toml', 'uv.lock', 'requirements.txt')
@@ -59,6 +59,7 @@ def _allowed(relative: Path) -> bool:
                  or name.startswith('prompts/') and relative.suffix == '.md'
                  or name.startswith('eval/fixtures/') and relative.suffix in {'.yaml', '.yml', '.json'}
                  or name == 'config/llm_routes.yaml'
+                 or name.startswith('config/pric') and relative.suffix in {'.yaml', '.yml', '.json'}
                  or name.startswith('config/selected') and relative.suffix in {'.yaml', '.yml'}))
 
 
@@ -66,7 +67,18 @@ def build_manifest(*, root: Path, selected_ids: Iterable[str], seeds: Iterable[i
                    settings: Mapping[str, Any], prompts: Mapping[str, Any],
                    references: Mapping[str, Any], input_paths: Iterable[str | Path] | None = None,
                    linked_sources: Iterable[dict[str, Any]] = (),
-                   supplemental_inputs: Mapping[str, str] | None = None) -> RunManifest:
+                   supplemental_inputs: Mapping[str, str] | None = None,
+                   identities: Mapping[str, Any] | None = None,
+                   role_dependencies: Mapping[str, Mapping[str, str | None]] | None = None,
+                   pricing_snapshots: Mapping[str, Any] | None = None) -> RunManifest:
+    # One process cannot execute conflicting versions of the same distribution.
+    resolved_dependencies = {}
+    for dependencies_for_role in (role_dependencies or {}).values():
+        for distribution, resolved_version in dependencies_for_role.items():
+            if (distribution in resolved_dependencies
+                    and resolved_dependencies[distribution] != resolved_version):
+                raise ValueError(f'conflicting role dependency versions: {distribution}')
+            resolved_dependencies[distribution] = resolved_version
     root = root.resolve()
     sources = tuple(deepcopy(source) for source in linked_sources)
     if input_paths is None:
@@ -109,7 +121,9 @@ def build_manifest(*, root: Path, selected_ids: Iterable[str], seeds: Iterable[i
     dirty_paths = _git(root, 'status', '--porcelain', '--untracked-files=all', '--', *relevant) if relevant else ''
     ids, seed_values = tuple(selected_ids), tuple(seeds)
     material = dict(schema_version=SCHEMA_VERSION, selected_ids=ids, seeds=seed_values,
-        settings=dict(settings), prompts=dict(prompts), references=dict(references), inputs=inputs,
+        settings=deepcopy(dict(settings)), prompts=deepcopy(dict(prompts)), references=deepcopy(dict(references)), inputs=inputs,
+        pricing_snapshots=deepcopy(dict(pricing_snapshots or {})),
+        identities=deepcopy(dict(identities or {})), role_dependencies=deepcopy(dict(role_dependencies or {})),
         code_revision=revision, python=platform.python_version(), dependencies=dependencies,
         missing_inputs=missing, deleted_inputs=deleted, saved_packet_inputs=list(sources))
     # Validate before any artifact/client creation, including non-finite settings.
