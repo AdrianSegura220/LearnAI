@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-26-provider-neutral-evaluation-openai-design.md` (approved 2026-10-26). Parent engine/pedagogy rules remain binding.
 
-**Status (2026-10-27):** all eight tasks implemented under subsequent execution authorization on local branch `plan-openai-provider`; Tasks 1–7 independently reviewed, Task 8 pending task review and final whole-branch review. Original checklist steps below are the approved planning record; execution evidence is in `.superpowers/sdd/2026-10-26-provider-neutral-evaluation-openai/` and the [handoff](../notes/2026-10-26-plan2a-implementation-handoff.md). Baseline was merged `main` at `40d2559` (1,219 passed, 2 deselected). No paid execution, push, merge or publication has occurred or is authorized by completing this plan.
+**Status (2026-10-27):** all eight tasks implemented under subsequent execution authorization on local branch `plan-openai-provider`. All eight tasks have scoped reviews. The whole-branch review found one Important judge-scope gap and one Minor nonfinite-timing gap; both are implemented in the final fix wave, with fresh keyless verification. Scoped re-review of that fix wave remains pending. Original checklist steps below are the approved planning record; execution evidence is in `.superpowers/sdd/2026-10-26-provider-neutral-evaluation-openai/` and the [handoff](../notes/2026-10-27-openai-provider-implementation-handoff.md). Baseline was merged `main` at `40d2559` (1,219 passed, 2 deselected). No paid execution, push, merge or publication has occurred or is authorized by completing this plan.
 
 ## Global Constraints
 
@@ -286,4 +286,4 @@ The SDK/model/version and commercial price snapshot were implementation decision
 
 Review amendments assigned billing-condition evidence/pricing to Tasks 2/3, shared configuration/preparation to Tasks 4–7, the transitive SDK-free artifact gate to Task 4, and treatment declarations/dependency checks/operator usage to Tasks 3/6/8. Task 3 froze baseline-writer artifacts before migration and Task 6 verified rejudging that fixture. These checks are now implemented; the execution ledger contains measured results. Paid acceptance remains unexecuted.
 
-The user subsequently authorized task-by-task execution in this extension's own SDD ledger/workspace, separate from the completed Plan2A sequence. Task 8 and final whole-branch review remain pending as stated above. No automatic PR publication, integration, live spend or old-worktree cleanup follows implementation.
+The user subsequently authorized task-by-task execution in this extension's own SDD ledger/workspace, separate from the completed Plan2A sequence. All task reviews and the whole-branch review are complete; the final fix wave awaits scoped re-review as stated above. No automatic PR publication, integration, live spend or old-worktree cleanup follows implementation.

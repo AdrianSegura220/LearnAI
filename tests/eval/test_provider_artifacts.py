@@ -241,6 +241,30 @@ def test_unknown_role_identity_blocks_treatment():
         assert not compare_runs(left,right,treatment=TutorTreatment(('tutor',)))['controlled_tutor_comparison']['eligible']
 
 
+@pytest.mark.parametrize('elapsed_json', ['1e400', '-1e400', '1' + '0' * 400, '-1', 'true'])
+def test_saved_request_rejects_nonfinite_or_invalid_elapsed_numbers(elapsed_json):
+    from dataclasses import asdict
+    from learnai.eval.artifacts import _request_record
+    # Mutate a plain isolated decoder input; frozen compatibility bytes stay untouched.
+    ledger = accounting.RequestLedger()
+    ledger.record(request())
+    raw = json.loads(json.dumps(asdict(ledger.records[0])))
+    raw['elapsed_seconds'] = json.loads(elapsed_json)
+    with pytest.raises(ValueError, match='timing'):
+        _request_record(raw)
+
+
+@pytest.mark.parametrize('elapsed', [None, 0, 0.25, 10])
+def test_saved_request_retains_finite_nonnegative_elapsed_numbers(elapsed):
+    from dataclasses import asdict
+    from learnai.eval.artifacts import _request_record
+    ledger = accounting.RequestLedger()
+    ledger.record(request())
+    raw = json.loads(json.dumps(asdict(ledger.records[0])))
+    raw['elapsed_seconds'] = elapsed
+    assert _request_record(raw).elapsed_seconds == elapsed
+
+
 def test_snapshot_validates_and_owns_rate_metadata():
     rates={'same-name':{'input':Decimal('2')}}
     conditions={'tier':'standard'}

@@ -2,12 +2,14 @@
 
 ## Provider extension status — 2026-10-27
 
-The provider-neutral/OpenAI extension is implemented on local branch
-`plan-openai-provider`. Tasks 1–7 are independently reviewed; Task 8 adds two
-OpenAI live probes, provider selection guards, resolvable opt-in configuration
-examples and operator/migration documentation, pending independent task review
-and final whole-branch review. No push, merge, publication or paid model call
-has run. The sections below retain the earlier Plan 2A baseline review evidence.
+The provider-neutral/OpenAI extension is implemented and keyless verified on local
+branch `plan-openai-provider`. All eight tasks have scoped reviews. Whole-branch
+review identified an Important judge-scope boundary gap and a Minor nonfinite
+timing gap; both are implemented in one final fix wave, pending scoped re-review.
+See the [current provider handoff](2026-10-27-openai-provider-implementation-handoff.md)
+for final verification, immutable-artifact guarantees, limitations and the complete
+provider decision ledger. No push, merge, publication or paid model call has run.
+The sections below retain the earlier Plan 2A baseline and Task 8 evidence.
 
 Both providers now support independent tutor/judge selection through the same
 engine/evaluation contracts. Defaults remain Anthropic; `tutor_openai` and
@@ -54,7 +56,7 @@ are committed. Task evidence is in
 `.superpowers/sdd/2026-10-26-provider-neutral-evaluation-openai/`; compatibility and
 source snapshot details are in [the OpenAI note](2026-10-26-openai-provider-compatibility.md).
 
-Final Task 8 keyless verification (2026-10-27):
+Historical Task 8 keyless verification (2026-10-27; superseded by the current provider handoff):
 
 - `env -u ANTHROPIC_API_KEY -u OPENAI_API_KEY .venv/bin/python -m pytest` —
   **1,547 passed, 4 deselected in 79.57s** after the compatibility fixes.

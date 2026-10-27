@@ -3,9 +3,11 @@
 As of 2026-10-27, the Plan 2A baseline is implemented and reviewed. The
 provider-neutral/OpenAI extension implements independent tutor/judge selection,
 mixed-provider execution, normalized accounting, immutable legacy reads and v2
-artifacts. Extension Tasks 1–7 are reviewed; Task 8's live gates and operator guide
-are implemented pending independent task and whole-branch review. See the
-[handoff](../docs/superpowers/notes/2026-10-26-plan2a-implementation-handoff.md) and
+artifacts. All eight extension tasks are implemented and scoped reviewed. The
+whole-branch review findings (Important judge scope, Minor nonfinite timing) are
+implemented and keyless verified; scoped re-review of the final fix wave remains
+pending. See the
+[handoff](../docs/superpowers/notes/2026-10-27-openai-provider-implementation-handoff.md) and
 [OpenAI compatibility snapshot](../docs/superpowers/notes/2026-10-26-openai-provider-compatibility.md).
 
 No paid live compatibility probe or full paid evaluation has been performed for

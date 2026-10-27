@@ -9,6 +9,7 @@ import re
 from typing import Any
 
 from learnai.eval.ports import Judge
+from learnai.adapters.tutor.context import scoped_context
 from learnai.adapters.tutor.rendering import render_history, render_moment, render_skill_pack
 from learnai.domain.items import Submission
 from learnai.domain.turn import TurnContext, TutorTurn
@@ -62,7 +63,7 @@ class JudgePacket:
 
 def build_judge_messages(packet: JudgePacket) -> tuple[dict[str, Any], ...]:
     """Serialize captured state and isolated evaluator data, without inference/I/O."""
-    context, reference, turn = packet.context, packet.reference, packet.turn
+    context, reference, turn = scoped_context(packet.context), packet.reference, packet.turn
     data = {
         "student_situation": {
             "moment": json.loads(render_moment(context)),

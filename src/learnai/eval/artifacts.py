@@ -289,7 +289,7 @@ def _request_record(raw: dict[str, Any]) -> RequestRecord:
             if value.get(name) is not None and not isinstance(value[name], dict):
                 raise ValueError('invalid raw request mapping')
         if type(value['retry']) is not bool or (value.get('elapsed_seconds') is not None and
-                (type(value['elapsed_seconds']) not in (int, float) or value['elapsed_seconds'] < 0)):
+                (not _matches(value['elapsed_seconds'], float) or value['elapsed_seconds'] < 0)):
             raise ValueError('invalid request timing/retry')
         record = RequestRecord(**value)
         if record.normalized_tokens != dict(record.normalized_usage.counts):

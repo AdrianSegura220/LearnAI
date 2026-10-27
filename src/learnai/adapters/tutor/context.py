@@ -28,13 +28,15 @@ class ContextView:
     input_tokens: int
 
 
-def _scoped_context(context: TurnContext) -> TurnContext:
+def scoped_context(context: TurnContext) -> TurnContext:
     """Apply the same student/session boundary as history retrieval.
 
     A transcript has no independent scope; discard entries known to belong to
     foreign history, while preserving legacy entries without stored records.
     Filter records before building metadata maps so foreign duplicate IDs cannot
-    replace the metadata of a permitted record.
+    replace the metadata of a permitted record. A transcript linked to an ID
+    shared across scopes is ambiguous; retain the permitted canonical history
+    record instead of that fallback text.
     """
     scope = context.history_scope
     if scope is None:
@@ -42,10 +44,11 @@ def _scoped_context(context: TurnContext) -> TurnContext:
     history = tuple(record for record in context.history
                     if record.student_id == scope.student_id and record.session_id == scope.session_id)
     permitted_ids = {record.id for record in history}
-    foreign_ids = {record.id for record in context.history} - permitted_ids
+    foreign_ids = {record.id for record in context.history
+                   if record.student_id != scope.student_id or record.session_id != scope.session_id}
     return replace(context, history=history,
         transcript=tuple(entry for entry in context.transcript if entry.record_id not in foreign_ids),
-        current_interaction_id=(None if context.current_interaction_id in foreign_ids
+        current_interaction_id=(None if context.current_interaction_id in foreign_ids - permitted_ids
                                 else context.current_interaction_id))
 
 
@@ -67,7 +70,7 @@ def _entry_data(entry: TranscriptEntry, records: dict[str, HistoryRecord]) -> di
 
 def render_context(context: TurnContext, view: ContextView) -> str:
     """Render precisely the selected volatile layer; the full history stays retrievable."""
-    context = _scoped_context(context)
+    context = scoped_context(context)
     records = {record.id: record for record in context.history}
     return json.dumps({
         "moment": json.loads(render_moment(context)),
@@ -112,7 +115,7 @@ def select_context(
     for the remainder. Unselected history remains available through retrieval.
     The injected counter can also include fixed prompt framing/provider overhead.
     """
-    context = _scoped_context(context)
+    context = scoped_context(context)
     if input_budget < 0:
         raise ContextLimitError("protected exercise exceeds input allowance")
     active_id = context.interaction.task_id if context.interaction else None
