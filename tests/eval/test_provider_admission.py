@@ -92,6 +92,11 @@ def test_complete_corpus_admits_both_roles_with_continuation_headroom(
                      if role == 'tutor' else routes['rubric_judge'])
             config = factory.resolve_config(provider_route(route, provider), role=role,
                                             profiles=profiles, prompts_root=PROMPTS_ROOT)
+            if provider == 'openai':
+                assert config.route.provider_options['api_profile'] == ('reasoning' if role == 'judge' else 'current')
+                assert config.effective_settings['reasoning'] == {'effort': 'low'}
+                assert config.effective_settings['prompt_cache_options'] == {'mode': 'implicit', 'ttl': '30m'}
+                assert 'api_profile' not in config.effective_settings
             prepared = prepare_role(factory, config, context=packet.context, dependencies=deps, packet=packet)
             # Recount the actual encoder output with the production counter.
             assert prepared.input_units == conservative_token_count(json.dumps(

@@ -13,16 +13,20 @@ def _valid(value: object) -> bool:
 
 
 def _cache_writes(details: Mapping[str, object], inclusive: object, cached: int | None,
-                  counts: dict[str, int], reasons: list[str]) -> int | None:
+                  counts: dict[str, int], reasons: list[str], *, require_evidence: bool) -> int | None:
     """Return a proven write total, preserving only independently bounded buckets.
 
-    Legacy absent write evidence implies no new categories. A returned zero
+    Legacy absent write evidence implies no new categories; current requests
+    require returned evidence before uncached input is known. A returned zero
     aggregate proves zero writes; a positive aggregate never establishes TTL.
     Conflicts leave input unknown and never select one contradictory source.
     """
     has_aggregate = 'cache_write_tokens' in details
     has_nested = 'cache_write_tokens_details' in details
     if not has_aggregate and not has_nested:
+        if require_evidence:
+            reasons.append('missing cache write evidence')
+            return None
         return 0
     aggregate = details.get('cache_write_tokens')
     valid_aggregate = _valid(aggregate)
@@ -122,7 +126,8 @@ def normalize_openai_usage(raw: Mapping[str, object] | None, *, status: UsageSta
     else:
         counts['cache_read'] = cached
     if isinstance(details, Mapping):
-        writes = _cache_writes(details, total_input, counts.get('cache_read'), counts, reasons)
+        writes = _cache_writes(details, total_input, counts.get('cache_read'), counts, reasons,
+            require_evidence='prompt_cache_options' in (request_settings or {}))
         if _valid(total_input) and 'cache_read' in counts and writes is not None and known_details:
             counts['input'] = total_input - cached - writes
     out_details = raw.get('output_tokens_details')

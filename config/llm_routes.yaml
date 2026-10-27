@@ -41,7 +41,7 @@ budget_profiles:
 routes:
   tutor_openai:
     adapter: openai
-    model: gpt-5.4-2026-03-05
+    model: gpt-6-luna
     effort: low
     max_tokens: 2048
     stream: false
@@ -49,11 +49,11 @@ routes:
     budget_profile: normal
     provider_options:
       service_tier: default
-      prompt_cache_retention: in_memory
+      api_profile: current
       prompt_cache_key: learnai-tutor-policy-v1
   rubric_judge_openai:
     adapter: openai
-    model: gpt-5.4-2026-03-05
+    model: gpt-6.1-sol
     effort: low
     max_tokens: 2048
     stream: false
@@ -61,8 +61,21 @@ routes:
     budget_profile: substantial
     provider_options:
       service_tier: default
-  # OpenAI temperature (0–2) requires effort: none; omit thinking.
-  # prompt_cache_retention also accepts 24h for this configured model.
+      api_profile: reasoning
+  tutor_openai_sol:
+    adapter: openai
+    model: gpt-6.1-sol
+    effort: low
+    max_tokens: 2048
+    stream: false
+    prompt: tutor_math@1
+    budget_profile: normal
+    provider_options:
+      service_tier: default
+      api_profile: reasoning
+      prompt_cache_key: learnai-tutor-policy-v1
+  # Current profiles default to implicit 30m caching (12h is optional).
+  # Temperature (0–2) requires effort: none, permitted by current only; omit thinking.
   tutor_dialogue:
     adapter: anthropic
     model: claude-opus-5-5
