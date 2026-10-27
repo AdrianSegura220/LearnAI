@@ -1,5 +1,7 @@
 # Current OpenAI models and cache accounting
 
+**Status (2026-10-28):** implemented, keyless verified and independently reviewed; see the [handoff](../notes/2026-10-27-openai-current-models-handoff.md). Paid compatibility remains unverified.
+
 The user requested migrating the OpenAI configuration to the current Luna and Sol models after reviewing their lower prices. This is a bounded extension of the merged provider adapter, not a new engine architecture. Implementation is authorized; paid calls are not.
 
 Use Luna with low effort for `tutor_openai` and its existing two live probes, Sol with low effort for `rubric_judge_openai`, and add `tutor_openai_sol` for explicit quality comparisons. Real commercial model identifiers remain only in `config/llm_routes.yaml`. Anthropic defaults and all engine policies/limits remain unchanged.

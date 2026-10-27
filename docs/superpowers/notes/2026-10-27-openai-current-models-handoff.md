@@ -59,8 +59,11 @@ budgets, models, dependencies, domain policy and frozen fixtures are unchanged.
 The regression failed at `1468 == 2048` before the helper fix and passed afterward.
 Final focused verification passed **412 tests, 2 deselected** in 19.70s; exactly
 four live cases collected and all four skipped without keys. No paid bodies ran.
-The final fix is awaiting one scoped re-review; this handoff does not claim that
-the review gate has passed.
+Independent scoped re-review of `2692397` closed the finding with no new
+breakage or out-of-scope observations. Both task reviews, the whole-branch review
+and the final fix review are complete; no Critical or Important finding remains
+open. The final acceptance update changes documentation only. Work is committed
+locally on `feat-openai-current-models`; no push, PR or paid call has run.
 
 Reproduce offline verification from the repository root with both keys unset:
 
