@@ -5,8 +5,8 @@ provider-neutral/OpenAI extension implements independent tutor/judge selection,
 mixed-provider execution, normalized accounting, immutable legacy reads and v2
 artifacts. All eight extension tasks are implemented and scoped reviewed. The
 whole-branch review findings (Important judge scope, Minor nonfinite timing) are
-implemented and keyless verified; scoped re-review of the final fix wave remains
-pending. See the
+implemented and keyless verified; independent scoped re-review at `81d3914`
+closed both findings with no new breakage. See the
 [handoff](../docs/superpowers/notes/2026-10-27-openai-provider-implementation-handoff.md) and
 [OpenAI compatibility snapshot](../docs/superpowers/notes/2026-10-26-openai-provider-compatibility.md).
 

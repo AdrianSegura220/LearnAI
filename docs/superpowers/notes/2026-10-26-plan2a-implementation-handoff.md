@@ -5,7 +5,8 @@
 The provider-neutral/OpenAI extension is implemented and keyless verified on local
 branch `plan-openai-provider`. All eight tasks have scoped reviews. Whole-branch
 review identified an Important judge-scope boundary gap and a Minor nonfinite
-timing gap; both are implemented in one final fix wave, pending scoped re-review.
+timing gap; both are implemented in one final fix wave and passed independent
+scoped re-review at `81d3914`, with no new breakage.
 See the [current provider handoff](2026-10-27-openai-provider-implementation-handoff.md)
 for final verification, immutable-artifact guarantees, limitations and the complete
 provider decision ledger. No push, merge, publication or paid model call has run.

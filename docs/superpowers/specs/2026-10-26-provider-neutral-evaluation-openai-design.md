@@ -1,6 +1,6 @@
 # Provider-neutral evaluation and OpenAI adapters
 
-**Date:** 2026-10-26. **Status (2026-10-27):** approved in conversation on 2026-10-26, subsequently authorized and implemented on local branch `plan-openai-provider`. All eight tasks are implemented and scoped reviewed. Whole-branch review identified an Important judge-scope gap and a Minor nonfinite-timing gap; the final fix wave implements both and is keyless verified, pending scoped re-review. Paid compatibility/evaluation and human calibration remain unexecuted. See the [implementation handoff](../notes/2026-10-27-openai-provider-implementation-handoff.md).
+**Date:** 2026-10-26. **Status (2026-10-27):** approved in conversation on 2026-10-26, subsequently authorized and implemented on local branch `plan-openai-provider`. All eight tasks are implemented and scoped reviewed. Whole-branch review identified an Important judge-scope gap and a Minor nonfinite-timing gap; the final fix wave implements both, is keyless verified, and passed independent scoped re-review at `81d3914` with no new breakage. Paid compatibility/evaluation and human calibration remain unexecuted. See the [implementation handoff](../notes/2026-10-27-openai-provider-implementation-handoff.md).
 
 **Builder check:** a fresh independent reviewer found no important unanswered questions on 2026-10-26. Detailed implementation interfaces remain the plan's responsibility.
 

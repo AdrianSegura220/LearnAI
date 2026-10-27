@@ -6,9 +6,9 @@ The provider-neutral evaluation/OpenAI extension is implementation complete on
 local branch `plan-openai-provider`, based on the merged Plan 2A baseline
 `40d2559`. All eight tasks are implemented and scoped reviewed. The whole-branch
 review of `e072588` found one Important outbound judge-scope gap and one Minor
-nonfinite elapsed-timing gap. One final fix wave implements both; **scoped
-re-review of this fix wave is still pending**. This handoff does not claim merge
-approval. No push, merge, publication or paid model call ran.
+nonfinite elapsed-timing gap. One final fix wave implements both; **independent
+scoped re-review of `81d3914` closed both findings with no new breakage**.
+No Critical or Important review finding remains open. No push, merge, publication or paid model call ran.
 
 The shared SDK-free `scoped_context` helper now filters the outbound judge moment,
 history and transcript just as it filters tutor context. The original immutable
@@ -56,11 +56,13 @@ tests. No real or dummy credential was used in a live test body.
 - `git diff --check` passes; `AGENTS.md`, all original fixtures and frozen v1 bytes
   are unchanged from `e072588`.
 
-The full command/output and self-review evidence is in
-`.superpowers/sdd/2026-10-26-provider-neutral-evaluation-openai/final-fix-report.md`;
-the whole-branch findings remain in `final-review.md` in that workspace. Those are
-private workflow records, not packaged runtime artifacts. This tracked handoff
-retains the result and every ledger decision if scratch records are later removed.
+The whole-branch review covered `40d2559..e072588`; its final scoped review
+covered `e072588..81d3914`. The reviewer checked both fixes, native SDK regression
+coverage, immutable source packets, finite timing, and the recorded verification
+logs without rerunning suites. Both findings are addressed; no new breakage or
+out-of-scope observation was reported. This tracked handoff retains acceptance,
+verification results and every ledger decision independently of temporary review
+reports. The final status update changes documentation only.
 
 ## Installation, operator links and resume
 
@@ -82,11 +84,10 @@ handling and live selection. Read the [compatibility snapshot](2026-10-26-openai
 and historical evidence. Runtime source/tests are authoritative about implementation;
 unexecuted checklist text in the historical plan is not evidence of missing tasks.
 
-Resume with scoped re-review of this final fix against `e072588`; preserve the
-whole-branch Important/Minor triage and independently check the new behavior and
-evidence. Record that review separately before changing review approval status.
-Do not repeat completed task implementation. The worktree and recovery ledger stay
-available; cleanup and branch integration need their own explicit direction.
+Implementation and review are complete. Resume with this handoff and the operator
+guide; do not repeat completed tasks or final fixes. The feature branch and linked
+worktree remain available. Integration, paid probes and human calibration require
+their own explicit direction; none follows automatically from implementation.
 
 ## Limitations and unexecuted gates
 
