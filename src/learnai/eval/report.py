@@ -1,6 +1,7 @@
 """Readable partial run artifacts, explicit denominators and comparison caveats."""
 from collections.abc import Mapping
-from dataclasses import asdict, is_dataclass
+from copy import deepcopy
+from dataclasses import asdict, dataclass, is_dataclass
 from decimal import Decimal
 from hashlib import sha256
 import math
@@ -8,11 +9,26 @@ from pathlib import Path
 from statistics import median
 from typing import Any
 
-from learnai.eval.accounting import PriceSnapshot, RequestLedger, estimate_cost
-from learnai.eval.artifacts import encode, read_json
+import yaml
+
+from learnai.eval.accounting import PriceBook, RequestLedger, estimate_cost
+from learnai.eval.artifacts import SavedRun, encode
 from learnai.eval.judge import JudgePacket, JudgeScores
 from learnai.eval.manifest import RunManifest, canonical_json
 from learnai.eval.runner import ScenarioOutcome
+
+
+@dataclass(frozen=True)
+class TutorTreatment:
+    route_names: tuple[str, ...]
+    allow_tutor_dependency_changes: bool = False
+
+    def __post_init__(self) -> None:
+        if (not isinstance(self.route_names, tuple) or not self.route_names
+                or any(not isinstance(name, str) or not name.strip() for name in self.route_names)
+                or len(set(self.route_names)) != len(self.route_names)
+                or type(self.allow_tutor_dependency_changes) is not bool):
+            raise ValueError('tutor treatment requires unique nonempty route names')
 
 
 def _json(value: Any) -> Any:
@@ -60,7 +76,7 @@ def _latencies(outcomes: Mapping[str, ScenarioOutcome]) -> dict[str, Any]:
 
 def write_report(directory: Path, *, manifest: RunManifest, outcomes: Mapping[str, ScenarioOutcome],
                  scores: Mapping[str, JudgeScores | str], judge_packets: Mapping[str, JudgePacket],
-                 ledger: RequestLedger, prices: PriceSnapshot, persona_smoke: Any) -> Path:
+                 ledger: RequestLedger, prices: PriceBook, persona_smoke: Any) -> Path:
     """One unique directory per execution. Existing runs are never overwritten."""
     run = directory / manifest.run_id
     run.mkdir(parents=True, exist_ok=False)
@@ -120,7 +136,7 @@ def write_report(directory: Path, *, manifest: RunManifest, outcomes: Mapping[st
     cost['full_evaluation_per_accepted_including_judge_smoke'] = (str(costs.total / accepted)
         if accepted and costs.total is not None else None)
     cost['estimate_notice'] = 'Estimated API cost, not an invoice; retry subtotal overlaps phase totals.'
-    report = dict(schema_version=1, run_id=manifest.run_id, status=manifest.status, phase=manifest.phase,
+    report = dict(schema_version=2, run_id=manifest.run_id, status=manifest.status, phase=manifest.phase,
         counts=counts, eligible_ids=eligible_ids,
         unexecuted_ids=[key for key in manifest.selected_ids if key not in (outcomes or judge_packets)],
         coverage={'judged_of_eligible': _coverage(judged, len(eligible_ids)),
@@ -128,7 +144,7 @@ def write_report(directory: Path, *, manifest: RunManifest, outcomes: Mapping[st
         score_averages={name: sum(getattr(score, name) for score in numeric) / len(numeric) if numeric else None
                         for name in ('mathematics', 'help_level', 'diagnosis', 'tone')},
         scores={key: _json(score) for key, score in scores.items()},
-        latency_by_response_job=_latencies(outcomes), cost=cost, prices=_json(prices),
+        latency_by_response_job=_latencies(outcomes), cost=cost, prices=prices.to_dict(),
         judge_packets=packet_entries, outcomes=outcome_entries, traces=trace_entries, persona_smoke=persona_smoke)
     _write(run / 'report.json', report)
     lines = [f'Run {manifest.run_id}: {manifest.status} ({manifest.phase})', '',
@@ -150,10 +166,15 @@ def write_report(directory: Path, *, manifest: RunManifest, outcomes: Mapping[st
     return run
 
 
-def compare_runs(left: Path, right: Path) -> dict[str, Any]:
+def compare_runs(left: SavedRun, right: SavedRun, *, treatment: TutorTreatment | None = None) -> dict[str, Any]:
     """Artifact inspection only: disclose configuration/evaluator changes first."""
-    manifests = [read_json(path / 'manifest.json') for path in (left, right)]
-    reports = [read_json(path / 'report.json') for path in (left, right)]
+    # Path support preserves existing callers; composition owns version dispatch.
+    if isinstance(left, Path) or isinstance(right, Path):
+        from learnai.application.artifacts import load_saved_run
+        left = load_saved_run(left) if isinstance(left, Path) else left
+        right = load_saved_run(right) if isinstance(right, Path) else right
+    manifests = [run.manifest for run in (left, right)]
+    reports = [run.report for run in (left, right)]
     materials = [manifest['material'] for manifest in manifests]
     hashes = [{entry['path']: entry['sha256'] for entry in material.get('inputs', ())} for material in materials]
     changed_inputs = {path: {'left': hashes[0].get(path), 'right': hashes[1].get(path)}
@@ -175,25 +196,27 @@ def compare_runs(left: Path, right: Path) -> dict[str, Any]:
         'selected_ids': manifest['selected_ids'], 'seeds': manifest['seeds'],
         'schema_version': manifest['schema_version'], 'code_revision': manifest['code_revision'],
         **{key: material.get(key) for key in ('python', 'dependencies', 'deleted_inputs',
-                                             'missing_inputs', 'saved_packet_inputs')},
+                                             'missing_inputs', 'saved_packet_inputs', 'identities', 'role_dependencies', 'pricing_snapshots')},
     } for manifest, material in zip(manifests, materials)]
     execution_differences = {key: {'left': execution_inputs[0][key], 'right': execution_inputs[1][key]}
                              for key in execution_inputs[0]
                              if execution_inputs[0][key] != execution_inputs[1][key]}
-    def returned(path: Path) -> list[tuple[Any, ...]]:
-        from json import loads
-        return [(entry.get('scenario_id'), entry['phase'], entry['requested_model'], entry['returned_model'])
-                for line in (path / 'requests.jsonl').read_text(encoding='utf-8').splitlines() if (entry := loads(line))]
-    provider_models = [returned(path) for path in (left, right)]
+    def returned(run: SavedRun) -> list[tuple[Any, ...]]:
+        return [(entry.scenario_id, entry.phase, entry.requested_model, entry.returned_model,
+                 entry.provider, entry.api_family) for entry in run.records]
+    provider_models = [returned(run) for run in (left, right)]
     by_phase = [{phase: [list(entry) for entry in sorted(
-        {(case, requested, actual) for case, recorded_phase, requested, actual in models if recorded_phase == phase},
+        {(entry[0], *entry[2:]) for entry in models if entry[1] == phase},
         key=canonical_json)] for phase in ('tutor', 'judge', 'smoke')} for models in provider_models]
     if by_phase[0]['judge'] != by_phase[1]['judge']:
         evaluator_differences['returned_judge_models'] = {'left': by_phase[0]['judge'], 'right': by_phase[1]['judge']}
     evaluator_changed = bool(evaluator_differences)
     # Conservative verdict: matching fingerprints alone never establish quality.
     comparable = not (changed_inputs or settings_changed or evaluator_changed or execution_differences)
-    return dict(changed_input_hashes=changed_inputs, settings_changed=settings_changed,
+    controlled = _controlled_tutor_comparison(left, right, treatment)
+    return dict(tutor_treatment=asdict(treatment) if treatment is not None else None,
+        controlled_tutor_comparison=controlled, compatibility_notes={'left': left.compatibility_notes, 'right': right.compatibility_notes},
+        changed_input_hashes=changed_inputs, settings_changed=settings_changed,
         changed_settings=changed_settings, execution_input_differences=execution_differences,
         evaluator_differences=evaluator_differences,
         evaluator_or_reference_changed=evaluator_changed, selected_case_overlap=sorted(selected[0] & selected[1]),
@@ -205,5 +228,171 @@ def compare_runs(left: Path, right: Path) -> dict[str, Any]:
         direct_comparison_inputs_held_fixed=comparable,
         comparison_notice='Inspect scenarios, references and judge before interpreting numerical differences.',
         numerical_differences={name: (reports[1]['score_averages'][name] - reports[0]['score_averages'][name]
-            if reports[1]['score_averages'][name] is not None and reports[0]['score_averages'][name] is not None else None)
+            if all(type(report.get('score_averages', {}).get(name)) in (int, float)
+                   for report in reports) else None)
             for name in ('mathematics', 'help_level', 'diagnosis', 'tone')})
+
+
+_TUTOR_FIELDS = {'adapter', 'model', 'effort', 'thinking', 'temperature', 'max_tokens', 'stream', 'provider_options'}
+
+
+def _without_treatment_routes(settings: Mapping[str, Any], names: tuple[str, ...],
+                              *, other: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    result = deepcopy(dict(settings))
+    for name in names:
+        route = result.get('routes', {}).get(name)
+        if isinstance(route, dict):
+            if 'effective_settings' in route:
+                from learnai.application.providers import tutor_settings_residual
+                counterpart = (other or {}).get('routes', {}).get(name, {})
+                residual = tutor_settings_residual(route, provider_changed=(
+                    isinstance(counterpart, dict) and route.get('adapter') != counterpart.get('adapter')))
+                if residual == {}:
+                    route.pop('effective_settings')
+                else:
+                    route['effective_settings'] = residual
+            for field in _TUTOR_FIELDS:
+                route.pop(field, None)
+    return result
+
+
+def _known_role_identity(value: Any, *, tutor: bool) -> bool:
+    if not isinstance(value, dict) or any(not isinstance(value.get(key), str) or not value[key].strip()
+            for key in ('provider', 'api_family', 'usage_mapper_id', 'token_counter_id')):
+        return False
+    hashes = value.get('schema_hashes')
+    required = ('final_output', 'canonical_read_tools', 'wire_read_tools') if tutor else ('final_output',)
+    return isinstance(hashes, dict) and all(isinstance(hashes.get(key), str) and hashes[key].strip()
+                                           for key in required)
+
+
+def _controlled_tutor_comparison(left: SavedRun, right: SavedRun,
+                                 treatment: TutorTreatment | None) -> dict[str, Any]:
+    if treatment is None:
+        return {'eligible': False, 'reasons': ['no tutor treatment declared']}
+    reasons = []
+    runs = (left, right)
+    materials = [run.manifest['material'] for run in runs]
+    settings = [material.get('settings', {}) for material in materials]
+    names = treatment.route_names
+    identities = [material.get('identities', {}) for material in materials]
+    roles = [material.get('role_dependencies', {}) for material in materials]
+    for run, setting, identity in zip(runs, settings, identities):
+        tutor_records = [record for record in run.records if record.phase == 'tutor']
+        selected_by_exchange: dict[str, set[str | None]] = {}
+        for record in tutor_records:
+            selected_by_exchange.setdefault(record.exchange_id, set()).add(record.route_name)
+            route = setting.get('routes', {}).get(record.route_name)
+            role_identity = identity.get('tutor', {}).get(record.route_name)
+            if (record.route_name is None or not isinstance(route, dict)
+                    or not _known_role_identity(role_identity, tutor=True)):
+                reasons.append('missing or unknown selected tutor route evidence')
+            elif (record.requested_model != route.get('model')
+                    or record.provider != role_identity.get('provider')
+                    or record.api_family != role_identity.get('api_family')):
+                reasons.append(f'observed tutor provider/API/model contradicts selected route: {record.route_name}')
+        if any(len(route_names) != 1 for route_names in selected_by_exchange.values()):
+            reasons.append('ambiguous selected tutor route evidence within an exchange')
+        for name in names:
+            route = setting.get('routes', {}).get(name)
+            role_identity = identity.get('tutor', {}).get(name)
+            if not _known_role_identity(role_identity, tutor=True):
+                reasons.append(f'unknown tutor encoding identity: {name}')
+            if (not isinstance(route, dict) or name == setting.get('judge_route')
+                    or not any(record.route_name == name for record in tutor_records)):
+                reasons.append(f'declared route is not established as used for tutor generation: {name}')
+        judge_name = setting.get('judge_route')
+        judge_identity = identity.get('judge', {}).get(judge_name)
+        judge_route = setting.get('routes', {}).get(judge_name)
+        observed_judges = [record for record in run.records if record.phase == 'judge']
+        if (not _known_role_identity(judge_identity, tutor=False) or not isinstance(judge_route, dict)
+                or not observed_judges or any(not record.returned_model
+                    or record.requested_model != judge_route.get('model')
+                    or record.provider != judge_identity.get('provider')
+                    or record.api_family != judge_identity.get('api_family') for record in observed_judges)):
+            reasons.append('unknown or conflicting evaluator identity')
+        if not run.manifest['material'].get('pricing_snapshots'):
+            reasons.append('unknown pricing snapshot identity')
+    if _without_treatment_routes(settings[0], names, other=settings[1]) != _without_treatment_routes(settings[1], names, other=settings[0]):
+        reasons.append('settings changed outside declared tutor fields')
+    for key in ('prompts', 'references', 'python', 'deleted_inputs', 'missing_inputs', 'saved_packet_inputs', 'pricing_snapshots'):
+        if materials[0].get(key) != materials[1].get(key):
+            reasons.append(f'held-fixed material changed: {key}')
+    for key in ('selected_ids', 'seeds', 'schema_version', 'code_revision'):
+        if left.manifest.get(key) != right.manifest.get(key):
+            reasons.append(f'execution identity changed: {key}')
+    if not left.manifest.get('code_revision') or not right.manifest.get('code_revision'):
+        reasons.append('unknown source revision')
+    if left.compatibility_notes or right.compatibility_notes:
+        reasons.append('legacy normalization is not identical')
+    # Only attributable provider/API/schema/mapper changes can follow a tutor switch.
+    identity_copies = []
+    for identity in identities:
+        value = deepcopy(identity)
+        for name in names:
+            route = value.get('tutor', {}).get(name)
+            if isinstance(route, dict):
+                for key in ('provider', 'api_family', 'usage_mapper_id'):
+                    route.pop(key, None)
+                hashes = route.get('schema_hashes')
+                if isinstance(hashes, dict):
+                    for key in ('final_output', 'wire_read_tools'):
+                        hashes.pop(key, None)
+                if isinstance(route.get('effective_settings'), dict):
+                    for key in _TUTOR_FIELDS:
+                        route['effective_settings'].pop(key, None)
+        identity_copies.append(value)
+    if identity_copies[0] != identity_copies[1]:
+        reasons.append('role identities changed outside attributable tutor provider/API/schema identities')
+    for role in ('tutor', 'judge'):
+        for role_map in roles:
+            deps = role_map.get(role)
+            if not isinstance(deps, dict) or not deps or any(not isinstance(v, str) or not v for v in deps.values()):
+                reasons.append(f'unknown {role} dependency versions')
+    tutor_deps = [role.get('tutor', {}) for role in roles]
+    judge_deps = [role.get('judge', {}) for role in roles]
+    if judge_deps[0] != judge_deps[1]:
+        reasons.append('judge dependency versions changed (including shared SDK/transport)')
+    for dependency in tutor_deps[0].keys() & tutor_deps[1].keys():
+        if tutor_deps[0][dependency] != tutor_deps[1][dependency]:
+            if not treatment.allow_tutor_dependency_changes:
+                reasons.append(f'tutor dependency version change needs opt-in: {dependency}')
+            if dependency in judge_deps[0] or dependency in judge_deps[1]:
+                reasons.append(f'changed tutor dependency is also used by judge: {dependency}')
+    provider_switch = any(settings[0].get('routes', {}).get(name, {}).get('adapter') !=
+                          settings[1].get('routes', {}).get(name, {}).get('adapter') for name in names)
+    if tutor_deps[0].keys() != tutor_deps[1].keys() and not provider_switch and not treatment.allow_tutor_dependency_changes:
+        reasons.append('tutor dependency membership change needs opt-in')
+    dependencies = [material.get('dependencies', {}) for material in materials]
+    for name in dependencies[0].keys() | dependencies[1].keys():
+        if dependencies[0].get(name) != dependencies[1].get(name):
+            if name not in tutor_deps[0] and name not in tutor_deps[1]:
+                reasons.append(f'unclassified dependency changed: {name}')
+            elif name in judge_deps[0] or name in judge_deps[1]:
+                reasons.append(f'shared judge dependency changed: {name}')
+    # Compare complete captured YAML semantics after removing only declared fields.
+    inputs = [{entry['path']: entry for entry in material.get('inputs', ())} for material in materials]
+    for path in inputs[0].keys() | inputs[1].keys():
+        a, b = inputs[0].get(path), inputs[1].get(path)
+        if a is not None and b is not None and a.get('sha256') == b.get('sha256'):
+            continue
+        if a is not None and b is not None and path.startswith('config/') and Path(path).suffix in {'.yaml', '.yml'}:
+            try:
+                parsed = [yaml.safe_load(entry['content']) for entry in (a, b)]
+                if all(isinstance(value, dict) for value in parsed) and (
+                    _without_treatment_routes(parsed[0], names, other=parsed[1]) == _without_treatment_routes(parsed[1], names, other=parsed[0])):
+                    continue
+            except (KeyError, TypeError, ValueError, yaml.YAMLError):
+                pass
+        reasons.append(f'unclassified captured input changed: {path}')
+    # New unknown material cannot silently become an exemption.
+    known_keys = {'schema_version','selected_ids','seeds','settings','prompts','references','inputs','code_revision',
+                  'python','dependencies','missing_inputs','deleted_inputs','saved_packet_inputs','identities','role_dependencies','pricing_snapshots'}
+    for key in (materials[0].keys() | materials[1].keys()) - known_keys:
+        if materials[0].get(key) != materials[1].get(key):
+            reasons.append(f'unclassified material changed: {key}')
+    returned_judges = [[(record.scenario_id, record.provider, record.api_family, record.requested_model, record.returned_model)
+                       for record in run.records if record.phase == 'judge'] for run in runs]
+    if returned_judges[0] != returned_judges[1]:
+        reasons.append('judge provider/API/returned model changed')
+    return {'eligible': not reasons, 'reasons': list(dict.fromkeys(reasons))}

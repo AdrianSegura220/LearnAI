@@ -54,6 +54,38 @@ def _parameters(properties: dict[str, Any], required: tuple[str, ...] = ()) -> d
             "additionalProperties": False}
 
 
+@dataclass(frozen=True, slots=True)
+class ToolDefinition:
+    name: str
+    description: str
+    parameters: Mapping[str, Any]
+
+
+def tool_definitions() -> tuple[ToolDefinition, ...]:
+    """Canonical read schemas, also used to bind every executable handler."""
+    text = {"type": "string", "minLength": 1}
+    return (
+        ToolDefinition("check_expression",
+             "Check mathematics using the CAS. With reference, check only equivalence; "
+             "otherwise grade one active-item answer field including required form.",
+             _parameters({"expression": text, "reference": text}, ("expression",))),
+        ToolDefinition("get_worked_example", "Read a vetted, distinct worked example of this skill.",
+             _parameters({})),
+        ToolDefinition("lookup_misconception", "Read a misconception catalogue entry by its id.",
+             _parameters({"misconception_id": text}, ("misconception_id",))),
+        ToolDefinition("get_student_summary", "Read the current student summary.",
+             _parameters({})),
+        ToolDefinition("get_session_history", "Browse bounded history for the current student and "
+             "current session, across skills. Time bounds are exclusive and UTC.",
+             _parameters({"task_id": text, "skill_id": text, "item_id": text,
+                 "kind": {"type": "string", "enum": [kind.value for kind in HistoryKind]},
+                 "after": {"type": "string", "format": "date-time"},
+                 "before": {"type": "string", "format": "date-time"},
+                 "before_id": text,
+                 "limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 10}})),
+    )
+
+
 class Toolbox:
     """Read-only capabilities over content, catalogue and a request-local reader."""
 
@@ -63,30 +95,9 @@ class Toolbox:
         self._items = items
         self._catalogue = catalogue
         self._history = history if history is not None else InMemoryHistoryReader(())
-        text = {"type": "string", "minLength": 1}
-        self._tools = (
-            Tool("check_expression",
-                 "Check mathematics using the CAS. With reference, check only equivalence; "
-                 "otherwise grade one active-item answer field including required form.",
-                 _parameters({"expression": text, "reference": text}, ("expression",)),
-                 self._check_expression),
-            Tool("get_worked_example", "Read a vetted, distinct worked example of this skill.",
-                 _parameters({}), self._get_worked_example),
-            Tool("lookup_misconception", "Read a misconception catalogue entry by its id.",
-                 _parameters({"misconception_id": text}, ("misconception_id",)),
-                 self._lookup_misconception),
-            Tool("get_student_summary", "Read the current student summary.",
-                 _parameters({}), self._get_student_summary),
-            Tool("get_session_history", "Browse bounded history for the current student and "
-                 "current session, across skills. Time bounds are exclusive and UTC.",
-                 _parameters({"task_id": text, "skill_id": text, "item_id": text,
-                     "kind": {"type": "string", "enum": [kind.value for kind in HistoryKind]},
-                     "after": {"type": "string", "format": "date-time"},
-                     "before": {"type": "string", "format": "date-time"},
-                     "before_id": text,
-                     "limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 10}}),
-                 self._get_session_history),
-        )
+        self._tools = tuple(Tool(definition.name, definition.description, definition.parameters,
+                                 getattr(self, '_' + definition.name))
+                            for definition in tool_definitions())
 
     def tools(self) -> tuple[Tool, ...]:
         return self._tools

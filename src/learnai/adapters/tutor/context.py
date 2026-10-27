@@ -1,6 +1,6 @@
 """Select immutable tutor context by token allowance and exercise boundaries."""
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 import json
 from typing import Any
@@ -14,6 +14,10 @@ from learnai.domain.turn import TranscriptEntry, TurnContext
 class ContextLimitError(ValueError):
     """The protected active exercise cannot fit without losing student work."""
 
+    def __init__(self, message: str, *, context_view=None) -> None:
+        super().__init__(message)
+        self.context_view = context_view
+
 
 @dataclass(frozen=True, slots=True)
 class ContextView:
@@ -22,6 +26,30 @@ class ContextView:
     summary: str
     source_ids: tuple[str, ...]
     input_tokens: int
+
+
+def scoped_context(context: TurnContext) -> TurnContext:
+    """Apply the same student/session boundary as history retrieval.
+
+    A transcript has no independent scope; discard entries known to belong to
+    foreign history, while preserving legacy entries without stored records.
+    Filter records before building metadata maps so foreign duplicate IDs cannot
+    replace the metadata of a permitted record. A transcript linked to an ID
+    shared across scopes is ambiguous; retain the permitted canonical history
+    record instead of that fallback text.
+    """
+    scope = context.history_scope
+    if scope is None:
+        return context
+    history = tuple(record for record in context.history
+                    if record.student_id == scope.student_id and record.session_id == scope.session_id)
+    permitted_ids = {record.id for record in history}
+    foreign_ids = {record.id for record in context.history
+                   if record.student_id != scope.student_id or record.session_id != scope.session_id}
+    return replace(context, history=history,
+        transcript=tuple(entry for entry in context.transcript if entry.record_id not in foreign_ids),
+        current_interaction_id=(None if context.current_interaction_id in foreign_ids - permitted_ids
+                                else context.current_interaction_id))
 
 
 def _entry_data(entry: TranscriptEntry, records: dict[str, HistoryRecord]) -> dict[str, Any]:
@@ -42,6 +70,7 @@ def _entry_data(entry: TranscriptEntry, records: dict[str, HistoryRecord]) -> di
 
 def render_context(context: TurnContext, view: ContextView) -> str:
     """Render precisely the selected volatile layer; the full history stays retrievable."""
+    context = scoped_context(context)
     records = {record.id: record for record in context.history}
     return json.dumps({
         "moment": json.loads(render_moment(context)),
@@ -86,6 +115,7 @@ def select_context(
     for the remainder. Unselected history remains available through retrieval.
     The injected counter can also include fixed prompt framing/provider overhead.
     """
+    context = scoped_context(context)
     if input_budget < 0:
         raise ContextLimitError("protected exercise exceeds input allowance")
     active_id = context.interaction.task_id if context.interaction else None
@@ -132,7 +162,8 @@ def select_context(
     view = make_view((), ())
     if view.input_tokens > input_budget:
         raise ContextLimitError(
-            f"protected exercise requires {view.input_tokens} tokens; allowance is {input_budget}"
+            f"protected exercise requires {view.input_tokens} tokens; allowance is {input_budget}",
+            context_view=view
         )
     selected: set[TaskId] = set()
     summarized: tuple[HistoryRecord, ...] = ()

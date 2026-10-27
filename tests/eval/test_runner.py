@@ -71,7 +71,7 @@ def test_correct_completion_has_no_tutor_exchange_and_no_error(dependencies):
     assert outcome.context is None and outcome.turn is None and outcome.trace is None
     assert outcome.non_tutored_reason is NonTutoredReason.COMPLETED
     assert outcome.error is None and outcome.attempts == 0
-    assert outcome.usage["input_tokens"] == 0
+    assert outcome.usage["input"] == 0
 
 
 @pytest.mark.parametrize("name,reason", [
@@ -217,11 +217,11 @@ def test_trace_keeps_tools_rejections_accepted_text_and_all_usage(dependencies):
     assert len(result.trace.tool_results) == 3 and len(result.trace.provider_requests) == 3
     assert "PRIVATE REJECTED" in json.dumps(result.trace.to_dict())
     assert "PRIVATE REJECTED" not in repr(result.context.history)
-    assert result.usage == dict(input_tokens=300, output_tokens=120,
-        cache_read_input_tokens=240, cache_creation_input_tokens=60,
-        complete_usage_attempts=3, partial_usage_attempts=0, missing_usage_attempts=0)
+    assert result.usage == dict(input=300, output=120,
+        cache_read=240, cache_write_5m=0, cache_write_1h=0,
+        complete_usage_attempts=0, partial_usage_attempts=3, missing_usage_attempts=0)
     assert result.trace.usages[0]["cache_creation_input_tokens"] == 20
-    assert all(a.usage_status is UsageStatus.COMPLETE for a in result.trace.attempts)
+    assert all(a.usage_status is UsageStatus.PARTIAL for a in result.trace.attempts)
     assert len(tutor.usages) == len(sdk.requests) == 3
 
 
@@ -231,8 +231,8 @@ def test_reused_adapter_returns_matching_trace_and_usage_delta(dependencies):
                             tutor=tutor, **runner_dependencies(dependencies))
     assert results[0].trace is traces[0] and results[1].trace is traces[1]
     assert results[0].trace.request_id != results[1].trace.request_id
-    assert [r.usage["output_tokens"] for r in results] == [40, 70]
-    assert [r.usage["input_tokens"] for r in results] == [100, 100]
+    assert [r.usage["output"] for r in results] == [40, 70]
+    assert [r.usage["input"] for r in results] == [100, 100]
     assert len(tutor.usages) == 2
 
 
@@ -252,8 +252,10 @@ def test_nested_request_during_finish_cannot_replace_outer_trace(dependencies):
     assert outer.trace is traces[0] and nested[0].trace is traces[1]
     assert outer.trace.task_id == outer.scenario.task_id
     assert nested[0].trace.task_id == nested[0].scenario.task_id
-    assert outer.usage["output_tokens"] == 40 and nested[0].usage["output_tokens"] == 70
+    assert outer.usage["output"] == 40 and nested[0].usage["output"] == 70
     assert outer.trace.request_id != nested[0].trace.request_id
+    assert outer.trace.attempts[0].normalized_usage.counts == {"input": 100, "output": 40, "cache_read": 80}
+    assert nested[0].trace.attempts[0].normalized_usage.counts == {"input": 100, "output": 70, "cache_read": 80}
 
 
 @pytest.mark.parametrize("reply,status,observed_output", [
@@ -270,7 +272,7 @@ def test_failed_provider_attempt_usage_is_explicitly_incomplete(dependencies, re
     assert result.trace.attempts[0].usage_status is status
     assert result.usage[f"{status.value}_usage_attempts"] == 1
     assert result.usage["complete_usage_attempts"] == 0
-    assert result.usage["output_tokens"] == observed_output
+    assert result.usage["output"] == observed_output
 
 
 def test_deadline_uses_adapter_clock_without_changing_study_time(dependencies):

@@ -9,26 +9,28 @@ import os
 from pathlib import Path
 import sys
 import tempfile
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Mapping
 
-import anthropic
 
 from learnai.adapters.cas.misconception_rules import SympyMisconceptionRules
 from learnai.adapters.cas.sympy_verifier import SympyVerifier
 from learnai.adapters.content.generators.quadratics import QUADRATICS_TEMPLATES
 from learnai.adapters.content.loader import load_cluster
 from learnai.adapters.content.registry import GeneratorRegistry
-from learnai.adapters.tutor.anthropic.adapter import AnthropicTutor, _request_kwargs
-from learnai.adapters.tutor.anthropic.routing import load_budget_profiles, load_routes, resolve_tutor_route
-from learnai.adapters.tutor.prompts import load_prompt
+from learnai.adapters.tutor.routing import load_budget_profiles, load_routes
+from learnai.adapters.tutor.prompts import PROMPTS_ROOT
+from learnai.application.ports import ProviderFactory, TutorDependencies
+from learnai.application.providers import ProviderRegistry, ProviderServices, default_registry, resolve_operation_routes
 from learnai.eval.accounting import RequestLedger, load_prices
-from learnai.eval.artifacts import encode, load_packets, read_json
+from learnai.eval.artifacts import encode
 from learnai.eval.fixtures import load_scenarios_dir, validate_corpus
 from learnai.eval.judge import JudgeError, JudgePacket, run_judge
 from learnai.eval.manifest import build_manifest, canonical_json
 from learnai.eval.reference import build_reference
 from learnai.eval.replay import prepare_scenario
-from learnai.eval.report import compare_runs, write_report
+from learnai.eval.report import TutorTreatment, compare_runs, write_report
+from learnai.application.artifacts import load_saved_run
 from learnai.eval.runner import run_scenario
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -64,27 +66,26 @@ def _parser() -> argparse.ArgumentParser:
     compare = operations.add_parser('compare')
     compare.add_argument('left', type=Path)
     compare.add_argument('right', type=Path)
+    compare.add_argument('--tutor-treatment', help='Comma-separated tutor route names')
+    compare.add_argument('--allow-tutor-dependency-changes', action='store_true')
     return parser
 
 
-def _preflight(args: argparse.Namespace) -> dict[str, Any]:
+def _preflight(args: argparse.Namespace, registry: ProviderRegistry) -> dict[str, Any]:
     routes, profiles, prices = load_routes(args.routes), load_budget_profiles(args.routes), load_prices(args.routes)
-    if args.judge_route not in routes:
-        raise ValueError(f'unknown judge route: {args.judge_route}')
-    judge_route = routes[args.judge_route]
-    if judge_route.prompt is None or judge_route.temperature is not None:
-        raise ValueError('judge requires a versioned prompt and omitted temperature')
-    prompts = {route.prompt: load_prompt(route.prompt).text for route in routes.values() if route.prompt}
+    # Unknown configured providers are structural errors even on unused routes.
+    for route in routes.values():
+        registry.get(route.adapter)
     settings = {'routes': {name: asdict(route) for name, route in routes.items()},
         'budgets': {name: asdict(profile) for name, profile in profiles.items()},
         'judge_route': args.judge_route, 'operation': args.operation,
-        'sdk_max_retries': 0, 'token_counter': 'utf8-bytes-plus-256@1'}
-    values = dict(routes=routes, profiles=profiles, prices=prices, settings=settings, prompts=prompts)
+        'sdk_max_retries': 0}
+    values = dict(routes=routes, profiles=profiles, prices=prices, settings=settings)
     if args.operation == 'rejudge':
         packets, links = {}, []
         for source in args.sources:
-            saved_manifest = read_json(source / 'manifest.json')
-            saved = load_packets(source)
+            source_run = load_saved_run(source)
+            saved_manifest, saved = source_run.manifest, source_run.packets
             source_id = saved_manifest['run_id']
             links.append({'run_id': source_id,
                 'manifest_sha256': sha256(canonical_json(saved_manifest).encode('utf-8')).hexdigest(),
@@ -95,7 +96,9 @@ def _preflight(args: argparse.Namespace) -> dict[str, Any]:
                 if selected_id in packets:
                     raise ValueError('duplicate rejudge source packet')
                 packets[selected_id] = packet
-        values.update(packets=packets, links=links, supplemental_inputs={
+        if not packets:
+            raise ValueError('no saved judge packets')
+        values.update(packets=packets, contexts=(), links=links, supplemental_inputs={
             'config/selected/routes.yaml': args.routes.read_text(encoding='utf-8')})
         return values
     cluster = load_cluster(ROOT / 'content/quadratics/skills.yaml')
@@ -111,7 +114,7 @@ def _preflight(args: argparse.Namespace) -> dict[str, Any]:
         scenarios = tuple(by_id[key] for key in requested)
     if not scenarios:
         raise ValueError('no selected scenarios')
-    references, captured = {}, {}
+    references, captured, contexts = {}, {}, []
     for scenario in scenarios:
         validate_corpus((scenario,), graph=cluster.graph, items=items, catalogue=cluster.misconceptions,
                         verifier=verifier, matcher=matcher)
@@ -122,12 +125,9 @@ def _preflight(args: argparse.Namespace) -> dict[str, Any]:
         references[scenario.id] = reference
         captured[scenario.id] = {'scenario': encode(scenario), 'generated_item': encode(prepared.task.item)}
         if prepared.context is not None:
-            route = resolve_tutor_route(routes, prepared.context.response_job)
-            if route.prompt is None:
-                raise ValueError('tutor requires a versioned prompt')
-            _request_kwargs(route)
+            contexts.append(prepared.context)
     values.update(cluster=cluster, items=items, verifier=verifier, matcher=matcher,
-                  scenarios=scenarios, references=references, captured=captured)
+                  scenarios=scenarios, references=references, captured=captured, contexts=contexts)
     values['settings']['smoke_enabled'] = not args.no_smoke
     # Captured selected inputs include external fixture/config files explicitly requested by the user.
     values['supplemental_inputs'] = {
@@ -137,20 +137,50 @@ def _preflight(args: argparse.Namespace) -> dict[str, Any]:
     return values
 
 
-def main(argv: list[str] | None = None, *, client_factory: Callable[..., Any] | None = None) -> int:
+def main(argv: list[str] | None = None, *, provider_factories: Mapping[str, ProviderFactory] | None = None) -> int:
     args = _parser().parse_args(argv)
     if args.operation == 'compare':
         try:
-            print(json.dumps(compare_runs(args.left, args.right), ensure_ascii=False, indent=2))
+            if args.allow_tutor_dependency_changes and not args.tutor_treatment:
+                raise ValueError('--allow-tutor-dependency-changes requires --tutor-treatment')
+            treatment = (TutorTreatment(tuple(args.tutor_treatment.split(',')), args.allow_tutor_dependency_changes)
+                         if args.tutor_treatment else None)
+            result = compare_runs(load_saved_run(args.left), load_saved_run(args.right), treatment=treatment)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0
         except (ValueError, OSError, KeyError, TypeError) as exc:
             print(str(exc), file=sys.stderr)
             return 2
+    ledger = RequestLedger()
     try:
-        prepared = _preflight(args)
-        key = os.environ.get('ANTHROPIC_API_KEY')
-        if not key or not key.strip():
-            raise ValueError('ANTHROPIC_API_KEY is required for an explicit run/rejudge operation')
+        registry = default_registry() if provider_factories is None else ProviderRegistry(provider_factories)
+        prepared = _preflight(args, registry)
+        operation_routes = resolve_operation_routes(routes=prepared['routes'], contexts=prepared['contexts'],
+            judge_route_name=args.judge_route, smoke=args.operation == 'run' and not args.no_smoke,
+            rejudge=args.operation == 'rejudge')
+        dependencies = (TutorDependencies(prepared['items'], prepared['cluster'].misconceptions)
+                        if args.operation == 'run' else None)
+        services = ProviderServices(selected=operation_routes, registry=registry, environment=os.environ,
+            dependencies=dependencies, profiles=prepared['profiles'], prompts_root=PROMPTS_ROOT, ledger=ledger)
+        services.validate()
+        configs = services.resolved_configs
+        for context in prepared['contexts']:
+            route = operation_routes.tutors[context.response_job]
+            registry.get(route.adapter).prepare_tutor(configs['tutor', route.name], context=context,
+                                                       dependencies=dependencies)
+        if args.operation == 'rejudge':
+            route = operation_routes.judge
+            for packet in prepared['packets'].values():
+                registry.get(route.adapter).prepare_judge(configs['judge', route.name], packet=packet)
+        identities, role_dependencies, prompts = {}, {}, {}
+        for (role, name), config in configs.items():
+            prompts[config.prompt.id] = config.prompt.text
+            prepared['settings']['routes'][name]['effective_settings'] = dict(config.effective_settings)
+            identities.setdefault(role, {})[name] = {
+                'provider': config.provider, 'api_family': config.api_family,
+                'usage_mapper_id': config.usage_mapper_id, 'token_counter_id': config.token_counter_id,
+                'schema_hashes': dict(config.schema_hashes)}
+            role_dependencies.setdefault(role, {}).update(config.dependency_versions)
         if args.operation == 'run':
             selected = tuple(scenario.id for scenario in prepared['scenarios'])
             seeds = tuple(scenario.seed for scenario in prepared['scenarios'])
@@ -160,8 +190,10 @@ def main(argv: list[str] | None = None, *, client_factory: Callable[..., Any] | 
             selected, seeds = tuple(prepared['packets']), ()
             refs = {key: encode(packet.reference) for key, packet in prepared['packets'].items()}
         manifest = build_manifest(root=ROOT, selected_ids=selected, seeds=seeds,
-            settings=prepared['settings'], prompts=prepared['prompts'], references=refs,
-            linked_sources=prepared.get('links', ()), supplemental_inputs=prepared['supplemental_inputs'])
+            settings=prepared['settings'], prompts=prompts, references=refs,
+            identities=identities, role_dependencies=role_dependencies,
+            linked_sources=prepared.get('links', ()), supplemental_inputs=prepared['supplemental_inputs'],
+            pricing_snapshots=prepared['prices'].to_dict())
         if manifest.missing_inputs:
             raise ValueError(f'missing captured inputs: {manifest.missing_inputs}')
         args.out.mkdir(parents=True, exist_ok=True)
@@ -170,46 +202,43 @@ def main(argv: list[str] | None = None, *, client_factory: Callable[..., Any] | 
     except (ValueError, OSError, KeyError, TypeError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
-    ledger, outcomes, scores, packets = RequestLedger(), {}, {}, {}
+    outcomes, scores, packets = {}, {}, {}
     smoke: dict[str, Any] = {'status': 'skipped'}
     failed = False
     original_error: BaseException | None = None
     try:
-        factory = anthropic.Anthropic if client_factory is None else client_factory
-        client = factory(api_key=key, max_retries=0)
-        if args.operation == 'run':
-            manifest = replace(manifest, phase='tutor')
-            cluster, items = prepared['cluster'], prepared['items']
-            verifiers = {skill.verification_kind: prepared['verifier'] for skill in cluster.graph.skills.values()}
-            for scenario in prepared['scenarios']:
-                tutor = AnthropicTutor(prepared['routes'], client, items, cluster.misconceptions,
-                    budget_profiles=prepared['profiles'], trace_sink=ledger.sink(phase='tutor', scenario_id=scenario.id))
-                outcome = run_scenario(scenario, tutor=tutor, graph=cluster.graph, items=items,
-                    catalogue=cluster.misconceptions, verifiers=verifiers, matcher=prepared['matcher'])
-                outcomes[scenario.id] = outcome
-                if outcome.error:
+        with services:
+            if args.operation == 'run':
+                manifest = replace(manifest, phase='tutor')
+                cluster, items = prepared['cluster'], prepared['items']
+                verifiers = {skill.verification_kind: prepared['verifier'] for skill in cluster.graph.skills.values()}
+                for scenario in prepared['scenarios']:
+                    tutor = services.tutor(phase='tutor', scenario_id=scenario.id)
+                    outcome = run_scenario(scenario, tutor=tutor, graph=cluster.graph, items=items,
+                        catalogue=cluster.misconceptions, verifiers=verifiers, matcher=prepared['matcher'])
+                    outcomes[scenario.id] = outcome
+                    if outcome.error:
+                        failed = True
+                    if outcome.turn is not None and outcome.context is not None:
+                        packets[scenario.id] = JudgePacket(outcome.context, outcome.turn, prepared['references'][scenario.id])
+            else:
+                packets.update(prepared['packets'])
+            manifest = replace(manifest, phase='judge')
+            for case_id, packet in packets.items():
+                try:
+                    route = operation_routes.judge
+                    registry.get(route.adapter).prepare_judge(configs['judge', route.name], packet=packet)
+                    scores[case_id] = run_judge(services.judge(scenario_id=case_id), packet=packet)
+                except JudgeError as exc:
+                    scores[case_id] = str(exc)
                     failed = True
-                if outcome.turn is not None and outcome.context is not None:
-                    packets[scenario.id] = JudgePacket(outcome.context, outcome.turn, prepared['references'][scenario.id])
-        else:
-            packets.update(prepared['packets'])
-        manifest = replace(manifest, phase='judge')
-        for case_id, packet in packets.items():
-            try:
-                scores[case_id] = run_judge(client, prepared['routes'], packet=packet,
-                    route_name=args.judge_route, budget_profiles=prepared['profiles'],
-                    trace_sink=ledger.sink(phase='judge', scenario_id=case_id))
-            except JudgeError as exc:
-                scores[case_id] = str(exc)
-                failed = True
-        if args.operation == 'run' and not args.no_smoke:
-            manifest = replace(manifest, phase='smoke')
-            tutor = AnthropicTutor(prepared['routes'], client, prepared['items'], prepared['cluster'].misconceptions,
-                budget_profiles=prepared['profiles'], trace_sink=ledger.sink(phase='smoke'))
-            smoke = run_optional_smoke(tutor=tutor, graph=cluster.graph, misconceptions=cluster.misconceptions,
-                items=items, verifiers=verifiers, matcher=prepared['matcher'])
-            failed = failed or smoke['status'] != 'complete'
-        manifest = replace(manifest, phase='finished', status='incomplete' if failed else 'complete')
+            if args.operation == 'run' and not args.no_smoke:
+                manifest = replace(manifest, phase='smoke')
+                tutor = services.tutor(phase='smoke')
+                smoke = run_optional_smoke(tutor=tutor, graph=cluster.graph, misconceptions=cluster.misconceptions,
+                    items=items, verifiers=verifiers, matcher=prepared['matcher'])
+                failed = failed or smoke['status'] != 'complete'
+            manifest = replace(manifest, phase='finished', status='incomplete' if failed else 'complete')
     except BaseException as exc:
         original_error = exc
         manifest = replace(manifest, status='interrupted' if isinstance(exc, KeyboardInterrupt) else 'error')

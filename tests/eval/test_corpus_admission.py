@@ -11,6 +11,8 @@ import pytest
 
 from learnai.adapters.tutor.anthropic.adapter import AnthropicTutor
 from learnai.adapters.tutor.anthropic.judge import _JudgeExchange
+from learnai.adapters.tutor.anthropic.config import resolve_config
+from learnai.adapters.tutor.prompts import PROMPTS_ROOT
 from learnai.adapters.tutor.anthropic.routing import load_budget_profiles, load_routes
 from learnai.adapters.tutor.prompts import load_prompt
 from learnai.adapters.tutor.runtime import DEFAULT_BUDGET_PROFILES, conservative_token_count
@@ -69,8 +71,8 @@ def test_whole_eligible_corpus_admits_tutor_and_judge_with_headroom(dependencies
             graph=dependencies['graph'], catalogue=dependencies['catalogue'],
             verifier=dependencies['verifier'])
         packet = JudgePacket(context, REPRESENTATIVE_TURN, reference)
-        judge = _JudgeExchange(sdk.client, judge_route, prompt=load_prompt(judge_route.prompt),
-            messages=build_judge_messages(packet), schema=SCORE_SCHEMA, profile=judge_profile,
+        judge = _JudgeExchange(sdk.client, resolve_config(judge_route, role="judge", profiles=profiles, prompts_root=PROMPTS_ROOT),
+            messages=build_judge_messages(packet),
             monotonic=sdk.clock, count_tokens=conservative_token_count, sleep=sdk.clock.sleep)
         # Same initial framing used by _model_call, including schema and policy.
         judge_payload = {**judge.settings,

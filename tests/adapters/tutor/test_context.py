@@ -8,7 +8,7 @@ import pytest
 from learnai.adapters.tutor.context import ContextLimitError, render_context, select_context
 from learnai.domain.enums import Verdict
 from learnai.domain.history import HistoryKind
-from learnai.domain.ids import TaskId
+from learnai.domain.ids import SessionId, StudentId, TaskId
 from learnai.domain.turn import TranscriptEntry
 from tests.adapters.tutor.test_rendering import AT, make_context, record
 
@@ -119,3 +119,57 @@ def test_older_summaries_can_be_omitted_when_only_active_work_fits():
     assert view.input_tokens == protected.input_tokens
     assert not view.summary and not view.earlier
     assert all(not source.startswith("old-") for source in view.source_ids)
+
+
+@pytest.mark.parametrize('foreign_scope', [dict(student_id=StudentId('other')),
+                                         dict(session_id=SessionId('other'))])
+def test_scoped_context_excludes_foreign_records_and_their_transcript_fallback(foreign_scope):
+    valid = record('valid', message='  VALID_ACTIVE_WORK  ')
+    foreign = replace(record('foreign', message='FOREIGN_PRIVATE_WORK ' * 1000), **foreign_scope)
+    context = make_context(history=(valid, foreign), transcript=(
+        TranscriptEntry('student', 'FOREIGN_TRANSCRIPT', foreign.id, TaskId('active')),
+        TranscriptEntry('tutor', 'Legacy delivered text.'),
+    ))
+    view = select_context(context, input_budget=6000, count_tokens=len)
+    rendered = render_context(context, view)
+    assert '  VALID_ACTIVE_WORK  ' in rendered and 'Legacy delivered text.' in rendered
+    assert 'FOREIGN' not in rendered
+    assert view.source_ids == ('current-question', 'valid')
+    assert context.history == (valid, foreign)
+
+
+@pytest.mark.parametrize('identifier', ['current-question', 'earlier-question'])
+@pytest.mark.parametrize('foreign_first', [False, True])
+def test_foreign_duplicate_id_cannot_replace_valid_record_metadata(identifier, foreign_first):
+    valid = record(identifier, message='VALID', verdict=Verdict.CORRECT)
+    foreign = replace(valid, student_id=StudentId('other'), message='FOREIGN_PRIVATE',
+                      verdict=Verdict.WRONG, item_id='foreign-item')
+    history = (foreign, valid) if foreign_first else (valid, foreign)
+    context = make_context(history=history)
+    view = select_context(context, input_budget=20_000, count_tokens=len)
+    rendered = render_context(context, view)
+    data = json.loads(rendered)
+    metadata = (data['moment']['current_record'] if identifier == 'current-question'
+                else data['active'][0]['record'])
+    assert metadata['item_id'] == 'item-active' and metadata['historical_verdict'] == 'CORRECT'
+    assert 'FOREIGN' not in rendered and 'foreign-item' not in rendered
+
+
+def test_legacy_context_without_history_scope_retains_existing_history_behavior():
+    legacy = replace(record('legacy', message='Legacy history.'), student_id=StudentId('other'))
+    context = make_context(history_scope=None, history=(legacy,))
+    view = select_context(context, input_budget=20_000, count_tokens=len)
+    assert 'Legacy history.' in render_context(context, view)
+    assert 'legacy' in view.source_ids
+
+
+def test_foreign_current_record_cannot_supply_metadata_or_source_provenance():
+    foreign = replace(record('current-question', message='FOREIGN_CURRENT'),
+                      session_id=SessionId('other'))
+    context = make_context(history=(foreign,))
+    view = select_context(context, input_budget=20_000, count_tokens=len)
+    data = json.loads(render_context(context, view))
+    assert view.source_ids == ()
+    assert data['moment']['current_record'] is None
+    assert data['moment']['current_interaction_id'] is None
+    assert data['moment']['interaction']['steps'] == ['x^2 + 3*x + 2', '(x+1)*(x+2)']

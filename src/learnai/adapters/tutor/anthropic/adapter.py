@@ -14,18 +14,19 @@ import httpx2
 
 from learnai.adapters.content.registry import GeneratorRegistry
 from learnai.adapters.persistence.in_memory_history import InMemoryHistoryReader
-from learnai.adapters.tutor.anthropic.prompt import SystemBlock, build_prompt, correction_text
-from learnai.adapters.tutor.anthropic.routing import BudgetProfile, Route, resolve_route, resolve_tutor_route
-from learnai.adapters.tutor.anthropic.tool_schema import encode_tools
-from learnai.adapters.tutor.anthropic.turn_schema import TURN_SCHEMA, TurnSchemaError, parse_turn
-from learnai.adapters.tutor.context import ContextLimitError
-from learnai.adapters.tutor.prompts import PROMPTS_ROOT, TutorPrompt, load_prompt
-from learnai.adapters.tutor.rendering import render_session_preamble, render_skill_pack
+from learnai.adapters.tutor.anthropic.config import resolve_config, validate_route
+from learnai.adapters.tutor.anthropic.usage import normalize_anthropic_usage
+from learnai.adapters.tutor.observations import TraceSink
+from learnai.adapters.tutor.configuration import ResolvedRoleConfig
+from learnai.adapters.tutor.anthropic.prompt import correction_text, prepare_tutor, tutor_payload
+from learnai.adapters.tutor.prompts import PROMPTS_ROOT, TutorPrompt
+from learnai.adapters.tutor.routing import BudgetProfile, Route, resolve_route, resolve_tutor_route
 from learnai.adapters.tutor.runtime import (
     DEFAULT_BUDGET_PROFILES, ProviderAttempt, ResponseBudget, TerminationReason, TurnTrace,
     UsageStatus, conservative_token_count,
 )
 from learnai.adapters.tutor.tools import ToolError, Toolbox
+from learnai.adapters.tutor.turn_schema import TurnSchemaError, parse_turn
 from learnai.domain.ids import MisconceptionId
 from learnai.domain.skills import Misconception
 from learnai.domain.turn import TurnContext, TurnFeedback, TutorTurn, ValidationResult
@@ -39,27 +40,6 @@ def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
-def _system_block(block: SystemBlock) -> dict[str, Any]:
-    result: dict[str, Any] = {"type": "text", "text": block.text}
-    if block.cache:
-        result["cache_control"] = {"type": "ephemeral"}
-    return result
-
-
-def _request_kwargs(route: Route) -> dict[str, Any]:
-    result: dict[str, Any] = {"model": route.model, "max_tokens": route.max_tokens,
-        "stream": route.stream, "output_config": {"format": {
-            "type": "json_schema", "schema": deepcopy(TURN_SCHEMA)}}}
-    if route.effort is not None:
-        result["output_config"]["effort"] = route.effort
-    if route.thinking is not None:
-        result["thinking"] = {"type": route.thinking}
-    # Sampling controls are not supported by the configured adaptive model.
-    if route.temperature is not None:
-        raise ValueError("tutor routes must omit temperature")
-    return result
-
-
 class AnthropicTutor:
     def __init__(self, routes: Mapping[str, Route], client: anthropic.Anthropic,
                  items: GeneratorRegistry, catalogue: Mapping[MisconceptionId, Misconception], *,
@@ -67,8 +47,9 @@ class AnthropicTutor:
                  route_name: str | None = None, prompts_root: Path = PROMPTS_ROOT,
                  monotonic: Callable[[], float] = time.monotonic,
                  count_tokens: Callable[[str], int] | None = None,
-                 trace_sink: Callable[[TurnTrace], None] | None = None,
-                 sleep: Callable[[float], None] = time.sleep) -> None:
+                 trace_sink: TraceSink | None = None,
+                 sleep: Callable[[float], None] = time.sleep,
+                 resolved_config: ResolvedRoleConfig | None = None) -> None:
         self.routes = dict(routes)
         self.client = client.with_options(max_retries=0)
         self.items = items
@@ -81,20 +62,27 @@ class AnthropicTutor:
         self.sleep = sleep
         self.events_seen: list[dict[str, Any]] = []
         self.usages: list[anthropic.types.Usage] = []
-        self.prompts: dict[str, TutorPrompt] = {}
-        selected = (resolve_route(self.routes, route_name),) if route_name is not None else tuple(
-            route for name, route in self.routes.items() if name.startswith("tutor_"))
-        for route in selected:
-            if route.prompt is None:
-                raise ValueError(f"tutor route {route.name} requires an explicit prompt")
-            _request_kwargs(route)
-            if route.budget_profile not in self.profiles:
-                raise ValueError(f"unknown budget profile: {route.budget_profile}")
-            self.prompts[route.name] = load_prompt(route.prompt, root=prompts_root)
+        self.configs = {}
+        if resolved_config is not None:
+            from learnai.adapters.tutor.anthropic.prompt import require_config
+            require_config(resolved_config, role='tutor')
+            self.configs[resolved_config.route.name] = deepcopy(resolved_config)
+            self.route_name = resolved_config.route.name
+            self.routes = {resolved_config.route.name: resolved_config.route}
+            self.profiles = {resolved_config.route.budget_profile: resolved_config.profile}
+        else:
+            selected = (resolve_route(self.routes, route_name),) if route_name is not None else tuple(
+                route for name, route in self.routes.items()
+                if name.startswith('tutor_') and route.adapter == 'anthropic')
+            for route in selected:
+                self.configs[route.name] = resolve_config(route, role='tutor', profiles=self.profiles,
+                                                         prompts_root=prompts_root)
+        self.prompts = {name: config.prompt for name, config in self.configs.items()}
 
     def begin_turn(self, context: TurnContext) -> "_AnthropicExchange":
         route = (resolve_route(self.routes, self.route_name) if self.route_name is not None
                  else resolve_tutor_route(self.routes, context.response_job))
+        validate_route(route, role='tutor')
         return _AnthropicExchange(self, context, route, self.prompts[route.name])
 
     def respond(self, context: TurnContext, *, feedback: TurnFeedback | None = None) -> TutorTurn | None:
@@ -114,10 +102,9 @@ class _AnthropicExchange:
         self.tutor = tutor
         self.context = context
         self.route = route
+        self.config = tutor.configs[route.name]
         self.budget = ResponseBudget(tutor.profiles[route.budget_profile], monotonic=tutor.monotonic)
         self.toolbox = Toolbox(tutor.items, tutor.catalogue, InMemoryHistoryReader(context.history))
-        self.tools = list(encode_tools(self.toolbox.tools())) + [{"name": "submit_turn",
-            "description": "Submit the final tutor turn for engine validation.", "input_schema": deepcopy(TURN_SCHEMA)}]
         self.messages: list[dict[str, Any]] = []
         self.pending: list[dict[str, Any]] = []
         self.finished = False
@@ -127,28 +114,18 @@ class _AnthropicExchange:
         self.trace = TurnTrace(str(uuid4()), scope.student_id if scope else None,
             scope.session_id if scope else None, interaction.task_id if interaction else None,
             context.item.id, interaction.revision if interaction else None,
-            (policy.id,), route.model, _request_kwargs(route))
-        system = [SystemBlock(policy.text, cache=True), SystemBlock(render_skill_pack(context), cache=True)]
-        if preamble := render_session_preamble(context):
-            system.append(SystemBlock(preamble, cache=True))
-        self.system = [_system_block(block) for block in system]
-        # Prompt selection must charge schemas, tool definitions and provider framing
-        # as well as policy and the volatile context. The volatile JSON is one line.
-        def initial_counter(text: str) -> int:
-            volatile = text.rsplit("\n", 1)[-1]
-            return tutor.count_tokens(_json(self._payload(
-                messages=[{"role": "user", "content": volatile}], explore=self.budget.can_explore())))
-        try:
-            prompt = build_prompt(context, policy.text,
-                input_budget=self.budget.profile.context_input_tokens - self._max_tokens(self.budget.can_explore()),
-                count_tokens=initial_counter)
-        except ContextLimitError:
+            (policy.id,), route.model, deepcopy(dict(self.config.effective_settings)),
+            provider="anthropic", api_family="messages", route_name=route.name)
+        prepared = prepare_tutor(self.config, context=context, count_tokens=tutor.count_tokens)
+        self.system = prepared.payload['system']
+        self.tools = prepared.payload['tools']
+        if not prepared.admitted:
             self._stop = TerminationReason.CONTEXT_LIMIT
         else:
-            self.messages = deepcopy(list(prompt.messages))
-            self.trace.context_view = prompt.context_view
-            self.trace.source_ids = prompt.context_view.source_ids
-            self.trace.initial_context = self.messages[0]["content"]
+            self.messages = deepcopy(prepared.payload['messages'])
+            self.trace.context_view = prepared.context_view
+            self.trace.source_ids = prepared.context_view.source_ids
+            self.trace.initial_context = self.messages[0]['content']
 
     @property
     def stop_reason(self) -> str | None:
@@ -159,16 +136,10 @@ class _AnthropicExchange:
             self._stop = TerminationReason.DEADLINE
         return self._stop is not None or self.finished
 
-    def _max_tokens(self, explore: bool) -> int:
-        available = self.budget.remaining_output_tokens
-        if explore:
-            available -= self.budget.profile.finalization_reserve_tokens
-        return min(self.route.max_tokens, available)
-
     def _payload(self, *, explore: bool, messages: list[dict] | None = None) -> dict[str, Any]:
-        return {**_request_kwargs(self.route), "max_tokens": self._max_tokens(explore),
-            "system": self.system, "messages": self.messages if messages is None else messages,
-            "tools": self.tools, "tool_choice": {"type": "auto" if explore else "none"}}
+        return tutor_payload(self.config, system=self.system,
+            messages=self.messages if messages is None else messages, tools=self.tools,
+            explore=explore, remaining_output=self.budget.remaining_output_tokens)
 
     def _correction(self, value: str) -> None:
         # Supported by the configured provider and SDK, without mutating the prefix.
@@ -210,7 +181,9 @@ class _AnthropicExchange:
                 return None
             self.trace.provider_requests.append(deepcopy(payload))
             self.trace.attempts.append(ProviderAttempt(len(self.trace.provider_requests) - 1,
-                started_at=datetime.now(UTC).isoformat(), retry=attempt > 0 or self._retry_pending))
+                started_at=datetime.now(UTC).isoformat(), retry=attempt > 0 or self._retry_pending,
+                normalized_usage=normalize_anthropic_usage(None, status=UsageStatus.MISSING,
+                    request_settings=payload)))
             self._retry_pending = False
             self.budget.record_model_call(0)
             attempt_started = self.budget.monotonic()
@@ -269,10 +242,15 @@ class _AnthropicExchange:
 
     def _record_response(self, response: anthropic.types.Message, *, complete: bool = True) -> None:
         attempt = self.trace.attempts[-1]
-        attempt.usage_status = UsageStatus.COMPLETE if complete else UsageStatus.PARTIAL
-        attempt.usage = response.usage.model_dump(mode="json", exclude_unset=True)
         attempt.provider_request_id = getattr(response, "_request_id", None) or attempt.provider_request_id
         raw = response.model_dump(mode="json", exclude_unset=True)
+        usage = raw.get("usage")
+        attempt.usage = deepcopy(usage) if isinstance(usage, dict) else None
+        attempt.normalized_usage = normalize_anthropic_usage(attempt.usage,
+            status=UsageStatus.COMPLETE if complete else UsageStatus.PARTIAL,
+            response_metadata=raw,
+            request_settings=self.trace.provider_requests[attempt.request_index])
+        attempt.usage_status = attempt.normalized_usage.status
         attempt.response = deepcopy(raw)
         attempt.response_model = raw.get("model")
         attempt.outcome = raw.get("stop_reason") or "partial_response"

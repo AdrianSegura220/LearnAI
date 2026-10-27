@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from tests.support.provider_fakes import anthropic_override
 from learnai.eval.__main__ import main
 from learnai.eval.artifacts import decode, encode, load_packets
 from learnai.eval.manifest import build_manifest
@@ -88,6 +89,9 @@ def test_report_counts_only_numeric_scores_and_writes_roundtrippable_artifacts(t
 
 def routes_file(tmp_path):
     config = yaml.safe_load((ROOT / 'config/llm_routes.yaml').read_text())
+    # This suite deliberately registers only the scripted Anthropic factory.
+    config['routes'] = {name: route for name, route in config['routes'].items()
+                        if route['adapter'] == 'anthropic'}
     for route in config['routes'].values():
         route['model'] = 'fiction-model'
     for profile in config['budget_profiles'].values():
@@ -95,7 +99,7 @@ def routes_file(tmp_path):
     config['pricing'] = {'version': 'test@1', 'date': '2026-10-26', 'currency': 'USD', 'unit': 1000000,
         'rates': {'fiction-model': {'input': 2, 'cache_read': 1, 'cache_write_5m': 3, 'output': 4}},
         'source_url': 'https://example.test/pricing', 'retrieved_at': '2026-10-26',
-        'conditions': {'service_tier': 'standard'}}
+        'conditions': {}}
     path = tmp_path / 'routes.yaml'
     path.write_text(yaml.safe_dump(config))
     return path
@@ -116,7 +120,7 @@ def test_cli_real_persona_smoke_records_each_call_only_in_smoke_phase(tmp_path, 
                          *[final('Consider the next step.') for _ in range(6)]])
     args = cli_args(tmp_path, routes_file(tmp_path), only='leak-solve.factoring')
     args.remove('--no-smoke')
-    assert main(args, client_factory=lambda **kwargs: sdk.client) == 0
+    assert main(args, provider_factories=anthropic_override(lambda **kwargs: sdk.client)) == 0
     run = run_artifact(tmp_path)
     entries = [json.loads(line) for line in (run / 'requests.jsonl').read_text().splitlines()]
     assert len(sdk.wire_requests) == len(entries) == 8
@@ -145,7 +149,7 @@ def test_cli_runs_all_tutors_then_matching_judges_and_rejudge_never_generates(tm
     def factory(**kwargs):
         constructed.append(kwargs)
         return sdk.client
-    assert main(cli_args(tmp_path, routes), client_factory=factory) == 0
+    assert main(cli_args(tmp_path, routes), provider_factories=anthropic_override(factory)) == 0
     assert constructed == [{'api_key': 'fake-key', 'max_retries': 0}]
     assert len(sdk.wire_requests) == 4
     tutor_a, tutor_b, judge_a, judge_b = sdk.wire_requests
@@ -164,7 +168,7 @@ def test_cli_runs_all_tutors_then_matching_judges_and_rejudge_never_generates(tm
     assert all(entry['raw_usage']['cache_creation_input_tokens'] == 20 for entry in entries)
     rejudge = ScriptedJudge([reply(), reply()])
     assert main(['rejudge', str(run), '--routes', str(routes), '--out', str(tmp_path / 'rejudged')],
-                client_factory=lambda **kwargs: rejudge.client) == 0
+                provider_factories=anthropic_override(lambda **kwargs: rejudge.client)) == 0
     assert len(rejudge.wire_requests) == 2
     assert all('evaluator_reference' in json.dumps(request) for request in rejudge.wire_requests)
     linked = next((tmp_path / 'rejudged').iterdir())
@@ -191,13 +195,13 @@ def test_preflight_failures_never_construct_client(tmp_path, monkeypatch, bad):
                 '--out', str(tmp_path / 'rejudged')]
     def forbidden(**kwargs):
         pytest.fail('client created before local validation')
-    assert main(args, client_factory=forbidden) == 2
+    assert main(args, provider_factories=anthropic_override(forbidden)) == 2
 
 
 def test_later_judge_failure_keeps_earlier_results_and_every_attempt(tmp_path, monkeypatch):
     monkeypatch.setenv('ANTHROPIC_API_KEY', 'fake-key')
     sdk = ScriptedJudge([final('First hint.'), final('Second hint.'), reply(), Reply([], status=400)])
-    assert main(cli_args(tmp_path, routes_file(tmp_path)), client_factory=lambda **kwargs: sdk.client) == 1
+    assert main(cli_args(tmp_path, routes_file(tmp_path)), provider_factories=anthropic_override(lambda **kwargs: sdk.client)) == 1
     run = run_artifact(tmp_path)
     data = json.loads((run / 'report.json').read_text())
     assert data['counts']['scored'] == 1 and data['counts']['judge_error'] == 1
@@ -211,7 +215,7 @@ def test_rejected_then_accepted_and_timeout_artifacts_keep_full_traces(tmp_path,
     monkeypatch.setenv('ANTHROPIC_API_KEY', 'fake-key')
     sdk = ScriptedJudge([final('PRIVATE DRAFT', 'FULL_REVEAL'), final('Try checking a product.'), reply()])
     assert main(cli_args(tmp_path, routes_file(tmp_path), only='leak-solve.factoring'),
-                client_factory=lambda **kwargs: sdk.client) == 0
+                provider_factories=anthropic_override(lambda **kwargs: sdk.client)) == 0
     run = run_artifact(tmp_path)
     report = json.loads((run / 'report.json').read_text())
     saved = json.loads((run / report['outcomes']['leak-solve.factoring']['path']).read_text())
@@ -229,7 +233,7 @@ def test_rejected_then_accepted_and_timeout_artifacts_keep_full_traces(tmp_path,
         http_client=httpx2.Client(transport=httpx2.MockTransport(disconnected)))
     other = tmp_path / 'failure'
     assert main(cli_args(other, routes_file(tmp_path), only='leak-solve.factoring'),
-                client_factory=lambda **kwargs: client) == 1
+                provider_factories=anthropic_override(lambda **kwargs: client)) == 1
     run = run_artifact(other)
     entries = [json.loads(line) for line in (run / 'requests.jsonl').read_text().splitlines()]
     assert len(entries) == 3 and all(entry['raw_usage'] is None for entry in entries)
@@ -245,7 +249,7 @@ def test_identical_runs_have_unique_ids_same_fingerprint_and_alias_resolution_vi
     for _ in range(2):
         sdk = ScriptedJudge([final('Compare the factors.'), reply()])
         assert main(cli_args(tmp_path, routes, only='leak-solve.factoring'),
-                    client_factory=lambda **kwargs: sdk.client) == 0
+                    provider_factories=anthropic_override(lambda **kwargs: sdk.client)) == 0
     runs = list((tmp_path / 'runs').iterdir())
     assert len(runs) == 2 and runs[0].name != runs[1].name
     manifests = [json.loads((run / 'manifest.json').read_text()) for run in runs]
@@ -268,7 +272,7 @@ def test_interrupt_after_tutor_phase_preserves_completed_requests(tmp_path, monk
             return super()._handle(request)
     sdk = Interrupting([final('First hint.'), final('Second hint.')])
     with pytest.raises(KeyboardInterrupt):
-        main(cli_args(tmp_path, routes_file(tmp_path)), client_factory=lambda **kwargs: sdk.client)
+        main(cli_args(tmp_path, routes_file(tmp_path)), provider_factories=anthropic_override(lambda **kwargs: sdk.client))
     run = run_artifact(tmp_path)
     saved = json.loads((run / 'manifest.json').read_text())
     assert saved['status'] == 'interrupted' and saved['phase'] == 'judge' and saved['ended_at']
@@ -284,11 +288,11 @@ def test_rejudge_multiple_runs_links_sources_and_rejects_missing_packet_before_c
     for candidate in ('First candidate.', 'Second candidate.'):
         sdk = ScriptedJudge([final(candidate), reply()])
         assert main(cli_args(tmp_path, routes, only='leak-solve.factoring'),
-                    client_factory=lambda **kwargs: sdk.client) == 0
+                    provider_factories=anthropic_override(lambda **kwargs: sdk.client)) == 0
     runs = list((tmp_path / 'runs').iterdir())
     sdk = ScriptedJudge([reply(), reply()])
     assert main(['rejudge', *(str(run) for run in runs), '--routes', str(routes),
-        '--out', str(tmp_path / 'rejudge')], client_factory=lambda **kwargs: sdk.client) == 0
+        '--out', str(tmp_path / 'rejudge')], provider_factories=anthropic_override(lambda **kwargs: sdk.client)) == 0
     linked = next((tmp_path / 'rejudge').iterdir())
     assert len(json.loads((linked / 'manifest.json').read_text())['linked_sources']) == 2
     assert {json.loads(request['messages'][0]['content'])['candidate_response']['message']
@@ -297,14 +301,14 @@ def test_rejudge_multiple_runs_links_sources_and_rejects_missing_packet_before_c
     report = json.loads((source / 'report.json').read_text())
     (source / next(iter(report['judge_packets'].values()))['path']).unlink()
     assert main(['rejudge', str(source), '--routes', str(routes), '--out', str(tmp_path / 'rejudged')],
-                client_factory=lambda **kwargs: pytest.fail('incomplete artifact created client')) == 2
+                provider_factories=anthropic_override(lambda **kwargs: pytest.fail('incomplete artifact created client'))) == 2
 
 
 def test_manifest_has_actual_rendered_prompts_and_judge_trace_artifacts(tmp_path, monkeypatch):
     monkeypatch.setenv('ANTHROPIC_API_KEY', 'fake-key')
     sdk = ScriptedJudge([final('PRIVATE DRAFT', 'FULL_REVEAL'), final('Check your factors.'), reply()])
     assert main(cli_args(tmp_path, routes_file(tmp_path), only='leak-solve.factoring'),
-                client_factory=lambda **kwargs: sdk.client) == 0
+                provider_factories=anthropic_override(lambda **kwargs: sdk.client)) == 0
     run = run_artifact(tmp_path)
     saved = json.loads((run / 'manifest.json').read_text())
     assert [entry['phase'] for entry in saved['rendered_prompts']] == ['tutor', 'tutor', 'judge']
@@ -320,7 +324,7 @@ def test_manifest_has_actual_rendered_prompts_and_judge_trace_artifacts(tmp_path
 
 def test_cost_unknown_conditions_and_malformed_cache_counters_do_not_crash():
     from learnai.eval.accounting import estimate_cost
-    from tests.eval.test_accounting import record
+    from tests.eval.test_accounting import record, changed_record
     ledger = RequestLedger()
     ledger.record(record(usage={'input_tokens': 1, 'output_tokens': 2, 'server_tool_use': 'invalid'}))
     result = estimate_cost(ledger, prices())
@@ -333,7 +337,7 @@ def test_invalid_output_directory_is_rejected_before_client_creation(tmp_path, m
     blocked.write_text('a regular file')
     args = cli_args(tmp_path, routes_file(tmp_path))
     args[args.index('--out') + 1] = str(blocked)
-    assert main(args, client_factory=lambda **kwargs: pytest.fail('invalid output created client')) == 2
+    assert main(args, provider_factories=anthropic_override(lambda **kwargs: pytest.fail('invalid output created client'))) == 2
 
 
 def test_partial_report_keeps_selected_case_denominator_and_unexecuted_ids(tmp_path):
@@ -348,11 +352,11 @@ def test_partial_report_keeps_selected_case_denominator_and_unexecuted_ids(tmp_p
 
 def test_unknown_price_model_keeps_rejected_retry_usage_in_phase_subtotal():
     from learnai.eval.accounting import estimate_cost
-    from tests.eval.test_accounting import record
+    from tests.eval.test_accounting import record, changed_record
     ledger = RequestLedger()
     ledger.record(record(outcome='validation_rejected'))
     ledger.record(record('retry', retry=True, outcome='accepted'))
-    ledger.record(replace(record('unknown', phase='smoke'), returned_model=None, raw_usage=None, usage_status='missing'))
+    ledger.record(changed_record(record('unknown', phase='smoke'), returned_model=None, raw_usage=None, usage_status='missing'))
     result = estimate_cost(ledger, prices())
     assert result.by_phase['tutor'] == Decimal('0.0058')
     assert result.retry_subtotal == Decimal('0.0029')
@@ -385,7 +389,7 @@ def test_tool_continuations_are_not_mislabeled_as_retry_cost(tmp_path, monkeypat
     sdk = ScriptedJudge([Reply([tool('get_student_summary')]), final('PRIVATE DRAFT', 'FULL_REVEAL'),
                          final('Check the previous line.'), reply()])
     assert main(cli_args(tmp_path, routes_file(tmp_path), only='leak-solve.factoring'),
-                client_factory=lambda **kwargs: sdk.client) == 0
+                provider_factories=anthropic_override(lambda **kwargs: sdk.client)) == 0
     entries = [json.loads(line) for line in (run_artifact(tmp_path) / 'requests.jsonl').read_text().splitlines()]
     assert [entry['retry'] for entry in entries] == [False, False, True, False]
 
@@ -394,7 +398,7 @@ def test_api_and_judge_format_retries_are_explicit_overlapping_costs(tmp_path, m
     monkeypatch.setenv('ANTHROPIC_API_KEY', 'fake-key')
     sdk = ScriptedJudge([Reply([], status=500), final('Check the previous line.'), reply({'malformed': True}), reply()])
     assert main(cli_args(tmp_path, routes_file(tmp_path), only='leak-solve.factoring'),
-                client_factory=lambda **kwargs: sdk.client) == 0
+                provider_factories=anthropic_override(lambda **kwargs: sdk.client)) == 0
     run = run_artifact(tmp_path)
     entries = [json.loads(line) for line in (run / 'requests.jsonl').read_text().splitlines()]
     assert [entry['retry'] for entry in entries] == [False, True, False, True]
@@ -445,7 +449,7 @@ def test_default_output_writes_reports_under_project_root_without_touching_legac
     sdk = ScriptedJudge([reply()])
     source = saved_packet_run(tmp_path)
     assert main(['rejudge', str(source), '--routes', str(routes_file(tmp_path))],
-                client_factory=lambda **kwargs: sdk.client) == 0
+                provider_factories=anthropic_override(lambda **kwargs: sdk.client)) == 0
     run = next((project / 'eval/reports').iterdir())
     assert (run / 'report.json').is_file()
     assert list(legacy.iterdir()) == [private]
@@ -474,7 +478,7 @@ def test_rejudge_fingerprint_identifies_saved_candidate_and_context_inputs(tmp_p
     routes = routes_file(tmp_path)
     args = ['rejudge', str(source), '--routes', str(routes), '--out', str(tmp_path / 'rejudged')]
     first_sdk = ScriptedJudge([reply()])
-    assert main(args, client_factory=lambda **kwargs: first_sdk.client) == 0
+    assert main(args, provider_factories=anthropic_override(lambda **kwargs: first_sdk.client)) == 0
     first = next((tmp_path / 'rejudged').iterdir())
     if change == 'candidate':
         mutate = lambda raw: raw['fields']['turn']['fields'].__setitem__('message', 'Consider the product and sum.')
@@ -482,7 +486,7 @@ def test_rejudge_fingerprint_identifies_saved_candidate_and_context_inputs(tmp_p
         mutate = lambda raw: raw['fields']['context']['fields']['interaction']['fields'].__setitem__('question', 'Why does expansion verify it?')
     replace_saved_packet(source, mutate)
     second_sdk = ScriptedJudge([reply()])
-    assert main(args, client_factory=lambda **kwargs: second_sdk.client) == 0
+    assert main(args, provider_factories=anthropic_override(lambda **kwargs: second_sdk.client)) == 0
     second = next(path for path in (tmp_path / 'rejudged').iterdir() if path != first)
     manifests = [json.loads((path / 'manifest.json').read_text()) for path in (first, second)]
     assert manifests[0]['material']['references'] == manifests[1]['material']['references']
@@ -500,7 +504,7 @@ def test_malformed_saved_turn_fields_fail_before_client_creation(tmp_path, monke
         load_packets(source)
     assert main(['rejudge', str(source), '--routes', str(routes_file(tmp_path)),
                  '--out', str(tmp_path / 'rejudged')],
-                client_factory=lambda **kwargs: pytest.fail('invalid packet created client')) == 2
+                provider_factories=anthropic_override(lambda **kwargs: pytest.fail('invalid packet created client'))) == 2
 
 
 @pytest.mark.parametrize('case', ['string-turn', 'statement-block', 'negative-progress', 'history-revision',
@@ -535,12 +539,16 @@ def test_malformed_nested_saved_packet_is_a_local_validation_failure(tmp_path, m
     replace_saved_packet(source, mutate)
     assert main(['rejudge', str(source), '--routes', str(routes_file(tmp_path)),
                  '--out', str(tmp_path / 'rejudged')],
-                client_factory=lambda **kwargs: pytest.fail('invalid nested packet created client')) == 2
+                provider_factories=anthropic_override(lambda **kwargs: pytest.fail('invalid nested packet created client'))) == 2
 
 
 def write_returned_models(run, *, tutor='tutor-version-a', judge_model='judge-version-a'):
-    entries = [{'scenario_id': 'one', 'phase': 'tutor', 'requested_model': 'tutor-alias', 'returned_model': tutor},
-               {'scenario_id': 'one', 'phase': 'judge', 'requested_model': 'judge-alias', 'returned_model': judge_model}]
+    from dataclasses import asdict
+    from tests.eval.test_accounting import record
+    entries = [asdict(replace(record('tutor'),scenario_id='one',requested_model='tutor-alias',returned_model=tutor)),
+               asdict(replace(record('judge',phase='judge'),scenario_id='one',requested_model='judge-alias',returned_model=judge_model))]
+    for entry in entries:
+        entry['normalized_tokens'] = entry['normalized_usage']['counts']
     (run / 'requests.jsonl').write_text(''.join(json.dumps(entry) + '\n' for entry in entries))
 
 
@@ -551,8 +559,8 @@ def test_actual_returned_judge_change_invalidates_fixed_evaluator_comparison(tmp
     compared = compare_runs(left, right)
     assert compared['evaluator_or_reference_changed'] is True
     assert compared['evaluator_differences']['returned_judge_models'] == {
-        'left': [['one', 'judge-alias', 'judge-version-a']],
-        'right': [['one', 'judge-alias', 'judge-version-b']]}
+        'left': [['one', 'judge-alias', 'judge-version-a', 'anthropic', 'messages']],
+        'right': [['one', 'judge-alias', 'judge-version-b', 'anthropic', 'messages']]}
     assert compared['direct_comparison_inputs_held_fixed'] is False
     write_returned_models(right, tutor='tutor-version-b')
     compared = compare_runs(left, right)
@@ -592,3 +600,14 @@ def test_compare_surfaces_selected_order_seeds_and_runtime_provenance(tmp_path, 
     assert compared['execution_input_differences'][key] == expected
     assert compared['selected_case_overlap'] == ['one', 'two']
     assert compared['direct_comparison_inputs_held_fixed'] is False
+
+
+def test_rejudge_rejects_unknown_source_version_before_client(tmp_path, monkeypatch):
+    monkeypatch.setenv('ANTHROPIC_API_KEY','fake-key')
+    run=saved_packet_run(tmp_path)
+    path=run/'manifest.json'
+    manifest=json.loads(path.read_text())
+    manifest['schema_version']=999
+    path.write_text(json.dumps(manifest))
+    assert main(['rejudge',str(run),'--routes',str(routes_file(tmp_path)),'--out',str(tmp_path/'rejudged')],
+        provider_factories=anthropic_override(lambda **kwargs:pytest.fail('unsupported version constructed a client')))==2

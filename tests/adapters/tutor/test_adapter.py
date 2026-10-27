@@ -10,6 +10,7 @@ from learnai.adapters.tutor.anthropic.adapter import AnthropicTutor
 from learnai.adapters.tutor.anthropic.routing import BudgetProfile, Route
 from learnai.adapters.tutor.runtime import TerminationReason
 from learnai.domain.enums import HelpRung
+from learnai.domain.interaction import ResponseJob
 from learnai.domain.turn import RejectionReason, TurnFeedback, ValidationResult, request_validated_turn
 from tests.adapters.tutor.test_rendering import make_context, record
 from tests.domain.test_engine import CLUSTER, build
@@ -43,6 +44,42 @@ def test_tutor_startup_rejects_missing_prompt_before_provider_request():
     with pytest.raises(ValueError, match="tutor_dialogue.*prompt"):
         AnthropicTutor({route.name: route}, sdk.client, GeneratorRegistry(()), {})
     assert sdk.requests == []
+
+
+def test_legacy_anthropic_tutor_ignores_named_unused_openai_example():
+    from pathlib import Path
+    from learnai.adapters.tutor.routing import load_routes, load_budget_profiles
+    path = Path(__file__).resolve().parents[3] / 'config/llm_routes.yaml'
+    routes = load_routes(path)
+    sdk = ScriptedAnthropic([final()])
+    try:
+        tutor = AnthropicTutor(routes, sdk.client, GeneratorRegistry(()), {},
+            budget_profiles=load_budget_profiles(path), monotonic=sdk.clock,
+            count_tokens=lambda text: len(text) // 4)
+        assert tutor.respond(make_context()).message == 'Compare your two lines.'
+        assert sdk.requests[0]['model'] == routes['tutor_dialogue'].model
+    finally:
+        sdk.client.close()
+
+
+@pytest.mark.parametrize('binding', ['implicit', 'explicit'])
+def test_legacy_anthropic_tutor_rejects_selected_foreign_job_before_request(binding):
+    routes = {
+        'tutor_dialogue': Route('tutor_dialogue', 'anthropic', 'scripted', prompt='tutor_math@1'),
+        'tutor_brief': Route('tutor_brief', 'openai', 'scripted', prompt='tutor_math@1'),
+    }
+    sdk = ScriptedAnthropic([])
+    try:
+        if binding == 'explicit':
+            with pytest.raises(ValueError, match='unsupported Anthropic adapter'):
+                AnthropicTutor(routes, sdk.client, GeneratorRegistry(()), {}, route_name='tutor_brief')
+        else:
+            tutor = AnthropicTutor(routes, sdk.client, GeneratorRegistry(()), {})
+            with pytest.raises(ValueError, match='unsupported Anthropic adapter'):
+                tutor.begin_turn(make_context(response_job=ResponseJob.BRIEF))
+        assert sdk.requests == []
+    finally:
+        sdk.client.close()
 
 
 def test_two_tool_round_trips_preserve_original_history_and_results():
@@ -386,11 +423,15 @@ def test_response_job_selects_route_and_direct_override_remains_available():
     assert sdk.requests[0]["output_config"]["effort"] == "low"
 
 
-def test_attempt_usage_completeness_distinguishes_missing_from_complete_zero():
+def test_attempt_usage_distinguishes_missing_from_observed_zero_with_unknown_cache_duration():
     tutor, sdk, traces, _ = setup([Reply([], status=500), final(output_tokens=0)])
     assert tutor.respond(make_context()) is not None
     attempts = traces[0].to_dict()["attempts"]
-    assert [a["usage_status"] for a in attempts] == ["missing", "complete"]
+    assert [a["usage_status"] for a in attempts] == ["missing", "partial"]
+    assert [a["normalized_usage"]["status"] for a in attempts] == ["missing", "partial"]
+    assert attempts[0]["normalized_usage"]["counts"] == {}
+    assert attempts[1]["normalized_usage"]["counts"] == {"input": 100, "output": 0, "cache_read": 80}
+    assert "cache creation duration unknown" in attempts[1]["normalized_usage"]["reasons"]
     assert [a["request_index"] for a in attempts] == [0, 1]
     assert attempts[0]["usage"] is None
     assert attempts[1]["usage"]["output_tokens"] == 0
@@ -402,6 +443,8 @@ def test_partial_zero_stream_usage_is_not_treated_as_complete_zero():
     assert tutor.respond(make_context()) is None
     attempt = traces[0].to_dict()["attempts"][0]
     assert attempt["usage_status"] == "partial"
+    assert attempt["normalized_usage"]["status"] == "partial"
+    assert attempt["normalized_usage"]["counts"]["output"] == 0
     assert attempt["usage"]["output_tokens"] == 0
     assert tutor.usages[0].output_tokens == 0
 
@@ -413,3 +456,47 @@ def test_stream_eof_without_message_stop_has_partial_usage_and_is_not_retried():
     assert traces[0].termination_reason is TerminationReason.NETWORK_EXHAUSTED
     assert traces[0].model_calls == 1
     assert traces[0].to_dict()["attempts"][0]["usage_status"] == "partial"
+
+
+def test_response_metadata_reaches_attempt_normalization():
+    import httpx2
+    from learnai.adapters.tutor.observations import RequestTrace
+
+    class MetadataAnthropic(ScriptedAnthropic):
+        def _handle(self, request):
+            response = super()._handle(request)
+            data = response.json()
+            data['service_tier'] = 'returned-tier'
+            return httpx2.Response(response.status_code, json=data, headers=response.headers)
+
+    configured, _, traces, _ = setup([])
+    sdk = MetadataAnthropic([final()])
+    tutor = AnthropicTutor(configured.routes, sdk.client, GeneratorRegistry(()), {},
+        budget_profiles={'normal': PROFILE}, monotonic=sdk.clock, sleep=sdk.clock.sleep,
+        trace_sink=traces.append)
+    assert tutor.respond(make_context()) is not None
+    trace = traces[0]
+    assert isinstance(trace, RequestTrace)
+    assert trace.provider == 'anthropic' and trace.api_family == 'messages'
+    observation = trace.attempts[0].normalized_usage
+    assert observation.counts == {'input': 100, 'output': 40, 'cache_read': 80}
+    assert observation.billing_conditions['service_tier'].value == 'returned-tier'
+    assert observation.billing_conditions['service_tier'].source == 'returned'
+    assert 'response.service_tier' in observation.billing_conditions['service_tier'].evidence
+
+
+def test_selected_route_reaches_ledger_without_entering_wire_payload():
+    from dataclasses import replace
+    from learnai.eval.accounting import RequestLedger
+
+    configured, sdk, _, _ = setup([final()])
+    selected = replace(configured.routes['tutor_dialogue'], name='tutor_selected')
+    ledger = RequestLedger()
+    tutor = AnthropicTutor({**configured.routes, selected.name: selected}, sdk.client,
+        GeneratorRegistry(()), {}, route_name=selected.name, budget_profiles={'normal': PROFILE},
+        monotonic=sdk.clock, sleep=sdk.clock.sleep, trace_sink=ledger.sink(phase='tutor'))
+    assert tutor.respond(make_context()) is not None
+    assert ledger.records[0].route_name == 'tutor_selected'
+    trace = next(iter(ledger.traces.values()))['trace']
+    assert trace['route_name'] == 'tutor_selected'
+    assert all('route_name' not in request for request in sdk.requests)

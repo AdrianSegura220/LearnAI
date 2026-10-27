@@ -1,6 +1,77 @@
 # Plan 2A implementation handoff — 2026-10-26
 
-## Current status
+## Provider extension status — 2026-10-27
+
+The provider-neutral/OpenAI extension is implemented and keyless verified on local
+branch `plan-openai-provider`. All eight tasks have scoped reviews. Whole-branch
+review identified an Important judge-scope boundary gap and a Minor nonfinite
+timing gap; both are implemented in one final fix wave and passed independent
+scoped re-review at `81d3914`, with no new breakage.
+See the [current provider handoff](2026-10-27-openai-provider-implementation-handoff.md)
+for final verification, immutable-artifact guarantees, limitations and the complete
+provider decision ledger. No push, merge, publication or paid model call has run.
+The sections below retain the earlier Plan 2A baseline and Task 8 evidence.
+
+Both providers now support independent tutor/judge selection through the same
+engine/evaluation contracts. Defaults remain Anthropic; `tutor_openai` and
+`rubric_judge_openai` are named examples that require explicit selection. Real
+model identifiers remain only in `config/llm_routes.yaml`. See the
+[operator guide](../../../eval/README.md) for installation, per-job tutor activation,
+independent `--judge-route`, subset/no-smoke runs, judge-only rejudge credentials,
+and read-only comparison. `compare --tutor-treatment tutor_dialogue` declares a
+tutor experiment; `--allow-tutor-dependency-changes` cannot waive a shared judge
+dependency change. Both current SDKs use `httpx2`.
+
+OpenAI is pinned at `openai==3.39.0` in the OpenAI/dev extras, with native
+`httpx2==2.16.0` verified locally. Anthropic stays in base dependencies. Selected
+roles alone require keys/packages; all selected roles preflight before any client.
+Operation-owned clients close after use; injected clients remain caller-owned.
+Artifacts write v2; immutable v1 inputs adapt read-only. Provider-aware cost
+estimates retain known subtotals and explicit missing counts/rates/conditions;
+returned/requested/default/unknown condition provenance stays visible. The current
+price snapshot supplies no OpenAI rates, so OpenAI costs are incomplete.
+
+The 71 original fixtures and 54 tutor opportunities remain unchanged. Full-corpus
+production admission retains the original output/time/tool/round budgets and
+8,192 units of required continuation headroom. Limiting Anthropic tutor/judge
+margins beyond the 2,048 output reservation are 9,043/16,454 units; corresponding
+OpenAI framing margins are 9,346/16,347. Named route/settings activation requires
+rechecking admission. Task 7 also fixed initial-context foreign-history scope
+filtering without changing domain pedagogy or mastery policy.
+
+Exactly four live cases are collected, two per provider; explicit no-key selection
+skips all four. Ordinary/default provider-marker selection excludes live cases,
+even with both keys set. Paid commands require explicit authorization and
+`-o addopts='' -m 'live and PROVIDER'`. **No paid live probe, paid corpus evaluation,
+latency acceptance, reviewed live reference summary or human judge calibration
+has been executed.** The OpenAI cache minimum for selected tools/schema/effort is
+not established by the current guide; the probe requires observed repeat reads
+and never treats a miss as proof of prompt leakage.
+
+OpenAI continuation stays local with `store=false`, ordered encrypted-reasoning
+and function-result replay. This does not override provider caching/retention
+policy. Delivery stays buffered until deterministic engine validation. Private
+operational artifacts remain ignored; the fixed synthetic v1 compatibility
+fixture is the explicit test-data exception. No arbitrary traces or credentials
+are committed. Task evidence is in
+`.superpowers/sdd/2026-10-26-provider-neutral-evaluation-openai/`; compatibility and
+source snapshot details are in [the OpenAI note](2026-10-26-openai-provider-compatibility.md).
+
+Historical Task 8 keyless verification (2026-10-27; superseded by the current provider handoff):
+
+- `env -u ANTHROPIC_API_KEY -u OPENAI_API_KEY .venv/bin/python -m pytest` —
+  **1,547 passed, 4 deselected in 79.57s** after the compatibility fixes.
+- Explicit `live` collection lists **4 cases**; explicit execution with both
+  keys removed yields **4 skipped**. Dummy-key default/provider-only checks use
+  collection only. All seven selection regressions pass.
+- Domain/import boundaries and both-provider full-corpus admission —
+  **12 passed in 3.89s**, with the unchanged margins above.
+- Final source wheel built with `--no-index --no-deps --no-build-isolation`;
+  base/optional/dev metadata, offline target installation and SDK-free CLI help
+  verified. Detailed evidence and earlier resolved failures are recorded in
+  `.superpowers/sdd/2026-10-26-provider-neutral-evaluation-openai/task-8-report.md`.
+
+## Plan 2A baseline status
 
 The fifteen planned tasks are implemented and independently reviewed for the authorized keyless scope. The final whole-branch review identified two Important evaluation integration gaps; one fix wave addressed both and scoped re-review approved them. The work remains on local branch `plan-phase2a-tutor`; nothing was pushed or merged.
 

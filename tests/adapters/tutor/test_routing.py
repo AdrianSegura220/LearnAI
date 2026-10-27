@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from learnai.adapters.tutor.anthropic.routing import (
+from learnai.adapters.tutor.routing import (
     load_budget_profiles,
     load_routes,
     parse_routes,
@@ -96,11 +96,10 @@ def test_complex_requires_an_explicit_route(raw):
 
 @pytest.mark.parametrize("field,value", [
     ("budget_profile", "absent"), ("max_tool_iterations", 3),
-    ("adapter", "unknown"), ("model", ""), ("model", None),
+    ("adapter", ""), ("model", ""), ("model", None),
     ("max_tokens", True), ("max_tokens", 0), ("max_tokens", 1.5),
-    ("stream", "false"), ("effort", "urgent"), ("thinking", "magic"),
+    ("stream", "false"), ("effort", 1), ("thinking", False),
     ("temperature", True), ("temperature", float("nan")),
-    ("temperature", -1), ("temperature", 2),
     ("prompt", "../tutor_math@1"), ("prompt", "tutor_math@0"),
 ])
 def test_unknown_profile_and_old_iteration_key_fail(raw, field, value):
@@ -168,6 +167,7 @@ def test_initial_configuration_loads_job_budgets():
     profiles = load_budget_profiles(path)
     assert set(routes) == {
         "tutor_dialogue", "tutor_brief", "tutor_explanation", "error_diagnosis", "rubric_judge",
+        "tutor_openai", "rubric_judge_openai",
     }
     assert set(profiles) == {"brief", "normal", "substantial", "complex"}
     for job, expected in [
@@ -175,7 +175,9 @@ def test_initial_configuration_loads_job_budgets():
         (ResponseJob.NORMAL, (8, 15, 8, 16, 8192, 40000, 1024)),
         (ResponseJob.SUBSTANTIAL, (20, 30, 12, 24, 16384, 48000, 1024)),
     ]:
-        profile = profiles[resolve_tutor_route(routes, job).budget_profile]
+        route = resolve_tutor_route(routes, job)
+        assert route.adapter == 'anthropic'
+        profile = profiles[route.budget_profile]
         assert (
             profile.soft_seconds, profile.hard_seconds, profile.max_round_trips,
             profile.max_tool_calls, profile.max_output_tokens, profile.context_input_tokens,

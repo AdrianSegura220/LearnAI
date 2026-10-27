@@ -103,3 +103,31 @@ def test_verified_saved_packet_hashes_are_material_rejudge_inputs(tmp_path):
             'packets': {'case': 'candidate-and-moment-b'}},))
     assert first.material['saved_packet_inputs'] == [{'run_id': 'source', 'packets': {'case': 'candidate-and-moment-a'}}]
     assert configuration_fingerprint(first) != configuration_fingerprint(second)
+
+
+def test_supplied_provider_and_role_metadata_is_material(tmp_path):
+    identities={'tutor':{'tutor':{'provider':'openai','api_family':'responses','schema_hashes':{'final_output':'response@1','canonical_read_tools':'tools@1','wire_read_tools':'wire@1'},'usage_mapper_id':'usage@1','token_counter_id':'bytes@1'}},'judge':{}}
+    roles={'tutor':{'openai':'1'},'judge':{'anthropic':'2'}}
+    first=build_manifest(root=tmp_path,selected_ids=(),seeds=(),settings={},prompts={},references={},identities=identities,role_dependencies=roles)
+    assert first.schema_version==2
+    assert first.material['identities']==identities and first.material['role_dependencies']==roles
+    identities['tutor']['tutor']['usage_mapper_id']='changed'
+    roles['judge']['anthropic']='changed'
+    assert first.material['identities']['tutor']['tutor']['usage_mapper_id']=='usage@1'
+    assert first.material['role_dependencies']['judge']['anthropic']=='2'
+
+
+def test_conflicting_dependency_versions_fail_locally(tmp_path):
+    import pytest
+    with pytest.raises(ValueError,match='conflicting'):
+        build_manifest(root=tmp_path,selected_ids=(),seeds=(),settings={},prompts={},references={},
+            role_dependencies={'tutor':{'httpx':'1'},'judge':{'httpx':'2'}})
+
+
+def test_pricing_snapshot_metadata_changes_fingerprint_before_writing(tmp_path):
+    from tests.eval.test_provider_artifacts import price
+    from learnai.eval.accounting import PriceBook
+    first=build_manifest(root=tmp_path,selected_ids=(),seeds=(),settings={},prompts={},references={},pricing_snapshots=PriceBook((price(),)).to_dict())
+    second=build_manifest(root=tmp_path,selected_ids=(),seeds=(),settings={},prompts={},references={},pricing_snapshots=PriceBook((price(rate='4'),)).to_dict())
+    assert first.material['pricing_snapshots']['snapshots'][0]['rates']['same-name']['input']=='2'
+    assert configuration_fingerprint(first)!=configuration_fingerprint(second)

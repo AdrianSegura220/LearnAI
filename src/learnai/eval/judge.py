@@ -3,21 +3,14 @@
 Reference construction belongs to the evaluator catalogue. Neither candidate
 prose nor an item's unreviewed worked steps can manufacture a trusted reference.
 """
-from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
 import json
-from pathlib import Path
 import re
-import time
 from typing import Any
 
-import anthropic
-
-from learnai.adapters.tutor.anthropic.judge import JudgeTrace, JudgeTransportError, request_judgment
-from learnai.adapters.tutor.anthropic.routing import BudgetProfile, Route, resolve_route
-from learnai.adapters.tutor.prompts import PROMPTS_ROOT, load_prompt
+from learnai.eval.ports import Judge
+from learnai.adapters.tutor.context import scoped_context
 from learnai.adapters.tutor.rendering import render_history, render_moment, render_skill_pack
-from learnai.adapters.tutor.runtime import conservative_token_count
 from learnai.domain.items import Submission
 from learnai.domain.turn import TurnContext, TutorTurn
 
@@ -70,7 +63,7 @@ class JudgePacket:
 
 def build_judge_messages(packet: JudgePacket) -> tuple[dict[str, Any], ...]:
     """Serialize captured state and isolated evaluator data, without inference/I/O."""
-    context, reference, turn = packet.context, packet.reference, packet.turn
+    context, reference, turn = scoped_context(packet.context), packet.reference, packet.turn
     data = {
         "student_situation": {
             "moment": json.loads(render_moment(context)),
@@ -177,31 +170,6 @@ def parse_scores(text: str) -> JudgeScores:
     return JudgeScores(**data)
 
 
-def run_judge(
-    client: anthropic.Anthropic, routes: Mapping[str, Route], *, packet: JudgePacket,
-    route_name: str = "rubric_judge", prompts_root: Path = PROMPTS_ROOT,
-    budget_profiles: Mapping[str, BudgetProfile] | None = None,
-    monotonic: Callable[[], float] = time.monotonic,
-    count_tokens: Callable[[str], int] = conservative_token_count,
-    sleep: Callable[[float], None] = time.sleep,
-    trace_sink: Callable[[JudgeTrace], None] | None = None,
-) -> JudgeScores:
-    """Judge offline only; emit a request-local trace even on provider failure.
-
-    Callers supply the exact outcome.context and outcome.turn. References are
-    curated independently; this function never looks up mutable learner state.
-    """
-    try:
-        route = resolve_route(routes, route_name)
-        if route.prompt is None:
-            raise JudgeError("judge route requires an explicit versioned prompt")
-        prompt = load_prompt(route.prompt, root=prompts_root)
-        return request_judgment(
-            client, route, prompt=prompt, messages=build_judge_messages(packet),
-            schema=SCORE_SCHEMA, parse=parse_scores, budget_profiles=budget_profiles,
-            monotonic=monotonic, count_tokens=count_tokens, sleep=sleep, trace_sink=trace_sink,
-        )
-    except (JudgeTransportError, ValueError) as exc:
-        if isinstance(exc, JudgeError):
-            raise
-        raise JudgeError(str(exc)) from exc
+def run_judge(judge: Judge, *, packet: JudgePacket) -> JudgeScores:
+    """Score the exact captured packet through a bound provider-independent port."""
+    return judge.evaluate(packet)

@@ -25,7 +25,7 @@ from learnai.domain.interaction import ResponseJob, WorkStatus
 from tests.adapters.tutor.test_adapter_engine import draft
 from tests.domain.test_engine import CLUSTER, build
 
-pytestmark = pytest.mark.live
+pytestmark = [pytest.mark.live, pytest.mark.anthropic]
 ROOT = Path(__file__).resolve().parents[3]
 # https://platform.claude.com/docs/en/build-with-claude/prompt-caching
 CACHE_MINIMUM_TOKENS = 512

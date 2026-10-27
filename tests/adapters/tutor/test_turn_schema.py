@@ -1,6 +1,7 @@
 import pytest
 
-from learnai.adapters.tutor.anthropic.turn_schema import TURN_SCHEMA, TurnSchemaError, parse_turn
+from learnai.adapters.tutor.anthropic.turn_schema import TURN_SCHEMA
+from learnai.adapters.tutor.turn_schema import TurnSchemaError, parse_turn
 from learnai.domain.enums import HelpRung
 from learnai.domain.turn import ProposalKind
 

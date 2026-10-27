@@ -1,11 +1,13 @@
 """Request-local allowances and private, replayable tutor traces."""
 from collections.abc import Callable
-from dataclasses import asdict, dataclass, field
-from datetime import UTC, datetime
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from learnai.adapters.tutor.anthropic.routing import BudgetProfile
+from learnai.adapters.tutor.observations import (
+    ProviderAttempt, UsageStatus, _json_value, trace_dict,
+)
+from learnai.adapters.tutor.routing import BudgetProfile
 from learnai.adapters.tutor.context import ContextView
 from learnai.domain.turn import TutorTurn, ValidationResult
 
@@ -92,46 +94,6 @@ def conservative_token_count(text: str) -> int:
     return len(text.encode("utf-8")) + 256
 
 
-def _json_value(value: Any) -> Any:
-    if isinstance(value, Enum):
-        return value.value
-    if isinstance(value, datetime):
-        return value.isoformat()
-    if isinstance(value, dict):
-        return {key: _json_value(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_json_value(item) for item in value]
-    return value
-
-
-class UsageStatus(str, Enum):
-    """Missing/partial observations must never be priced as a known zero."""
-    MISSING = "missing"
-    PARTIAL = "partial"
-    COMPLETE = "complete"
-
-
-@dataclass
-class ProviderAttempt:
-    request_index: int
-    usage_status: UsageStatus = UsageStatus.MISSING
-    usage: dict[str, Any] | None = None
-    provider_request_id: str | None = None
-    response_model: str | None = None
-    response: dict[str, Any] | None = None
-    started_at: str | None = None
-    ended_at: str | None = None
-    elapsed_seconds: float | None = None
-    outcome: str = "started"
-    retry: bool = False
-
-    def finish(self, *, elapsed_seconds: float) -> None:
-        self.ended_at = datetime.now(UTC).isoformat()
-        self.elapsed_seconds = max(0.0, elapsed_seconds)
-        if self.outcome == "started":
-            self.outcome = "no_usable_response"
-
-
 @dataclass
 class TurnTrace:
     """Private operational data. Never a source for delivered session history."""
@@ -144,6 +106,9 @@ class TurnTrace:
     prompt_ids: tuple[str, ...]
     model: str
     settings: dict[str, Any]
+    provider: str
+    api_family: str
+    route_name: str | None = None
     context_view: ContextView | None = None
     source_ids: tuple[str, ...] = ()
     initial_context: str | None = None
@@ -167,4 +132,4 @@ class TurnTrace:
     accepted: TutorTurn | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return _json_value(asdict(self))
+        return trace_dict(self)
