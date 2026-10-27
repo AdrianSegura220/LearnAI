@@ -1,6 +1,6 @@
 # OpenAI Responses compatibility evidence
 
-Verified 2026-10-27 before implementing Task 5. The inactive opt-in model snapshot is recorded only in `config/llm_routes.yaml`. The deployed defaults remain Anthropic. This is an offline compatibility profile, not evidence of account access or paid model quality.
+Verified 2026-10-27 for Tasks 5–8. The named, unselected opt-in model snapshots are recorded only in `config/llm_routes.yaml` (`tutor_openai` and `rubric_judge_openai`). All default tutor jobs and the default judge remain Anthropic. Both providers are registered for both roles; the named examples never select themselves. This is an offline compatibility profile, not evidence of account access or paid model quality. Task 8 and the whole branch await final review.
 
 ## SDK and native transport
 
@@ -20,6 +20,8 @@ The [selected model documentation](https://developers.openai.com/api/docs/models
 
 The [Responses reference](https://developers.openai.com/api/reference/python/resources/responses/methods/create) and [stateless continuation guide](https://developers.openai.com/api/docs/guides/migrate-to-responses) document `store=false`, encrypted reasoning continuation, and matched `function_call_output.call_id`. Every request repeats instructions, disables automatic truncation, explicitly includes encrypted reasoning for compatibility, and replays returned output items in original order. The adapter does not use `previous_response_id`, register remote tools, generate reasoning summaries, or deliver intermediate output. Formatting/engine feedback is appended as a developer input item, retaining the original prefix.
 
+Local continuation with `store=false` avoids reliance on hosted response state; it does not override caching or account/provider retention policy. Both adapters currently buffer all output until engine validation, even with SDK streaming. Operation-owned clients are lazy, reused per provider and closed; injected clients remain caller-owned. SDK/package/key checks concern selected roles only, and rejudge selects only the judge.
+
 ## Usage and service conditions
 
 The [Responses usage schema](https://developers.openai.com/api/reference/python/resources/responses/methods/create) reports inclusive input and cached subset; output includes reasoning as a subset. Normalization counts uncached input, cache reads, and output once. Invalid/unknown subsets or categories preserve known counts and incompleteness; positive cache-write categories are unsupported by this profile. Missing counters are never explicit zero. A complete response with unknown output reserves its full requested output allowance locally, while normalized billing usage remains missing.
@@ -29,3 +31,9 @@ The same reference states that returned `service_tier` reflects execution and ma
 ## Offline verification and limits
 
 Tests use the selected official SDK at its real serialization/stream parsing boundary, with no network or production keys. They cover strict tool schemas, nullable optional argument dispatch, final structured output, distinct call IDs, encrypted continuation, engine rejection/correction, refusal/incomplete/error output, retryable API failure, malformed/empty output, partial stream disconnect/EOF, context/output/time/round limits, concurrent history isolation, and usage/condition propagation. Live endpoint/model support remains deliberately untested: paid execution was not authorized.
+
+Task 8 adds exactly two OpenAI probes beside the two Anthropic probes. Each checks only its own key and creates only its own provider client. Explicit `-o addopts='' -m 'live and openai'` is required for OpenAI; provider markers alone cannot override the repository's configured live exclusion. The first probe verifies stable cache-relevant prefix/settings across sequential engine exchanges and requires a positive reported repeat cache read; the second requires an engine-accepted revised-work question with historical submission retained. Private per-run traces stay under ignored `eval/reports/`. **Neither paid probe body has been run.**
+
+The [cache guide](https://developers.openai.com/api/docs/guides/prompt-caching), fetched again 2026-10-27, gives a settings-dependent minimum for the selected model generation. Its numeric tools/schema/effort threshold is not established. The probe records that uncertainty; actual positive reads establish observed reuse. A zero read fails the prerequisite/read gate with a diagnostic message, and does not by itself establish volatile-prefix leakage. No padding, latency threshold or teaching-quality inference is added.
+
+Provider-aware costs may remain incomplete: the checked-in pricing snapshot contains only Anthropic rates, and missing usage/returned-tier/geography evidence is not zero or an inferred default. V1 artifacts are adapted read-only; new output is v2. `compare --tutor-treatment tutor_dialogue` declares a tutor experiment; optional `--allow-tutor-dependency-changes` cannot waive changes shared with the judge. Both SDKs currently depend on `httpx2`, so a shared transport upgrade changes the evaluator too. See [eval/README.md](../../../eval/README.md) for installation, independent route activation, rejudge and comparison commands.

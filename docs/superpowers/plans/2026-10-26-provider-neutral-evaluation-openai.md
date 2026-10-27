@@ -6,11 +6,11 @@
 
 **Architecture:** Keep domain semantics and the existing request-scoped exchange protocol. Extract neutral configuration, observations and judge contracts; place provider construction, SDK framing and usage mapping behind explicit application composition. Both providers use one corpus, ledger, report and artifact pipeline.
 
-**Tech Stack:** Python 3.12+, existing Anthropic SDK, official OpenAI Python SDK/Responses API, PyYAML, pytest, existing SymPy-backed verification. Verify and pin the OpenAI SDK when Task 5 establishes its actual offline wire contract; no dependency installation is part of writing this plan.
+**Tech Stack:** Python 3.12+, existing Anthropic SDK, official OpenAI Python SDK/Responses API (`openai==3.39.0`, native `httpx2` transport verified at 2.16.0), PyYAML, pytest, existing SymPy-backed verification. The pin and offline wire contract were verified during implementation; see the [compatibility note](../notes/2026-10-26-openai-provider-compatibility.md).
 
 **Spec:** `docs/superpowers/specs/2026-10-26-provider-neutral-evaluation-openai-design.md` (approved 2026-10-26). Parent engine/pedagogy rules remain binding.
 
-**Status:** planning only; all implementation checkboxes are open. Baseline: merged `main` at `40d2559`; user verified 1,219 passed and 2 deselected. Planning branch: `plan-openai-provider` in the existing isolated worktree. No paid execution, push, merge or production code is authorized by this plan's creation.
+**Status (2026-10-27):** all eight tasks implemented under subsequent execution authorization on local branch `plan-openai-provider`; Tasks 1–7 independently reviewed, Task 8 pending task review and final whole-branch review. Original checklist steps below are the approved planning record; execution evidence is in `.superpowers/sdd/2026-10-26-provider-neutral-evaluation-openai/` and the [handoff](../notes/2026-10-26-plan2a-implementation-handoff.md). Baseline was merged `main` at `40d2559` (1,219 passed, 2 deselected). No paid execution, push, merge or publication has occurred or is authorized by completing this plan.
 
 ## Global Constraints
 
@@ -282,8 +282,8 @@ This plan was checked against spec sections1–11: Tasks1/4 cover route/role/com
 
 The two providers are one extension with sequential interface dependencies; separate independent product projects would leave half-migrated shared wiring. Review Task4's Anthropic-only checkpoint before OpenAI integration. Preserve existing public domain contracts and saved packet class identities throughout; internal vendor-specific constructor APIs may migrate with their callers/tests.
 
-The SDK/model/version and commercial price snapshot are intentionally implementation decisions verified against current official sources, as delegated by the approved spec; the plan does not invent them. Execution should use the supplied exact shared interfaces, keeping provider-only private helpers flexible. This is planning evidence, not implementation or live acceptance.
+The SDK/model/version and commercial price snapshot were implementation decisions verified against official sources, as delegated by the approved spec. The supplied exact shared interfaces remain authoritative, with provider-only private helpers flexible. This plan is the historical planning record; current implementation evidence and pending review/live gates are tracked in the handoff and execution ledger.
 
-Review amendments: Tasks 2/3 now define billing-condition evidence and pricing tests; Tasks 4–7 share explicit resolved configuration/preparation interfaces; Task 4 owns the transitive SDK-free artifact gate; Tasks 3/6/8 define treatment declarations, role dependency checks and operator usage. Task 3 freezes unchanged baseline-writer artifacts before migration and Task 6 rejudges that fixture. These are planned checks, not claims that implementation has run.
+Review amendments assigned billing-condition evidence/pricing to Tasks 2/3, shared configuration/preparation to Tasks 4–7, the transitive SDK-free artifact gate to Task 4, and treatment declarations/dependency checks/operator usage to Tasks 3/6/8. Task 3 froze baseline-writer artifacts before migration and Task 6 verified rejudging that fixture. These checks are now implemented; the execution ledger contains measured results. Paid acceptance remains unexecuted.
 
-The user previously preferred subagent-driven execution; preserve that preference if they authorize implementing this plan. Before execution, request their review of this concrete plan. During execution use its own SDD ledger/workspace, never resume the completed Plan2A task sequence. No automatic PR publication, integration, live spend or old-worktree cleanup follows plan creation.
+The user subsequently authorized task-by-task execution in this extension's own SDD ledger/workspace, separate from the completed Plan2A sequence. Task 8 and final whole-branch review remain pending as stated above. No automatic PR publication, integration, live spend or old-worktree cleanup follows implementation.

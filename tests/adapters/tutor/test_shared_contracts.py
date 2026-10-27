@@ -115,7 +115,8 @@ def test_anthropic_tutor_rejects_invalid_selection_before_provider_requests(chan
     sdk = ScriptedAnthropic([])
     route = Route("tutor_dialogue", "anthropic", "scripted", prompt="tutor_math@1")
     with pytest.raises(ValueError):
-        AnthropicTutor({route.name: replace(route, **changes)}, sdk.client, GeneratorRegistry(()), {})
+        AnthropicTutor({route.name: replace(route, **changes)}, sdk.client, GeneratorRegistry(()), {},
+                       route_name=route.name)
     assert sdk.requests == []
 
 

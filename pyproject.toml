@@ -22,4 +22,8 @@ packages = ["src/learnai"]
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-q -m 'not live'"
-markers = ["live: explicitly opted-in paid provider compatibility checks (requires ANTHROPIC_API_KEY)"]
+markers = [
+    "live: explicitly opted-in paid compatibility checks (requires the selected provider key)",
+    "anthropic: Anthropic provider compatibility probes (does not enable live execution)",
+    "openai: OpenAI provider compatibility probes (does not enable live execution)",
+]

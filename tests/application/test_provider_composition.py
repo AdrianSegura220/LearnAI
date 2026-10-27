@@ -42,6 +42,47 @@ def test_unused_missing_package_and_key_and_empty_operation():
     assert unused.clients_created == factory.clients_created == 0
 
 
+def test_default_routes_ignore_opt_in_openai_package_and_key(monkeypatch):
+    """Adding resolvable examples must not make the base installation need OpenAI."""
+    from pathlib import Path
+    import builtins
+    from importlib.metadata import PackageNotFoundError
+    from learnai.application import providers
+    from learnai.adapters.tutor.routing import load_budget_profiles, load_routes
+
+    path = Path(__file__).resolve().parents[2] / 'config/llm_routes.yaml'
+    routes = load_routes(path)
+    selected = resolve_operation_routes(routes=routes, contexts=[make_context(response_job=job)
+        for job in (ResponseJob.BRIEF, ResponseJob.NORMAL, ResponseJob.SUBSTANTIAL)],
+        judge_route_name='rubric_judge', smoke=True, rejudge=False)
+    assert {route.adapter for route in selected.tutors.values()} == {'anthropic'}
+    assert selected.judge.adapter == 'anthropic'
+    original_distribution, original_import = providers.distribution, builtins.__import__
+
+    def without_openai(package):
+        if package == 'openai':
+            raise PackageNotFoundError(package)
+        return original_distribution(package)
+
+    def no_openai_sdk(name, *args, **kwargs):
+        if name.split('.')[0] == 'openai':
+            raise AssertionError('default operation imported the unused OpenAI SDK')
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(providers, 'distribution', without_openai)
+    monkeypatch.setattr(builtins, '__import__', no_openai_sdk)
+    registry = providers.default_registry()
+    def no_client(**kwargs):
+        raise AssertionError('preflight constructed a client')
+    for name in ('anthropic', 'openai'):
+        monkeypatch.setattr(registry.get(name), 'create_client', no_client)
+    with ProviderServices(selected=selected, registry=registry,
+            environment={'ANTHROPIC_API_KEY': 'preflight-only'}, dependencies=TutorDependencies(None, {}),
+            profiles=load_budget_profiles(path), prompts_root=PROMPTS_ROOT,
+            ledger=RequestLedger()) as operation:
+        assert len(operation.resolved_configs) == 4
+
+
 def test_rejudge_only_and_lazy_client_reuse_and_closure():
     factory = RecordingFactory('judge_test')
     with services({'judge_test': factory}, OperationRoutes({}, route('judge_test', 'judge')),

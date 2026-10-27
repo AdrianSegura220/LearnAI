@@ -10,6 +10,7 @@ from learnai.adapters.tutor.anthropic.adapter import AnthropicTutor
 from learnai.adapters.tutor.anthropic.routing import BudgetProfile, Route
 from learnai.adapters.tutor.runtime import TerminationReason
 from learnai.domain.enums import HelpRung
+from learnai.domain.interaction import ResponseJob
 from learnai.domain.turn import RejectionReason, TurnFeedback, ValidationResult, request_validated_turn
 from tests.adapters.tutor.test_rendering import make_context, record
 from tests.domain.test_engine import CLUSTER, build
@@ -43,6 +44,42 @@ def test_tutor_startup_rejects_missing_prompt_before_provider_request():
     with pytest.raises(ValueError, match="tutor_dialogue.*prompt"):
         AnthropicTutor({route.name: route}, sdk.client, GeneratorRegistry(()), {})
     assert sdk.requests == []
+
+
+def test_legacy_anthropic_tutor_ignores_named_unused_openai_example():
+    from pathlib import Path
+    from learnai.adapters.tutor.routing import load_routes, load_budget_profiles
+    path = Path(__file__).resolve().parents[3] / 'config/llm_routes.yaml'
+    routes = load_routes(path)
+    sdk = ScriptedAnthropic([final()])
+    try:
+        tutor = AnthropicTutor(routes, sdk.client, GeneratorRegistry(()), {},
+            budget_profiles=load_budget_profiles(path), monotonic=sdk.clock,
+            count_tokens=lambda text: len(text) // 4)
+        assert tutor.respond(make_context()).message == 'Compare your two lines.'
+        assert sdk.requests[0]['model'] == routes['tutor_dialogue'].model
+    finally:
+        sdk.client.close()
+
+
+@pytest.mark.parametrize('binding', ['implicit', 'explicit'])
+def test_legacy_anthropic_tutor_rejects_selected_foreign_job_before_request(binding):
+    routes = {
+        'tutor_dialogue': Route('tutor_dialogue', 'anthropic', 'scripted', prompt='tutor_math@1'),
+        'tutor_brief': Route('tutor_brief', 'openai', 'scripted', prompt='tutor_math@1'),
+    }
+    sdk = ScriptedAnthropic([])
+    try:
+        if binding == 'explicit':
+            with pytest.raises(ValueError, match='unsupported Anthropic adapter'):
+                AnthropicTutor(routes, sdk.client, GeneratorRegistry(()), {}, route_name='tutor_brief')
+        else:
+            tutor = AnthropicTutor(routes, sdk.client, GeneratorRegistry(()), {})
+            with pytest.raises(ValueError, match='unsupported Anthropic adapter'):
+                tutor.begin_turn(make_context(response_job=ResponseJob.BRIEF))
+        assert sdk.requests == []
+    finally:
+        sdk.client.close()
 
 
 def test_two_tool_round_trips_preserve_original_history_and_results():

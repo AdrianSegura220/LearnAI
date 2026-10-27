@@ -167,6 +167,7 @@ def test_initial_configuration_loads_job_budgets():
     profiles = load_budget_profiles(path)
     assert set(routes) == {
         "tutor_dialogue", "tutor_brief", "tutor_explanation", "error_diagnosis", "rubric_judge",
+        "tutor_openai", "rubric_judge_openai",
     }
     assert set(profiles) == {"brief", "normal", "substantial", "complex"}
     for job, expected in [
@@ -174,7 +175,9 @@ def test_initial_configuration_loads_job_budgets():
         (ResponseJob.NORMAL, (8, 15, 8, 16, 8192, 40000, 1024)),
         (ResponseJob.SUBSTANTIAL, (20, 30, 12, 24, 16384, 48000, 1024)),
     ]:
-        profile = profiles[resolve_tutor_route(routes, job).budget_profile]
+        route = resolve_tutor_route(routes, job)
+        assert route.adapter == 'anthropic'
+        profile = profiles[route.budget_profile]
         assert (
             profile.soft_seconds, profile.hard_seconds, profile.max_round_trips,
             profile.max_tool_calls, profile.max_output_tokens, profile.context_input_tokens,

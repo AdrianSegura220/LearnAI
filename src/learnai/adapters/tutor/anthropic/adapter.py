@@ -14,7 +14,7 @@ import httpx2
 
 from learnai.adapters.content.registry import GeneratorRegistry
 from learnai.adapters.persistence.in_memory_history import InMemoryHistoryReader
-from learnai.adapters.tutor.anthropic.config import resolve_config
+from learnai.adapters.tutor.anthropic.config import resolve_config, validate_route
 from learnai.adapters.tutor.anthropic.usage import normalize_anthropic_usage
 from learnai.adapters.tutor.observations import TraceSink
 from learnai.adapters.tutor.configuration import ResolvedRoleConfig
@@ -72,7 +72,8 @@ class AnthropicTutor:
             self.profiles = {resolved_config.route.budget_profile: resolved_config.profile}
         else:
             selected = (resolve_route(self.routes, route_name),) if route_name is not None else tuple(
-                route for name, route in self.routes.items() if name.startswith('tutor_'))
+                route for name, route in self.routes.items()
+                if name.startswith('tutor_') and route.adapter == 'anthropic')
             for route in selected:
                 self.configs[route.name] = resolve_config(route, role='tutor', profiles=self.profiles,
                                                          prompts_root=prompts_root)
@@ -81,6 +82,7 @@ class AnthropicTutor:
     def begin_turn(self, context: TurnContext) -> "_AnthropicExchange":
         route = (resolve_route(self.routes, self.route_name) if self.route_name is not None
                  else resolve_tutor_route(self.routes, context.response_job))
+        validate_route(route, role='tutor')
         return _AnthropicExchange(self, context, route, self.prompts[route.name])
 
     def respond(self, context: TurnContext, *, feedback: TurnFeedback | None = None) -> TutorTurn | None:

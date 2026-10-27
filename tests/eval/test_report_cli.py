@@ -89,6 +89,9 @@ def test_report_counts_only_numeric_scores_and_writes_roundtrippable_artifacts(t
 
 def routes_file(tmp_path):
     config = yaml.safe_load((ROOT / 'config/llm_routes.yaml').read_text())
+    # This suite deliberately registers only the scripted Anthropic factory.
+    config['routes'] = {name: route for name, route in config['routes'].items()
+                        if route['adapter'] == 'anthropic'}
     for route in config['routes'].values():
         route['model'] = 'fiction-model'
     for profile in config['budget_profiles'].values():

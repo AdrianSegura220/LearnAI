@@ -34,25 +34,35 @@ budget_profiles:
     context_input_tokens: 64000
     finalization_reserve_tokens: 2048
 
-# Inactive OpenAI opt-in example, verified 2026-10-27. Install .[openai].
-# This profile supports the documented GPT-5.4 Responses settings below;
-# other model families require their own compatibility verification.
-# Defaults remain the Anthropic routes. Registration/judge follows separately.
-#   tutor_openai:
-#     adapter: openai
-#     model: gpt-5.4-2026-03-05
-#     effort: low
-#     max_tokens: 2048
-#     stream: false
-#     prompt: tutor_math@1
-#     budget_profile: normal
-#     provider_options:
-#       service_tier: default
-#       prompt_cache_retention: in_memory
-#       prompt_cache_key: learnai-tutor-policy-v1
-# Set effort: none before selecting temperature (range 0–2).
-# prompt_cache_retention also accepts 24h for this model.
+# OpenAI opt-in routes, verified offline 2026-10-27. Install .[openai].
+# Both providers are registered for tutor and judge; defaults remain Anthropic.
+# The named examples below are never selected automatically. See eval/README.md.
+# Other model families require their own compatibility verification.
 routes:
+  tutor_openai:
+    adapter: openai
+    model: gpt-5.4-2026-03-05
+    effort: low
+    max_tokens: 2048
+    stream: false
+    prompt: tutor_math@1
+    budget_profile: normal
+    provider_options:
+      service_tier: default
+      prompt_cache_retention: in_memory
+      prompt_cache_key: learnai-tutor-policy-v1
+  rubric_judge_openai:
+    adapter: openai
+    model: gpt-5.4-2026-03-05
+    effort: low
+    max_tokens: 2048
+    stream: false
+    prompt: rubric_judge@1
+    budget_profile: substantial
+    provider_options:
+      service_tier: default
+  # OpenAI temperature (0–2) requires effort: none; omit thinking.
+  # prompt_cache_retention also accepts 24h for this configured model.
   tutor_dialogue:
     adapter: anthropic
     model: claude-opus-5-5
