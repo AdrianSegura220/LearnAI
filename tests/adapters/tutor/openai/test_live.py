@@ -91,7 +91,8 @@ def _assert_accepted_protocol(tutor: OpenAITutor, trace: TurnTrace) -> None:
         assert payload['input'][0]['content'] == trace.initial_context
         assert payload['tool_choice'] in {'auto', 'none'}
         for name, value in tutor.config.effective_settings.items():
-            assert payload[name] == value
+            if name != 'max_output_tokens':  # Per-call allowance shrinks with the shared budget.
+                assert payload[name] == value
         assert 'api_profile' not in payload
     for previous, current in zip(trace.provider_requests, trace.provider_requests[1:]):
         assert current['input'][:len(previous['input'])] == previous['input']

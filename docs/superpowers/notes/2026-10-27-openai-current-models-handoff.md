@@ -19,13 +19,16 @@ Native complete-cost fixtures now explicitly return zero writes.
 Task 2 changes **14 tracked files**: route YAML; the usage mapper; live helper and
 its offline regressions; usage/routing/composition/mixed-provider/admission tests;
 two shared test helpers; eval README; compatibility note; and this handoff.
-The complete migration changes **19 tracked files** across its two implementation
-commits. The ignored execution reports are excluded from these counts.
+The implementation changes **19 tracked paths** across its implementation commits,
+including the final helper fix below. Adding the two planning documents gives
+**21 tracked paths** for the whole branch. The final fix uses existing files;
+ignored execution reports are excluded from these counts.
 
 The installed `openai==3.39.0` / native `httpx2` serialization accepts the selected
 request fields and preserves nested write usage; no dependency upgrade or install
-was needed. Final keyless full verification passed **1,669 tests, 4 deselected**
-in 86.89s. Focused verification passed 411 tests (2 live deselected). Both corpus
+was needed. After the final helper fix, keyless full verification passed
+**1,670 tests, 4 deselected** in 94.32s. Final focused verification passed
+412 tests (2 live deselected). Both corpus
 admission suites passed 7 tests, retaining 71 fixtures and 54 actual opportunities.
 For both checked-in and fallback budgets, current OpenAI maximum request plus
 next-output reservation is 30,776 (tutor) and 31,732 (judge); minimum remaining
@@ -42,7 +45,22 @@ Live account/model behavior, latency, teaching quality, and commercial cost
 coverage remain unverified. No OpenAI price snapshot was invented: base/read
 rates, returned tier and geography must have applicable evidence before complete
 costs can be reported. Documented write multipliers alone (30m: 1.25×; 12h: 2.5×)
-do not establish that coverage. Task review and whole-branch review remain gates.
+do not establish that coverage.
+
+Whole-branch review found one Important issue in the live protocol helper: exact
+comparison with the configured output ceiling rejected a valid accepted exchange
+whose final request allowance had shrunk with the shared budget. The final fix
+excludes only dynamic `max_output_tokens` from invariant settings comparisons and
+retains the positive, route-bounded cap assertion. A native SDK/real-engine
+regression uses three distinct tool turns reporting 1,900 output tokens each and
+verifies request caps `[2048, 2048, 2048, 1468]` before invoking the helper. Existing
+legacy/current/reasoning retry and correction coverage remains. Runtime encoding,
+budgets, models, dependencies, domain policy and frozen fixtures are unchanged.
+The regression failed at `1468 == 2048` before the helper fix and passed afterward.
+Final focused verification passed **412 tests, 2 deselected** in 19.70s; exactly
+four live cases collected and all four skipped without keys. No paid bodies ran.
+The final fix is awaiting one scoped re-review; this handoff does not claim that
+the review gate has passed.
 
 Reproduce offline verification from the repository root with both keys unset:
 
