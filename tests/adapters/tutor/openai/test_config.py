@@ -95,3 +95,67 @@ assert not any(m.split('.')[0] in {'openai','anthropic','httpx2'} for m in sys.m
     completed = subprocess.run([sys.executable,'-c',code],env={k:v for k,v in os.environ.items()
         if k not in ('ANTHROPIC_API_KEY','OPENAI_API_KEY')},capture_output=True,text=True)
     assert completed.returncode == 0, completed.stderr
+
+
+@pytest.mark.parametrize('profile', ['current', 'reasoning'])
+def test_current_profiles_default_to_low_and_implicit_30m_without_wire_metadata(profile):
+    route = replace(ROUTE, provider_options={'api_profile': profile})
+    settings = request_settings(route)
+    assert settings['reasoning'] == {'effort': 'low'}
+    assert settings['prompt_cache_options'] == {'mode': 'implicit', 'ttl': '30m'}
+    assert 'api_profile' not in settings and 'prompt_cache_retention' not in settings
+    for role in ('tutor', 'judge'):
+        config = resolve_config(route, role=role, profiles=DEFAULT_BUDGET_PROFILES, prompts_root=PROMPTS_ROOT)
+        assert config.usage_mapper_id == 'openai-responses@2'
+        assert config.effective_settings['prompt_cache_options'] == {'mode': 'implicit', 'ttl': '30m'}
+
+
+@pytest.mark.parametrize('profile,effort', [('current', 'none'), ('current', 'max'), ('reasoning', 'max')])
+def test_current_profile_efforts_and_12h_are_explicit(profile, effort):
+    settings = request_settings(replace(ROUTE, effort=effort, provider_options={
+        'api_profile': profile, 'prompt_cache_options': {'mode': 'implicit', 'ttl': '12h'}}))
+    assert settings['reasoning'] == {'effort': effort}
+    assert settings['prompt_cache_options'] == {'mode': 'implicit', 'ttl': '12h'}
+
+
+@pytest.mark.parametrize('options,effort,temperature', [
+    ({'api_profile': 'unknown'}, None, None),
+    ({'api_profile': None}, None, None),
+    ({'api_profile': 'reasoning'}, 'none', None),
+    ({'api_profile': 'current'}, None, 0.2),
+    ({'api_profile': 'current', 'prompt_cache_retention': '24h'}, None, None),
+    ({'prompt_cache_options': {'mode': 'implicit', 'ttl': '30m'}}, None, None),
+    *[({'api_profile': 'current', 'prompt_cache_options': options}, None, None) for options in (
+        None, [], '30m', {'mode': 'explicit', 'ttl': '30m'}, {'mode': 'implicit', 'ttl': '24h'},
+        {'mode': 'implicit', 'ttl': '30m', 'future': True}, {'ttl': None}, {'mode': None})],
+])
+def test_profile_incompatibilities_fail_locally_for_both_roles(options, effort, temperature):
+    route = replace(ROUTE, provider_options=options, effort=effort, temperature=temperature)
+    for role in ('tutor', 'judge'):
+        with pytest.raises(ValueError):
+            validate_route(route, role=role)
+
+
+@pytest.mark.parametrize('options,expected', [({}, {'mode': 'implicit', 'ttl': '30m'}),
+    ({'ttl': '12h'}, {'mode': 'implicit', 'ttl': '12h'}),
+    ({'mode': 'implicit'}, {'mode': 'implicit', 'ttl': '30m'})])
+def test_current_cache_option_defaults_resolve_independently(options, expected):
+    result = request_settings(replace(ROUTE, provider_options={
+        'api_profile': 'current', 'prompt_cache_options': options}))
+    assert result['prompt_cache_options'] == expected
+
+
+def test_explicit_legacy_profile_preserves_previous_wire_settings():
+    assert request_settings(replace(ROUTE, provider_options={'api_profile': 'legacy'})) == request_settings(ROUTE)
+
+
+@pytest.mark.parametrize('profile', ['current', 'reasoning'])
+def test_current_preflight_matches_native_tutor_body(profile):
+    tutor, sdk, _ = setup([final()], options={'api_profile': profile,
+        'prompt_cache_options': {'ttl': '12h'}}, count_tokens=conservative_token_count)
+    prepared = OpenAIFactory().prepare_tutor(tutor.config, context=make_context(),
+        dependencies=TutorDependencies(GeneratorRegistry(()), {}))
+    assert prepared.admitted and tutor.respond(make_context()) is not None
+    assert prepared.payload == sdk.requests[0]
+    assert sdk.requests[0]['prompt_cache_options'] == {'mode': 'implicit', 'ttl': '12h'}
+    assert 'api_profile' not in sdk.requests[0]

@@ -10,9 +10,18 @@ from learnai.adapters.tutor.routing import BudgetProfile, Route
 from learnai.adapters.tutor.tools import tool_definitions
 
 ROLE_DEPENDENCIES = {'tutor': ('openai', 'httpx2'), 'judge': ('openai', 'httpx2')}
-USAGE_MAPPER_ID = 'openai-responses@1'
+USAGE_MAPPER_ID = 'openai-responses@2'
 TOKEN_COUNTER_ID = 'utf8-bytes-plus-256@1'
-_OPTIONS = {'prompt_cache_key', 'prompt_cache_retention', 'service_tier'}
+_OPTIONS = {'api_profile', 'prompt_cache_key', 'prompt_cache_retention', 'prompt_cache_options', 'service_tier'}
+
+
+def _effort(route: Route) -> str:
+    return route.effort if route.effort is not None else (
+        'none' if route.provider_options.get('api_profile', 'legacy') == 'legacy' else 'low')
+
+
+def _cache_options(route: Route) -> dict[str, object]:
+    return {'mode': 'implicit', 'ttl': '30m', **route.provider_options.get('prompt_cache_options', {})}
 
 
 def validate_route(route: Route, *, role: str) -> None:
@@ -23,15 +32,21 @@ def validate_route(route: Route, *, role: str) -> None:
         raise ValueError('expected OpenAI route')
     if route.thinking is not None:
         raise ValueError('OpenAI routes must omit thinking')
-    if route.effort is not None and route.effort not in ('none', 'low', 'medium', 'high', 'xhigh'):
+    options = route.provider_options
+    profile = options.get('api_profile', 'legacy')
+    if profile not in ('legacy', 'current', 'reasoning'):
+        raise ValueError('unsupported OpenAI api_profile')
+    efforts = ('none', 'low', 'medium', 'high', 'xhigh') if profile == 'legacy' else (
+        ('none', 'low', 'medium', 'high', 'xhigh', 'max') if profile == 'current'
+        else ('low', 'medium', 'high', 'xhigh', 'max'))
+    if _effort(route) not in efforts:
         raise ValueError(f'unsupported effort: {route.effort}')
     if route.temperature is not None and (
-        (route.effort or 'none') != 'none' or not 0 <= route.temperature <= 2
+        _effort(route) != 'none' or not 0 <= route.temperature <= 2
     ):
         raise ValueError('temperature requires effort none and range [0, 2]')
     if route.prompt is None:
         raise ValueError(f'{role} route {route.name} requires an explicit prompt')
-    options = route.provider_options
     if unknown := options.keys() - _OPTIONS:
         raise ValueError(f'unsupported OpenAI provider_options: {", ".join(sorted(unknown))}')
     if 'prompt_cache_key' in options and (
@@ -41,6 +56,17 @@ def validate_route(route: Route, *, role: str) -> None:
         raise ValueError('prompt_cache_key requires 1–64 characters')
     if 'prompt_cache_retention' in options and options['prompt_cache_retention'] not in ('in_memory', '24h'):
         raise ValueError('unsupported prompt_cache_retention')
+    if profile == 'legacy':
+        if 'prompt_cache_options' in options:
+            raise ValueError('prompt_cache_options requires a current API profile')
+    else:
+        if 'prompt_cache_retention' in options:
+            raise ValueError('current API profiles require prompt_cache_options instead of retention')
+        nested = options.get('prompt_cache_options', {})
+        if (not isinstance(nested, Mapping) or nested.keys() - {'mode', 'ttl'}
+                or nested.get('mode', 'implicit') != 'implicit'
+                or nested.get('ttl', '30m') not in ('30m', '12h')):
+            raise ValueError('prompt_cache_options requires implicit mode and ttl 30m or 12h')
     if 'service_tier' in options and options['service_tier'] not in ('default', 'flex', 'priority'):
         raise ValueError('service_tier must explicitly select default, flex or priority')
 
@@ -49,12 +75,14 @@ def request_settings(route: Route) -> dict[str, object]:
     validate_route(route, role='tutor')
     settings: dict[str, object] = {'model': route.model, 'max_output_tokens': route.max_tokens,
         'stream': route.stream, 'store': False, 'include': ['reasoning.encrypted_content'],
-        'reasoning': {'effort': route.effort or 'none'}, 'truncation': 'disabled'}
+        'reasoning': {'effort': _effort(route)}, 'truncation': 'disabled'}
     if route.temperature is not None:
         settings['temperature'] = route.temperature
-    for key in _OPTIONS:
+    for key in ('prompt_cache_key', 'prompt_cache_retention', 'service_tier'):
         if key in route.provider_options:
             settings[key] = route.provider_options[key]
+    if route.provider_options.get('api_profile', 'legacy') != 'legacy':
+        settings['prompt_cache_options'] = _cache_options(route)
     return settings
 
 

@@ -493,3 +493,79 @@ def test_actual_sdks_use_independent_jobs_and_keep_phase_sinks_scoped(tmp_path, 
     assert records[-1].phase == 'judge' and records[-1].provider == 'anthropic'
     assert json.loads(sdks['anthropic'].wire_requests[-1]['messages'][0]['content']) == json.loads(build_judge_messages(p)[0]['content'])
     assert all(s.client.is_closed() for s in sdks.values())
+
+
+@pytest.mark.parametrize('name,role,api_profile', [
+    ('tutor_openai', 'tutor', 'current'),
+    ('tutor_openai_sol', 'tutor', 'reasoning'),
+    ('rubric_judge_openai', 'judge', 'reasoning'),
+])
+@pytest.mark.parametrize('has_write_evidence', [False, True])
+def test_configured_current_routes_match_native_sdk_preparation(name, role, api_profile, has_write_evidence):
+    """Selected YAML controls survive real factory preparation and SDK serialization."""
+    from pathlib import Path
+    from learnai.adapters.content.registry import GeneratorRegistry
+    from learnai.adapters.tutor.openai.wiring import OpenAIFactory
+    from learnai.adapters.tutor.routing import load_budget_profiles, load_routes
+    from tests.eval.test_judge import packet
+    from tests.adapters.tutor.openai.test_judge import scored
+    from tests.support.scripted_openai import ScriptedOpenAI, current_usage, final, usage
+
+    path = Path(__file__).resolve().parents[2] / 'config/llm_routes.yaml'
+    selected = load_routes(path)[name]
+    assert selected.provider_options['api_profile'] == api_profile
+    assert selected.effort == 'low'
+    assert selected.budget_profile == ('substantial' if role == 'judge' else 'normal')
+    factory = OpenAIFactory()
+    config = factory.resolve_config(replace(selected, model='fictional-current-model'),
+        role=role, profiles=load_budget_profiles(path), prompts_root=PROMPTS_ROOT)
+    raw = current_usage() if has_write_evidence else usage()
+    sdk = ScriptedOpenAI([scored(usage=raw) if role == 'judge' else final(usage=raw)])
+    traces = []
+    try:
+        if role == 'tutor':
+            dependencies = TutorDependencies(GeneratorRegistry(()), {})
+            prepared = factory.prepare_tutor(config, context=make_context(), dependencies=dependencies)
+            adapter = factory.create_tutor(config=config, client=sdk.client,
+                dependencies=dependencies, trace_sink=traces.append)
+            assert adapter.respond(make_context()) is not None
+        else:
+            prepared = factory.prepare_judge(config, packet=packet())
+            adapter = factory.create_judge(config=config, client=sdk.client, trace_sink=traces.append)
+            assert adapter.evaluate(packet()).mathematics == 2
+        body = sdk.requests[0]
+        assert prepared.admitted and prepared.payload == body
+        assert body['reasoning'] == {'effort': 'low'}
+        assert body['prompt_cache_options'] == {'mode': 'implicit', 'ttl': '30m'}
+        assert body['service_tier'] == 'default'
+        assert body['max_output_tokens'] == prepared.output_reservation == selected.max_tokens
+        assert 'api_profile' not in body and 'prompt_cache_retention' not in body
+        observed = traces[0].attempts[0].normalized_usage
+        assert observed.status.value == ('complete' if has_write_evidence else 'partial')
+        assert observed.counts == ({'input': 80, 'cache_read': 20, 'output': 40,
+            'cache_write_30m': 0, 'cache_write_12h': 0} if has_write_evidence else
+            {'cache_read': 20, 'output': 40})
+    finally:
+        sdk.client.close()
+
+
+@pytest.mark.parametrize('name,role', [('tutor_openai_sol', 'tutor'), ('rubric_judge_openai', 'judge')])
+def test_configured_reasoning_routes_reject_none_before_clients(name, role, monkeypatch):
+    from pathlib import Path
+    from learnai.adapters.tutor.openai.wiring import OpenAIFactory
+    from learnai.adapters.tutor.routing import load_budget_profiles, load_routes
+
+    path = Path(__file__).resolve().parents[2] / 'config/llm_routes.yaml'
+    selected = replace(load_routes(path)[name], model='fictional-reasoning-model', effort='none')
+    factory = OpenAIFactory()
+    def no_client(**kwargs):
+        raise AssertionError('invalid selected route constructed a client')
+    monkeypatch.setattr(factory, 'create_client', no_client)
+    operation = ProviderServices(
+        selected=OperationRoutes({ResponseJob.NORMAL: selected} if role == 'tutor' else {},
+                                 selected if role == 'judge' else None),
+        registry=ProviderRegistry({'openai': factory}), environment={'OPENAI_API_KEY': 'preflight-only'},
+        dependencies=TutorDependencies(None, {}), profiles=load_budget_profiles(path),
+        prompts_root=PROMPTS_ROOT, ledger=RequestLedger())
+    with pytest.raises(ValueError, match='effort'):
+        operation.validate()

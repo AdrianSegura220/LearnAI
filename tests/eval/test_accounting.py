@@ -127,3 +127,34 @@ def test_selected_route_is_immutable_attempt_identity():
     ledger.record(entry)
     with pytest.raises(ValueError, match='identity'):
         ledger.record(replace(entry, route_name='same_model_other_route'))
+
+
+@pytest.mark.parametrize('aggregate,details,expected,complete', [
+    (7000, {'ttl_30m_tokens': 3000, 'ttl_12h_tokens': 4000}, Decimal('0.038'), True),
+    (7000, {'ttl_30m_tokens': 3000}, Decimal('0.013'), False),
+    (7000, None, Decimal('0.004'), False),
+    (8000, {'ttl_30m_tokens': 3000, 'ttl_12h_tokens': 4000}, Decimal('0.037'), False),
+])
+def test_openai_write_categories_price_without_shared_vendor_decoding(aggregate, details, expected, complete):
+    from learnai.adapters.tutor.observations import UsageStatus
+    from learnai.adapters.tutor.openai.usage import normalize_openai_usage
+    raw = {'input_tokens': 12000, 'input_tokens_details': {'cached_tokens': 4000,
+        'cache_write_tokens': aggregate}, 'output_tokens': 200,
+        'output_tokens_details': {'reasoning_tokens': 80}}
+    if details is not None:
+        raw['input_tokens_details']['cache_write_tokens_details'] = details
+    usage = normalize_openai_usage(raw, status=UsageStatus.COMPLETE)
+    ledger = RequestLedger()
+    ledger.record(RequestRecord(request_id='mixed', exchange_id='exchange', phase='tutor', scenario_id=None,
+        provider='openai', api_family='responses', normalized_usage=usage, requested_model='fictional',
+        returned_model='fictional', settings={}, raw_usage=raw, usage_status=usage.status.value))
+    # Synthetic rates deliberately distinguish writes from reads and normal input.
+    book = PriceBook((PriceSnapshot('openai', 'synthetic@1', '2026-10-27', 'USD', 1000000,
+        {'fictional': {'input': Decimal('1'), 'cache_read': Decimal('0.5'),
+            'cache_write_30m': Decimal('3'), 'cache_write_12h': Decimal('6'), 'output': Decimal('10')}},
+        'https://example.test/synthetic', '2026-10-27', {}),))
+    result = estimate_cost(ledger, book)
+    assert result.known_subtotal == expected
+    assert result.complete is complete
+    assert result.total == (expected if complete else None)
+    assert ledger.records[0].raw_usage == raw

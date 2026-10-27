@@ -3,8 +3,77 @@ from collections.abc import Mapping
 
 from learnai.adapters.tutor.observations import BillingCondition, UsageObservation, UsageStatus
 
-MAPPER_VERSION = 'openai-responses@1'
+MAPPER_VERSION = 'openai-responses@2'
 _USAGE_FIELDS = {'input_tokens', 'input_tokens_details', 'output_tokens', 'output_tokens_details', 'total_tokens'}
+_WRITE_FIELDS = {'ttl_30m_tokens': 'cache_write_30m', 'ttl_12h_tokens': 'cache_write_12h'}
+
+
+def _valid(value: object) -> bool:
+    return type(value) is int and value >= 0
+
+
+def _cache_writes(details: Mapping[str, object], inclusive: object, cached: int | None,
+                  counts: dict[str, int], reasons: list[str], *, require_evidence: bool) -> int | None:
+    """Return a proven write total, preserving only independently bounded buckets.
+
+    Legacy absent write evidence implies no new categories; current requests
+    require returned evidence before uncached input is known. A returned zero
+    aggregate proves zero writes; a positive aggregate never establishes TTL.
+    Conflicts leave input unknown and never select one contradictory source.
+    """
+    has_aggregate = 'cache_write_tokens' in details
+    has_nested = 'cache_write_tokens_details' in details
+    if not has_aggregate and not has_nested:
+        if require_evidence:
+            reasons.append('missing cache write evidence')
+            return None
+        return 0
+    aggregate = details.get('cache_write_tokens')
+    valid_aggregate = _valid(aggregate)
+    remaining = inclusive - (cached or 0) if _valid(inclusive) else None
+    aggregate_bounded = valid_aggregate and (remaining is None or aggregate <= remaining)
+    if has_aggregate and not valid_aggregate:
+        reasons.append('invalid cache_write_tokens aggregate')
+    elif has_aggregate and not aggregate_bounded:
+        reasons.append('cache_write_tokens exceeds inclusive input subset')
+    if not has_nested:
+        if aggregate_bounded and aggregate == 0:
+            counts.update(cache_write_30m=0, cache_write_12h=0)
+            return 0
+        if valid_aggregate:
+            reasons.append('cache write duration unknown')
+        return None
+    nested = details['cache_write_tokens_details']
+    if not isinstance(nested, Mapping):
+        reasons.append('invalid cache_write_tokens_details')
+        return None
+    complete = True
+    for name, category in _WRITE_FIELDS.items():
+        value = nested.get(name)
+        if not _valid(value):
+            reasons.append(f'missing or invalid cache write {name}')
+            complete = False
+        elif (remaining is not None and value > remaining) or (valid_aggregate and value > aggregate):
+            reasons.append(f'cache write {name} exceeds input or aggregate subset')
+            complete = False
+        else:
+            counts[category] = value
+    total = sum(counts.get(category, 0) for category in _WRITE_FIELDS.values())
+    if (remaining is not None and total > remaining) or (valid_aggregate and total > aggregate):
+        # Each bucket could fit alone, but retaining both would overcount known
+        # usage. The response provides no basis for choosing which one to trust.
+        for category in _WRITE_FIELDS.values():
+            counts.pop(category, None)
+        reasons.append('cache write duration sum exceeds input or aggregate subset')
+        complete = False
+    if nested.keys() - _WRITE_FIELDS.keys():
+        reasons.append('unknown cache write duration categories')
+        complete = False
+    if has_aggregate and (not aggregate_bounded or total != aggregate):
+        if valid_aggregate and total != aggregate:
+            reasons.append('cache write aggregate differs from duration counters')
+        complete = False
+    return total if complete else None
 
 
 def _conditions(metadata: Mapping[str, object], settings: Mapping[str, object]) -> dict[str, BillingCondition]:
@@ -35,45 +104,44 @@ def normalize_openai_usage(raw: Mapping[str, object] | None, *, status: UsageSta
         return UsageObservation({}, UsageStatus.MISSING, ('missing usage',),
             {'mapper_version': MAPPER_VERSION}, conditions)
     reasons = [] if status is UsageStatus.COMPLETE else [f'{status.value} usage']
-    counts = {}
-    def valid(value):
-        return type(value) is int and value >= 0
+    counts: dict[str, int] = {}
     total_input, output = raw.get('input_tokens'), raw.get('output_tokens')
-    if valid(output):
+    if _valid(output):
         counts['output'] = output
     else:
         reasons.append('missing or invalid output_tokens')
     details = raw.get('input_tokens_details')
     cached = details.get('cached_tokens') if isinstance(details, Mapping) else None
-    write_unknown = False
+    known_details = True
     if isinstance(details, Mapping):
-        if details.keys() - {'cached_tokens', 'cache_write_tokens'}:
+        if details.keys() - {'cached_tokens', 'cache_write_tokens', 'cache_write_tokens_details'}:
             reasons.append('unknown input token detail categories')
-        if 'cache_write_tokens' in details and (not valid(details['cache_write_tokens']) or details['cache_write_tokens'] != 0):
-            reasons.append('unsupported cache write token subset')
-            write_unknown = True
-    if not valid(total_input):
+            known_details = False
+    if not _valid(total_input):
         reasons.append('missing or invalid input_tokens')
-    if not valid(cached):
+    if not _valid(cached):
         reasons.append('missing or invalid cached_tokens subset')
-    elif valid(total_input) and cached > total_input:
+    elif _valid(total_input) and cached > total_input:
         reasons.append('cached_tokens exceeds inclusive input_tokens')
     else:
         counts['cache_read'] = cached
-        if valid(total_input) and not write_unknown:
-            counts['input'] = total_input - cached
+    if isinstance(details, Mapping):
+        writes = _cache_writes(details, total_input, counts.get('cache_read'), counts, reasons,
+            require_evidence='prompt_cache_options' in (request_settings or {}))
+        if _valid(total_input) and 'cache_read' in counts and writes is not None and known_details:
+            counts['input'] = total_input - cached - writes
     out_details = raw.get('output_tokens_details')
     if out_details is not None:
         if not isinstance(out_details, Mapping):
             reasons.append('invalid output_tokens_details')
         else:
             reasoning = out_details.get('reasoning_tokens')
-            if not valid(reasoning) or (valid(output) and reasoning > output):
+            if not _valid(reasoning) or (_valid(output) and reasoning > output):
                 reasons.append('missing or invalid reasoning_tokens subset')
             if out_details.keys() - {'reasoning_tokens'}:
                 reasons.append('unknown output token detail categories')
-    if 'total_tokens' in raw and (not valid(raw['total_tokens']) or
-        (valid(total_input) and valid(output) and raw['total_tokens'] != total_input + output)):
+    if 'total_tokens' in raw and (not _valid(raw['total_tokens']) or
+        (_valid(total_input) and _valid(output) and raw['total_tokens'] != total_input + output)):
         reasons.append('invalid inclusive total_tokens')
     if unknown := raw.keys() - _USAGE_FIELDS:
         reasons.append('unknown usage categories: ' + ', '.join(sorted(unknown)))

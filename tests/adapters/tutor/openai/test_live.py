@@ -1,7 +1,7 @@
 """Paid opt-in Responses probes; never part of the ordinary keyless suite.
 
 Cache profile checked against official documentation on 2026-10-27. The
-selected model has a settings-dependent minimum, not a universal token floor.
+selected current profile requires at least 1,024 visible input tokens for caching.
 """
 from collections.abc import Iterator
 from dataclasses import asdict, replace
@@ -47,7 +47,9 @@ def live_tutor(request: pytest.FixtureRequest) -> Iterator[LiveTutor]:
         'test': request.node.nodeid, 'provider': 'openai', 'requested_model': route.model,
         'sdk_version': version('openai'), 'transport_version': version('httpx2'),
         'cache_prerequisites_checked_at': '2026-10-27', 'cache_source': CACHE_SOURCE,
-        'cache_minimum_tokens': None, 'cache_minimum_status': 'settings-dependent; not established',
+        'cache_minimum_visible_tokens': 1024,
+        'cache_minimum_status': 'documented minimum; actual prefix eligibility unverified',
+        'cache_options': config.effective_settings['prompt_cache_options'],
         'budget_profile': route.budget_profile, 'budget': asdict(config.profile),
     }
     with OpenAI(api_key=key, max_retries=0) as client:
@@ -83,13 +85,15 @@ def _assert_accepted_protocol(tutor: OpenAITutor, trace: TurnTrace) -> None:
         assert payload['store'] is False and 'previous_response_id' not in payload
         assert payload['include'] == ['reasoning.encrypted_content']
         assert payload['truncation'] == 'disabled'
-        assert payload['reasoning'] == {'effort': route.effort or 'none'}
+        assert payload['reasoning'] == tutor.config.effective_settings['reasoning']
         assert payload['text']['format']['strict'] is True
         assert 0 < payload['max_output_tokens'] <= route.max_tokens
         assert payload['input'][0]['content'] == trace.initial_context
         assert payload['tool_choice'] in {'auto', 'none'}
-        for name, value in route.provider_options.items():
-            assert payload[name] == value
+        for name, value in tutor.config.effective_settings.items():
+            if name != 'max_output_tokens':  # Per-call allowance shrinks with the shared budget.
+                assert payload[name] == value
+        assert 'api_profile' not in payload
     for previous, current in zip(trace.provider_requests, trace.provider_requests[1:]):
         assert current['input'][:len(previous['input'])] == previous['input']
     for attempt in trace.attempts:
@@ -114,8 +118,9 @@ def _cache_reads(trace: TurnTrace) -> int:
 
 def test_repeated_stable_prefix_records_provider_cache_reads(live_tutor: LiveTutor) -> None:
     tutor, traces, measurements = live_tutor
-    options = tutor.config.route.provider_options
-    assert options.get('prompt_cache_key') and options.get('prompt_cache_retention') in {'in_memory', '24h'}, (
+    options = tutor.config.effective_settings
+    assert options.get('prompt_cache_key') and options.get('prompt_cache_options') == {
+        'mode': 'implicit', 'ttl': '30m'}, (
         'Recheck configured-model cache support/retention and stable routing key before this probe')
     engine, session, _ = build(tutor)
     question = draft(session)
@@ -128,15 +133,16 @@ def test_repeated_stable_prefix_records_provider_cache_reads(live_tutor: LiveTut
     _assert_accepted_protocol(tutor, second)
     a, b = first.provider_requests[0], second.provider_requests[0]
     for name in ('model', 'instructions', 'tools', 'text', 'reasoning', 'prompt_cache_key',
-                 'prompt_cache_retention', 'service_tier'):
+                 'prompt_cache_options', 'service_tier'):
         assert a.get(name) == b.get(name), f'Cache-relevant {name} changed before sequential reuse'
     assert a['input'][0]['content'] != b['input'][0]['content']
     measurements['first_cache_read_tokens'] = _cache_reads(first)
     measurements['repeat_cache_read_tokens'] = _cache_reads(second)
     assert measurements['repeat_cache_read_tokens'] > 0, (
         'Cache prerequisite/read gate unmet: no provider-reported repeat cached_tokens. '
-        'The selected model minimum depends on settings and is not established here; inspect '
-        'reusable prefix length, tools/schema/effort, model support, retention, routing and '
+        'The documented minimum is 1,024 visible input tokens, excluding hidden system tokens; '
+        'the byte admission counter cannot prove cacheable prefix length. Inspect reusable '
+        'prefix length, tools/schema/effort, model support, TTL, routing and '
         'account/cache availability. A miss alone does not diagnose volatile-prefix leakage.')
     assert first.request_id != second.request_id
 

@@ -7,7 +7,8 @@ artifacts. All eight extension tasks are implemented and scoped reviewed. The
 whole-branch review findings (Important judge scope, Minor nonfinite timing) are
 implemented and keyless verified; independent scoped re-review at `81d3914`
 closed both findings with no new breakage. See the
-[handoff](../docs/superpowers/notes/2026-10-27-openai-provider-implementation-handoff.md) and
+[handoff](../docs/superpowers/notes/2026-10-27-openai-provider-implementation-handoff.md),
+[current OpenAI migration handoff](../docs/superpowers/notes/2026-10-27-openai-current-models-handoff.md) and
 [OpenAI compatibility snapshot](../docs/superpowers/notes/2026-10-26-openai-provider-compatibility.md).
 
 No paid live compatibility probe or full paid evaluation has been performed for
@@ -73,9 +74,9 @@ first read are valid first-call evidence.
 
 OpenAI uses the unselected `tutor_openai` configuration example. Its official
 [cache guide](https://developers.openai.com/api/docs/guides/prompt-caching), checked
-2026-10-27, describes implicit caching with a settings-dependent minimum for this
-model generation. A numeric minimum for the selected tools/schema/effort is **not
-established**. The probe checks stable instructions, tools, schema and cache
+2026-10-27, documents implicit caching with a **1,024-visible-input-token** minimum,
+excluding hidden system tokens. The selected current profile defaults to implicit
+`30m` TTL; `12h` is optional. The probe checks stable instructions, tools, schema and cache
 settings across sequential reuse, then requires positive provider-reported
 `input_tokens_details.cached_tokens`. Zero reports an unmet prerequisite/read
 gate; positive reads are runtime evidence. Neither total input nor our byte-based
@@ -108,8 +109,10 @@ provider. Operation-owned clients are lazy, shared per provider and closed on
 completion/failure. Caller-injected clients remain caller-owned.
 
 All real model identifiers live in [config/llm_routes.yaml](../config/llm_routes.yaml).
-The named `tutor_openai` and `rubric_judge_openai` examples are resolvable but never
-selected automatically. Defaults remain Anthropic: BRIEF → `tutor_brief`, NORMAL →
+The named `tutor_openai` (Luna, low), `rubric_judge_openai` (latest Sol, low),
+and `tutor_openai_sol` (latest Sol tutor comparison, low) examples are resolvable
+but never selected automatically. All three request the standard service tier
+(`service_tier: default`) and implicit `30m` caching. Defaults remain Anthropic: BRIEF → `tutor_brief`, NORMAL →
 `tutor_dialogue`, SUBSTANTIAL → `tutor_explanation`, judge → `rubric_judge`.
 To activate an OpenAI tutor, copy `tutor_openai`'s adapter/model/effort/options into
 the desired job route in a local YAML copy; retain that route's prompt and budget
@@ -117,7 +120,16 @@ profile and remove Anthropic `thinking`. Do this separately for each job you wan
 to change. Select the independent OpenAI judge with
 `--judge-route rubric_judge_openai`, without changing tutor routes. An Anthropic
 judge remains available with `--judge-route rubric_judge`. No fallback occurs.
-OpenAI temperature requires effort `none`; omitted effort resolves to `none`.
+`provider_options.api_profile` is local metadata, excluded from SDK arguments.
+The Luna route uses `current`, which allows `none`, `low`, `medium`, `high`, `xhigh`,
+`max`; the Sol routes use `reasoning`, which excludes `none`. Both default omitted
+effort to `low` and omitted `prompt_cache_options` to `{mode: implicit, ttl: 30m}`.
+To request the longer TTL use `prompt_cache_options: {mode: implicit, ttl: 12h}`.
+Temperature requires effort `none`, so omit it from Sol routes. Omit Anthropic
+`thinking` from all OpenAI routes. The omitted/explicit `legacy` profile retains
+`none` as its effort default, supports through `xhigh`, and uses
+`prompt_cache_retention` (`in_memory` or `24h`); current profiles reject that field.
+Do not choose capability profiles by parsing a model string.
 
 Set only selected credentials through your environment/secret manager:
 `ANTHROPIC_API_KEY` for Anthropic, `OPENAI_API_KEY` for OpenAI. Rejudge needs only
@@ -256,8 +268,11 @@ framing margin and reserves the next call's output. The revised allowances admit
 all 54 committed tutor opportunities and their judge packets without truncating
 active work or history. The limiting initial Anthropic requests leave 9,043 units
 for tutor continuation and 16,454 for the judge, beyond their 2,048 output reservation.
-The equivalent OpenAI framing leaves 9,346 and 16,347 units. These measurements
-cover the existing default job routes under each provider's preparation; activating
+The current OpenAI tutor/reasoning judge framing leaves 9,224 and 16,268 units,
+respectively (maximum complete request plus next-output reservation: 30,776 and
+31,732). Checked-in and fallback profiles give the same measurements. These measurements
+cover the existing default job routes under each provider's preparation, with
+selected current OpenAI settings and fictional test model labels; activating
 different named routes/settings requires repeating admission checks.
 These engineering input allowances do not change the latency targets or output
 ceilings. The overflow guard still applies to every subsequent call.
@@ -332,7 +347,16 @@ These are estimates, not invoices or cost/quality acceptance evidence.
 
 Usage is normalized by the provider adapter into disjoint billable counts; the
 shared ledger does not interpret raw vendor keys or infer provider from a model
-name. Cached input and reasoning output subsets are not added twice. Provider/API,
+name. OpenAI's `openai-responses@2` mapper separates inclusive input into `input`,
+`cache_read`, `cache_write_30m`, and `cache_write_12h`. Returned
+`cache_write_tokens_details.ttl_30m_tokens` / `ttl_12h_tokens` establish write
+duration; requested TTL never supplies missing usage. Current requests with no
+returned write counters retain known reads/output but leave uncached input and
+writes unknown; legacy responses without current request evidence stay readable. The documented write
+multipliers are 1.25× uncached input for `30m` and 2.5× for `12h`, with no second
+charge for the aggregate write counter ([cache billing](https://developers.openai.com/api/docs/guides/prompt-caching)).
+These multipliers do not supply missing base prices, cache-read rates or billing
+conditions. Cached input and reasoning output subsets are not added twice. Provider/API,
 requested/returned model and usage status remain explicit. Billing conditions
 carry value, source (`returned`, `requested`, `documented_default` or `unknown`)
 and evidence. A requested tier is not proof of the executed tier; mismatches stay

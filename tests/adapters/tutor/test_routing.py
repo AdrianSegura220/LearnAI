@@ -167,7 +167,7 @@ def test_initial_configuration_loads_job_budgets():
     profiles = load_budget_profiles(path)
     assert set(routes) == {
         "tutor_dialogue", "tutor_brief", "tutor_explanation", "error_diagnosis", "rubric_judge",
-        "tutor_openai", "rubric_judge_openai",
+        "tutor_openai", "tutor_openai_sol", "rubric_judge_openai",
     }
     assert set(profiles) == {"brief", "normal", "substantial", "complex"}
     for job, expected in [

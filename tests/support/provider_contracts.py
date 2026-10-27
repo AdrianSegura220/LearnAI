@@ -38,6 +38,10 @@ def write_routes(tmp_path, *, tutor_provider, judge_provider, jobs=None):
         if provider == 'openai':
             route.pop('thinking', None)
             route['effort'] = 'low'
+            route['provider_options'] = {'api_profile': 'reasoning' if name == 'rubric_judge' else 'current',
+                                         'service_tier': 'default'}
+        else:
+            route.pop('provider_options', None)
         # Reserved routes have no active role, but explicit prompts allow opt-in tests.
         route.setdefault('prompt', 'tutor_math@1')
     for profile in data['budget_profiles'].values():
@@ -80,11 +84,12 @@ def scripted_factories(sdks, *, packets=None, constructed=None):
 def run_scripted_pair(*, tutor_provider: str, judge_provider: str, tmp_path: Path, monkeypatch) -> PairRun:
     from tests.eval.test_judge import ScriptedJudge, reply, score_data
     from tests.support.scripted_client import final as anthropic_final
-    from tests.support.scripted_openai import ResponseReply, ScriptedOpenAI, final as openai_final, message
+    from tests.support.scripted_openai import ResponseReply, ScriptedOpenAI, current_usage, final as openai_final, message
     scripts = {'anthropic': [], 'openai': []}
     final = anthropic_final if tutor_provider == 'anthropic' else openai_final
-    scripts[tutor_provider].extend([final('Check the factors.'), final('Compare the coefficients.')])
-    scores = reply if judge_provider == 'anthropic' else lambda: ResponseReply([message(json.dumps(score_data()))])
+    scripts[tutor_provider].extend([final(text, **({'usage': current_usage()} if tutor_provider == 'openai' else {}))
+        for text in ('Check the factors.', 'Compare the coefficients.')])
+    scores = reply if judge_provider == 'anthropic' else lambda: ResponseReply([message(json.dumps(score_data()))], usage=current_usage())
     scripts[judge_provider].extend([scores(), scores()])
     sdks = {'anthropic': ScriptedJudge(scripts['anthropic']), 'openai': ScriptedOpenAI(scripts['openai'])}
     outcomes, packets, wire = {}, {}, []
@@ -132,9 +137,14 @@ def prepare_role(factory, config, *, context=None, dependencies=None, packet=Non
 
 def provider_route(route, provider):
     """Keep configured identity and limits with explicit provider test controls."""
-    return replace(route, adapter=provider,
-        model='scripted-openai-model' if provider == 'openai' else route.model,
-        thinking=None if provider == 'openai' else route.thinking)
+    if provider != 'openai':
+        return replace(route, adapter=provider)
+    from learnai.adapters.tutor.routing import load_routes
+    role_route = 'rubric_judge_openai' if route.prompt == 'rubric_judge@1' else 'tutor_openai'
+    selected = load_routes(ROOT / 'config/llm_routes.yaml')[role_route]
+    return replace(route, adapter=provider, model='scripted-openai-model', thinking=None,
+        effort=selected.effort, temperature=selected.temperature,
+        provider_options=selected.provider_options)
 
 
 @dataclass
@@ -182,7 +192,7 @@ def scripted_engine(provider, replies, *, profiles=None):
     from learnai.domain.interaction import ResponseJob
     from tests.domain.test_engine import CLUSTER, build
     from tests.support.scripted_client import ScriptedAnthropic
-    from tests.support.scripted_openai import ResponseReply, ScriptedOpenAI, call, message, usage
+    from tests.support.scripted_openai import ResponseReply, ScriptedOpenAI, call, current_usage, message
 
     if provider == 'anthropic':
         sdk = ScriptedAnthropic(replies)
@@ -201,7 +211,7 @@ def scripted_engine(provider, replies, *, profiles=None):
                 else:
                     output.append(message(block['text']))
             native.append(ResponseReply(output, elapsed=reply.elapsed, http_status=reply.status,
-                                        usage=usage(output_tokens=reply.output_tokens)))
+                                        usage=current_usage(output_tokens=reply.output_tokens)))
         sdk = ScriptedOpenAI(native)
         factory = OpenAIFactory()
     routes = load_routes(ROOT / 'config/llm_routes.yaml')

@@ -53,7 +53,7 @@ def test_actual_role_dependencies_schema_identities_and_literal_phase_costs(
         identity = material['identities'][role][name]
         assert identity['provider'] == provider
         assert identity['api_family'] == ('responses' if provider == 'openai' else 'messages')
-        assert identity['usage_mapper_id'] == ('openai-responses@1' if provider == 'openai' else 'anthropic-messages@1')
+        assert identity['usage_mapper_id'] == ('openai-responses@2' if provider == 'openai' else 'anthropic-messages@1')
         assert material['role_dependencies'][role] == {provider: version(provider), 'httpx2': version('httpx2')}
         assert set(identity['schema_hashes']) == ({'final_output'} if role == 'judge' else
             {'final_output', 'canonical_read_tools', 'wire_read_tools'})
@@ -210,9 +210,9 @@ def test_mixed_cli_smoke_is_a_separate_phase_and_pricing_was_captured_before_cli
     import yaml
     from learnai.eval.__main__ import main
     from tests.eval.test_judge import ScriptedJudge, reply
-    from tests.support.scripted_openai import ScriptedOpenAI, final
+    from tests.support.scripted_openai import ScriptedOpenAI, current_usage, final
     from tests.support.provider_contracts import ROOT, scripted_factories, write_routes
-    sdks = {'openai': ScriptedOpenAI([final(), *[final() for _ in range(6)]]),
+    sdks = {'openai': ScriptedOpenAI([final(usage=current_usage()) for _ in range(7)]),
             'anthropic': ScriptedJudge([reply()])}
     routes = write_routes(tmp_path, tutor_provider='openai', judge_provider='anthropic')
     factories = scripted_factories(sdks)
@@ -244,11 +244,12 @@ def test_mixed_retry_costs_reconcile_with_every_actual_request(tmp_path, monkeyp
     from learnai.eval.__main__ import main
     from tests.eval.test_judge import ScriptedJudge
     from tests.support.scripted_client import final
-    from tests.support.scripted_openai import ScriptedOpenAI, ResponseReply
+    from tests.support.scripted_openai import ScriptedOpenAI, ResponseReply, current_usage
     from tests.adapters.tutor.openai.test_judge import scored
     from tests.support.provider_contracts import ROOT, scripted_factories, write_routes
     sdks = {'anthropic': ScriptedJudge([final()]), 'openai': ScriptedOpenAI([
-        scored({'invalid': True}), ResponseReply(http_status=500), scored()])}
+        scored({'invalid': True}, usage=current_usage()), ResponseReply(http_status=500),
+        scored(usage=current_usage())])}
     for provider in sdks:
         monkeypatch.setenv(provider.upper() + '_API_KEY', 'scripted-key')
     routes = write_routes(tmp_path, tutor_provider='anthropic', judge_provider='openai')
