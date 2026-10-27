@@ -53,7 +53,7 @@ def test_actual_role_dependencies_schema_identities_and_literal_phase_costs(
         identity = material['identities'][role][name]
         assert identity['provider'] == provider
         assert identity['api_family'] == ('responses' if provider == 'openai' else 'messages')
-        assert identity['usage_mapper_id'] == ('openai-responses@1' if provider == 'openai' else 'anthropic-messages@1')
+        assert identity['usage_mapper_id'] == ('openai-responses@2' if provider == 'openai' else 'anthropic-messages@1')
         assert material['role_dependencies'][role] == {provider: version(provider), 'httpx2': version('httpx2')}
         assert set(identity['schema_hashes']) == ({'final_output'} if role == 'judge' else
             {'final_output', 'canonical_read_tools', 'wire_read_tools'})

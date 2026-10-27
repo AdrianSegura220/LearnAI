@@ -18,6 +18,41 @@ PROFILE = DEFAULT_BUDGET_PROFILES['normal']
 OPAQUE = {'type': 'reasoning', 'id': 'rs-a', 'summary': [], 'encrypted_content': 'opaque=='}
 
 
+@pytest.mark.parametrize('stream', [False, True])
+@pytest.mark.parametrize('status', ['completed', 'failed'])
+def test_native_tutor_preserves_nested_cache_writes_and_unknown_conditions(stream, status):
+    from tests.support.scripted_openai import mixed_cache_usage
+    raw = mixed_cache_usage()
+    tutor, sdk, traces = setup([final(usage=raw, status=status, metadata={},)], stream=stream,
+        options={'api_profile': 'current'})
+    result = tutor.respond(make_context())
+    assert (result is not None) == (status == 'completed')
+    attempt = traces[0].attempts[0]
+    assert attempt.usage == raw and attempt.response['usage'] == raw
+    assert attempt.normalized_usage.counts == {'input': 1000, 'cache_read': 4000,
+        'cache_write_30m': 3000, 'cache_write_12h': 4000, 'output': 200}
+    assert attempt.normalized_usage.details['mapper_version'] == tutor.config.usage_mapper_id == 'openai-responses@2'
+    assert attempt.normalized_usage.billing_conditions['service_tier'].source == 'unknown'
+    assert attempt.normalized_usage.billing_conditions['inference_geo'].source == 'unknown'
+    assert sdk.requests[0]['prompt_cache_options'] == {'mode': 'implicit', 'ttl': '30m'}
+    assert 'api_profile' not in sdk.requests[0]
+
+
+def test_native_tutor_partial_stream_retains_write_buckets_without_completeness():
+    from tests.support.scripted_openai import mixed_cache_usage
+    raw = {'id': 'partial', 'model': 'scripted', 'object': 'response', 'created_at': 0,
+        'status': 'in_progress', 'output': [], 'usage': mixed_cache_usage()}
+    tutor, sdk, traces = setup([ResponseReply(events=[{'type': 'response.created',
+        'sequence_number': 0, 'response': raw}], disconnect=True)], stream=True,
+        options={'api_profile': 'current'})
+    assert tutor.respond(make_context()) is None
+    attempt = traces[0].attempts[0]
+    assert len(sdk.requests) == 1 and attempt.usage == raw['usage']
+    assert attempt.usage_status.value == 'partial'
+    assert attempt.normalized_usage.counts == {'input': 1000, 'cache_read': 4000,
+        'cache_write_30m': 3000, 'cache_write_12h': 4000, 'output': 200}
+
+
 def setup(replies, *, profile=PROFILE, stream=False, count_tokens=lambda s: len(s)//4, options=None):
     route = Route('tutor_selected', 'openai', 'scripted', effort='low', prompt='tutor_math@1',
         stream=stream, provider_options=options or {})

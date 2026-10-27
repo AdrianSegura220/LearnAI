@@ -20,15 +20,42 @@ def scored(data=None, **kwargs):
     return ResponseReply([message(json.dumps(score_data() if data is None else data))], **kwargs)
 
 
-def setup(replies, *, profile=PROFILE, stream=False, counter=lambda text: len(text) // 4):
+def setup(replies, *, profile=PROFILE, stream=False, counter=lambda text: len(text) // 4, options=None):
     from learnai.adapters.tutor.openai.judge import OpenAIJudge
     factory = OpenAIFactory()
     config = factory.resolve_config(Route('selected_judge', 'openai', 'same-model',
-        prompt='rubric_judge@1', stream=stream), role='judge', profiles={'normal': profile}, prompts_root=PROMPTS_ROOT)
+        prompt='rubric_judge@1', stream=stream, provider_options=options or {}),
+        role='judge', profiles={'normal': profile}, prompts_root=PROMPTS_ROOT)
     sdk, traces = ScriptedOpenAI(replies), []
     judge = OpenAIJudge(config, sdk.client.with_options(max_retries=9), trace_sink=traces.append,
         monotonic=sdk.clock, count_tokens=counter, sleep=sdk.clock.sleep)
     return judge, sdk, traces
+
+
+@pytest.mark.parametrize('stream', [False, True])
+@pytest.mark.parametrize('status', ['completed', 'failed'])
+def test_native_judge_current_preflight_and_nested_usage_survive_sdk(stream, status):
+    from tests.support.scripted_openai import mixed_cache_usage
+    raw = mixed_cache_usage()
+    judge, sdk, traces = setup([scored(usage=raw, status=status, metadata={})], stream=stream,
+        options={'api_profile': 'reasoning', 'prompt_cache_options': {'ttl': '12h'}})
+    prepared = OpenAIFactory().prepare_judge(judge.config, packet=packet())
+    if status == 'completed':
+        assert judge.evaluate(packet()).mathematics == 2
+    else:
+        with pytest.raises(JudgeError, match='api_error'):
+            judge.evaluate(packet())
+    assert prepared.admitted and prepared.payload == sdk.requests[0]
+    assert sdk.requests[0]['reasoning'] == {'effort': 'low'}
+    assert sdk.requests[0]['prompt_cache_options'] == {'mode': 'implicit', 'ttl': '12h'}
+    assert 'api_profile' not in sdk.requests[0]
+    attempt = traces[0].attempts[0]
+    assert attempt.usage == raw and attempt.response['usage'] == raw
+    assert attempt.normalized_usage.counts == {'input': 1000, 'cache_read': 4000,
+        'cache_write_30m': 3000, 'cache_write_12h': 4000, 'output': 200}
+    assert attempt.normalized_usage.details['mapper_version'] == judge.config.usage_mapper_id == 'openai-responses@2'
+    assert attempt.normalized_usage.billing_conditions['service_tier'].source == 'unknown'
+    assert attempt.normalized_usage.billing_conditions['inference_geo'].source == 'unknown'
 
 
 @pytest.mark.parametrize('stream', [False, True])

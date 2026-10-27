@@ -17,6 +17,13 @@ def usage(input_tokens=100, cached_tokens=20, output_tokens=40, reasoning_tokens
             'total_tokens': input_tokens + output_tokens}
 
 
+def mixed_cache_usage():
+    return {'input_tokens': 12000, 'input_tokens_details': {'cached_tokens': 4000,
+        'cache_write_tokens': 7000, 'cache_write_tokens_details': {
+            'ttl_30m_tokens': 3000, 'ttl_12h_tokens': 4000}},
+        'output_tokens': 200, 'output_tokens_details': {'reasoning_tokens': 80}, 'total_tokens': 12200}
+
+
 @dataclass
 class ResponseReply:
     output: list[dict[str, Any]] = field(default_factory=list)
