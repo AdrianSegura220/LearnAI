@@ -11,12 +11,15 @@ closed both findings with no new breakage. See the
 [current OpenAI migration handoff](../docs/superpowers/notes/2026-10-27-openai-current-models-handoff.md) and
 [OpenAI compatibility snapshot](../docs/superpowers/notes/2026-10-26-openai-provider-compatibility.md).
 
-No paid live compatibility probe or full paid evaluation has been performed for
-this extension. Paid execution requires separate explicit authorization. There is
-no reviewed live reference summary or human-calibrated
-judge acceptance result. Keyless SDK/HTTP fixtures establish protocol construction,
-engine validation, replay, accounting and artifact behavior; they do not establish
-provider compatibility, teaching quality, production latency or actual billing.
+On 2026-10-28, both OpenAI live probes passed and an explicitly authorized
+ten-case Luna tutor / Sol judge pilot completed: nine accepted and scored tutor
+responses, one expected non-tutored completion, and no operational failures.
+See the [live pilot review](../docs/superpowers/notes/2026-10-28-openai-live-pilot.md)
+for measured latency and the formatting, judge-calibration and checking-tool
+findings. Full paid corpus evaluation, Anthropic live verification and human
+judge calibration remain unexecuted. Additional paid execution requires explicit
+authorization. This small sample does not establish production latency or broad
+teaching quality; OpenAI commercial cost coverage remains incomplete.
 
 ## Keyless checks and explicit live probes
 

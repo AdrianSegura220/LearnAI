@@ -1,5 +1,10 @@
 # Current OpenAI model migration handoff — 2026-10-27
 
+Follow-up on 2026-10-28: both OpenAI live probes passed, followed by an authorized
+ten-case Luna tutor / Sol judge pilot. See the [live pilot review](2026-10-28-openai-live-pilot.md)
+for observed results and open findings. Statements below about unexecuted paid
+work describe the original implementation acceptance, before those live runs.
+
 The current Luna tutor and latest Sol judge/optional tutor are implemented as
 unselected examples in [route configuration](../../../config/llm_routes.yaml).
 `tutor_openai` uses low effort and local `api_profile: current`;
