@@ -368,3 +368,47 @@ remain different from zero. The checked-in price snapshot covers Anthropic only:
 OpenAI costs remain incomplete until an applicable, verified provider-aware
 snapshot is supplied. A v2 price book may contain separate provider snapshots;
 matching model labels never make their prices interchangeable.
+
+Authored tutor calibration is a separate judge-only operation. Prepare every
+candidate against production replay and the engine gate, and validate the selected
+judge policy without keys, SDK clients or network:
+
+```sh
+.venv/bin/python -m learnai.eval.calibration \
+  --calibration eval/calibration/tutor_quality_v2.yaml \
+  --routes eval/runs/tutor-quality-v2/routes.yaml \
+  --judge-route rubric_judge_openai --dry-run
+```
+
+The route argument defaults to `config/llm_routes.yaml`, whose prompt defaults
+remain v1; use a reviewed local route file to select v2. `--calibration` is
+required. The judge route defaults to `rubric_judge_openai` and `--out` defaults
+to `eval/reports`.
+
+Paid invocation (requires separate authorization and the selected provider key
+in the environment; the command does not read `.env`):
+
+```sh
+.venv/bin/python -m learnai.eval.calibration \
+  --calibration eval/calibration/tutor_quality_v2.yaml \
+  --routes LOCAL_YAML --judge-route rubric_judge_openai --out eval/reports
+```
+
+Only `judge_packet` entries reach the judge, including explicitly rejected
+evaluator drafts with their exact authored prose. `trace_review` entries retain
+`manual_review_required` status. No authored candidate is delivered to a student.
+Expected scores, rationale, review status and gate outcomes stay outside judge
+messages. Numeric agreement includes only specified, user-confirmed dimensions
+with actual scores; abstentions and errors retain explicit excluded denominators.
+Proposed labels have separate observations and no agreement aggregate. Offline
+fake-judge results establish execution behavior, not teacher quality.
+
+Each invocation creates a private `calibration-<uuid>/calibration.json` under
+the output directory. Its `kind: tutor_calibration`, `schema_version: 1` envelope
+contains captured calibration content/hash, typed packets and engine results,
+labels, a base source/configuration manifest, selected judge policy/dependencies,
+raw traces/usage and incremental results. The fingerprint covers base material,
+calibration content and prepared cases, excluding generated execution IDs, timing
+and judge output. Completed results survive later failures or interruptions;
+reruns create new directories. These artifacts are separate from normal run
+reports and are not inputs to `run`, `rejudge` or `compare`.
