@@ -144,6 +144,51 @@ def test_empty_and_malformed_outputs_have_at_most_two_format_retries(output):
     assert traces[0].format_retries == 2 and traces[0].termination_reason is TerminationReason.FORMAT_EXHAUSTED
 
 
+@pytest.mark.parametrize('control', ['\x0c', '\x85'], ids=['C0', 'C1'])
+def test_control_character_reply_is_private_and_repaired_in_the_same_exchange(control):
+    invalid = f'PRIVATE_CONTROL_REPLY{control}try again'
+    tutor, sdk, traces = setup([final(invalid), final('Compare your lines.')])
+    engine, session, _ = build(tutor)
+    updated, delivered = engine.ask_question(session, {}, question(session.current_task))
+
+    assert delivered.message == 'Compare your lines.'
+    assert delivered.message in [entry.message for entry in updated.history]
+    assert 'PRIVATE_CONTROL_REPLY' not in str(updated.history)
+    assert 'PRIVATE_CONTROL_REPLY' not in str(updated.transcript)
+    assert len(traces) == 1
+    trace = traces[0]
+    assert trace.accepted == delivered
+    assert trace.format_retries == 1 and trace.validation_retries == 0
+    assert [result.accepted for result in trace.validation_results] == [True]
+    assert len(sdk.requests) == trace.model_calls == 2
+    assert trace.provider_responses == sdk.responses
+    output = trace.provider_responses[0]['output']
+    assert json.loads(output[0]['content'][0]['text'])['message'] == invalid
+    assert sdk.requests[1]['input'][0] == sdk.requests[0]['input'][0]
+    assert sdk.requests[1]['input'][1:2] == output
+    assert sdk.requests[1]['instructions'] == sdk.requests[0]['instructions']
+
+
+@pytest.mark.parametrize('limited', [False, True], ids=['format-exhausted', 'budget-exhausted'])
+def test_control_character_failures_are_bounded_and_never_delivered(limited):
+    profile = replace(PROFILE, max_round_trips=1) if limited else PROFILE
+    tutor, sdk, traces = setup([final('PRIVATE_CONTROL_REPLY\x0ctry again') for _ in range(4)],
+        profile=profile)
+    engine, session, _ = build(tutor)
+    updated, delivered = engine.ask_question(session, {}, question(session.current_task))
+
+    assert delivered is None
+    assert updated.current_task.help_state == session.current_task.help_state
+    assert 'PRIVATE_CONTROL_REPLY' not in str(updated.history)
+    assert 'PRIVATE_CONTROL_REPLY' not in str(updated.transcript)
+    assert len(traces) == 1 and traces[0].accepted is None
+    assert len(sdk.requests) == traces[0].model_calls == (1 if limited else 3)
+    assert traces[0].format_retries == (1 if limited else 2)
+    assert traces[0].validation_results == []
+    expected = TerminationReason.ROUND_TRIP_LIMIT if limited else TerminationReason.FORMAT_EXHAUSTED
+    assert traces[0].termination_reason is expected
+
+
 @pytest.mark.parametrize('reply', [ResponseReply(http_status=500),ResponseReply(connection_error=True)])
 def test_pre_response_failures_retry_with_one_budget_and_attempt_per_wire_request(reply):
     tutor, sdk, traces = setup([reply,final()])

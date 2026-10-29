@@ -28,6 +28,29 @@ def test_a_minimal_payload_defaults_the_rest():
 
 
 @pytest.mark.parametrize(
+    "code_point",
+    [value for value in range(0x20) if value not in (0x09, 0x0A, 0x0D)]
+    + list(range(0x7F, 0xA0)),
+    ids=lambda value: f"U+{value:04X}",
+)
+def test_message_rejects_disallowed_control_characters(code_point):
+    sentinel = "PRIVATE_MESSAGE_SENTINEL"
+    with pytest.raises(TurnSchemaError) as error:
+        parse_turn({"message": f"{sentinel}{chr(code_point)}try again", "rung_used": "NUDGE"})
+    assert f"U+{code_point:04X}" in str(error.value)
+    assert sentinel not in str(error.value)
+
+
+@pytest.mark.parametrize("message", [
+    "−x² + café: **try** $\\frac{x}{2}$\tthen\nnext\rline",
+    "",
+    " \t\n\r ",
+])
+def test_message_preserves_readable_math_and_whitespace(message):
+    assert parse_turn({"message": message, "rung_used": "NUDGE"}).message == message
+
+
+@pytest.mark.parametrize(
     "payload, match",
     [
         ("not an object", "not an object"),

@@ -125,6 +125,65 @@ def test_format_and_budget_errors_settle_pending_tool_calls():
     assert traces[0].format_retries == 1
 
 
+@pytest.mark.parametrize("submit", [True, False], ids=["tool-submit", "text-final"])
+@pytest.mark.parametrize("control", ["\x0c", "\x85"], ids=["C0", "C1"])
+def test_control_character_reply_is_private_and_repaired_in_the_same_exchange(submit, control):
+    invalid = f"PRIVATE_CONTROL_REPLY{control}try again"
+    tutor, sdk, traces, _ = setup([final(invalid, submit=submit), final("Compare your lines.")])
+    engine, session, _ = build(tutor)
+    updated, delivered = engine.ask_question(session, {}, question(session.current_task))
+
+    assert delivered.message == "Compare your lines."
+    assert delivered.message in [entry.message for entry in updated.history]
+    assert "PRIVATE_CONTROL_REPLY" not in str(updated.history)
+    assert "PRIVATE_CONTROL_REPLY" not in str(updated.transcript)
+    assert len(traces) == 1
+    trace = traces[0]
+    assert trace.accepted == delivered
+    assert trace.format_retries == 1 and trace.validation_retries == 0
+    assert [result.accepted for result in trace.validation_results] == [True]
+    assert len(sdk.requests) == trace.model_calls == 2
+    assert trace.provider_responses == sdk.responses
+    raw = trace.provider_responses[0]["content"][0]
+    payload = raw["input"] if submit else json.loads(raw["text"])
+    assert payload["message"] == invalid
+    assert sdk.requests[1]["messages"][0] == sdk.requests[0]["messages"][0]
+    assert sdk.requests[1]["messages"][1]["content"] == trace.provider_responses[0]["content"]
+    assert trace.initial_context == sdk.requests[0]["messages"][0]["content"]
+    if submit:
+        assert results(sdk.requests[1])[0]["is_error"] is True
+        assert results(sdk.requests[1])[0]["tool_use_id"] == raw["id"]
+
+
+@pytest.mark.parametrize("submit", [True, False], ids=["tool-submit", "text-final"])
+@pytest.mark.parametrize("limited", [False, True], ids=["format-exhausted", "budget-exhausted"])
+def test_control_character_failures_are_bounded_and_never_delivered(submit, limited):
+    invalid = "PRIVATE_CONTROL_REPLY\x0ctry again"
+    replies = [final(invalid, submit=submit)] + (
+        [final("Compare your lines.")] if limited
+        else [final(invalid, submit=submit) for _ in range(3)]
+    )
+
+    def counter(text):
+        # The original context fits; retaining the invalid reply exhausts it.
+        return 100000 if limited and "PRIVATE_CONTROL_REPLY" in text else len(text) // 4
+
+    tutor, sdk, traces, _ = setup(replies, count_tokens=counter)
+    engine, session, _ = build(tutor)
+    updated, delivered = engine.ask_question(session, {}, question(session.current_task))
+
+    assert delivered is None
+    assert updated.current_task.help_state == session.current_task.help_state
+    assert "PRIVATE_CONTROL_REPLY" not in str(updated.history)
+    assert "PRIVATE_CONTROL_REPLY" not in str(updated.transcript)
+    assert len(traces) == 1 and traces[0].accepted is None
+    assert len(sdk.requests) == traces[0].model_calls == (1 if limited else 3)
+    assert traces[0].format_retries == (1 if limited else 2)
+    assert traces[0].validation_results == []
+    expected = TerminationReason.CONTEXT_LIMIT if limited else TerminationReason.FORMAT_EXHAUSTED
+    assert traces[0].termination_reason is expected
+
+
 def test_soft_threshold_reserves_final_response():
     tutor, sdk, traces, _ = setup([Reply([tool("get_student_summary")], elapsed=9), final(submit=False)])
     assert tutor.respond(make_context()) is not None

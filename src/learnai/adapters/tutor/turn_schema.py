@@ -24,6 +24,10 @@ def parse_turn(payload: Mapping[str, object]) -> TutorTurn:
     message = payload.get("message")
     if not isinstance(message, str):
         raise TurnSchemaError("'message' must be a string")
+    for character in message:
+        code_point = ord(character)
+        if (code_point < 0x20 and character not in "\t\n\r") or 0x7F <= code_point <= 0x9F:
+            raise TurnSchemaError(f"'message' contains disallowed control character U+{code_point:04X}")
     rung_name = payload.get("rung_used")
     if not isinstance(rung_name, str) or rung_name not in _RUNGS:
         raise TurnSchemaError(
