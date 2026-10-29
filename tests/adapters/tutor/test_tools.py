@@ -10,6 +10,7 @@ from learnai.adapters.content.registry import GeneratorRegistry
 from learnai.adapters.persistence.in_memory import InMemoryEvidenceLog
 from learnai.adapters.persistence.in_memory_history import InMemoryHistoryReader
 from learnai.adapters.tutor.anthropic.tool_schema import encode_tools
+from learnai.adapters.tutor.openai.encoding import encode_tools as encode_openai_tools
 from learnai.adapters.tutor.tools import ToolError, Toolbox
 from learnai.domain.enums import HelpRung, Verdict
 from learnai.domain.history import HistoryKind, HistoryRecord, HistoryScope
@@ -43,6 +44,8 @@ def test_five_advertised_tools_execute_and_provider_schema_uses_same_table():
         "lookup_misconception", "get_student_summary", "get_session_history"}
     encoded = encode_tools(tools)
     assert [t["name"] for t in encoded] == [t.name for t in tools]
+    assert [t["description"] for t in encoded] == [t.description for t in tools]
+    assert [t["description"] for t in encode_openai_tools(tools)] == [t.description for t in tools]
     assert all(t["input_schema"]["type"] == "object" for t in encoded)
     assert json.loads(toolbox.execute("get_session_history", {}, ctx)) == {
         "records": [], "next_before_id": None}
@@ -161,6 +164,28 @@ def test_intermediate_equivalence_is_separate_from_active_answer_grading():
     result = json.loads(toolbox.execute("check_expression", {"expression": expanded}, ctx))
     assert result["verdict"] == "WRONG"
     assert result["failed_constraints"] == ["fully_factored"]
+
+
+@pytest.mark.parametrize("expression,reference", [("x+x", "2*x"), ("2*x=4", "x=2")])
+def test_supported_expression_and_equation_checks_only_establish_equivalence(expression, reference):
+    result = json.loads(Toolbox(REGISTRY, CATALOGUE).execute("check_expression", {
+        "expression": expression, "reference": reference}, context()))
+    assert result == {"scope": "equivalence_only", "equivalent": True}
+
+
+def test_root_set_equivalence_is_uncheckable_with_actionable_detail():
+    arguments = {"expression": "{-3-sqrt(5),-3+sqrt(5)}",
+                 "reference": "{3-sqrt(5),3+sqrt(5)}"}
+    ctx = context()
+    with pytest.raises(ToolError) as error:
+        Toolbox(REGISTRY, CATALOGUE).execute("check_expression", arguments, ctx)
+    assert error.value.code == "expression_uncheckable"
+    detail = str(error.value)
+    assert "expressions or relations" in detail
+    assert "brace-delimited sets are unsupported" in detail
+    assert "inconclusive" in detail
+    assert all(value not in detail for value in arguments.values())
+    assert ctx.item.answer_spec.expression not in detail
 
 
 @pytest.mark.parametrize("arguments", [

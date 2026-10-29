@@ -66,8 +66,11 @@ def tool_definitions() -> tuple[ToolDefinition, ...]:
     text = {"type": "string", "minLength": 1}
     return (
         ToolDefinition("check_expression",
-             "Check mathematics using the CAS. With reference, check only equivalence; "
-             "otherwise grade one active-item answer field including required form.",
+             "With reference, compare supported mathematical expressions or relations for "
+             "equivalence only; brace-delimited root sets are unsupported. Without reference, "
+             "grade one active-item answer field against its answer specification, including "
+             "required form and existing shape requirements. An expression_uncheckable error "
+             "is inconclusive, not a mathematical verdict.",
              _parameters({"expression": text, "reference": text}, ("expression",))),
         ToolDefinition("get_worked_example", "Read a vetted, distinct worked example of this skill.",
              _parameters({})),
@@ -129,7 +132,10 @@ class Toolbox:
             reference = _text(arguments["reference"], "reference")
             diff = verifier.diff_steps((reference, expression))
             if diff is not None and diff.unreadable:
-                raise ToolError("expression_uncheckable", "CAS could not check these steps")
+                raise ToolError("expression_uncheckable",
+                    "CAS could not check equivalence. Use supported mathematical expressions or "
+                    "relations; brace-delimited sets are unsupported. This is inconclusive, "
+                    "not a verdict on the mathematics.")
             return _json({"scope": "equivalence_only", "equivalent": diff is None})
         try:
             result = verifier.check_answer(Submission.of(expression), context.item.answer_spec)

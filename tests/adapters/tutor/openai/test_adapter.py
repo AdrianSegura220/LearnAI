@@ -104,6 +104,38 @@ def test_two_distinct_calls_preserve_opaque_items_and_order_through_engine_corre
     assert traces[0].validation_retries == 1
 
 
+def test_uncheckable_equivalence_error_reaches_continuation_with_original_budget():
+    profile = replace(PROFILE, max_round_trips=2, max_output_tokens=2500,
+                      finalization_reserve_tokens=500)
+    pending = call('check_expression', {
+        'expression': '{-3-sqrt(5),-3+sqrt(5)}',
+        'reference': '{3-sqrt(5),3+sqrt(5)}'})
+    tutor, sdk, traces = setup([
+        ResponseReply([pending], elapsed=3, usage=usage(output_tokens=1800)),
+        final('The checker could not verify that notation.', elapsed=1)], profile=profile)
+
+    assert tutor.respond(make_context()).message == 'The checker could not verify that notation.'
+    continuation = sdk.requests[1]
+    assert continuation['input'][0] == sdk.requests[0]['input'][0]
+    assert continuation['input'][1] == pending
+    paired = results(continuation)
+    assert len(paired) == 1
+    assert paired[0]['call_id'] == pending['call_id']
+    assert json.loads(paired[0]['output']) == {
+        'code': 'expression_uncheckable',
+        'detail': 'CAS could not check equivalence. Use supported mathematical expressions or '
+                  'relations; brace-delimited sets are unsupported. This is inconclusive, '
+                  'not a verdict on the mathematics.'}
+    assert [request['max_output_tokens'] for request in sdk.requests] == [2000, 700]
+    assert continuation['tool_choice'] == 'none'
+    assert max(sdk.timeouts[1].values()) <= profile.hard_seconds - 3
+    assert len(traces) == 1
+    trace = traces[0]
+    assert trace.model_calls == 2 and trace.tool_calls == 1
+    assert trace.output_tokens == 1840 and trace.elapsed_seconds == 4
+    assert trace.format_retries == trace.validation_retries == 0
+
+
 def test_optional_history_nulls_are_removed_but_invalid_false_zero_empty_are_preserved():
     nulls = {k:None for k in ('task_id','skill_id','item_id','kind','after','before','before_id','limit')}
     tutor, sdk, traces = setup([ResponseReply([call('get_session_history', nulls)]), final()])

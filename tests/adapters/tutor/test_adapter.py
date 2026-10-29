@@ -97,6 +97,39 @@ def test_two_tool_round_trips_preserve_original_history_and_results():
     assert len(tutor.usages) == 3
 
 
+def test_uncheckable_equivalence_error_reaches_continuation_with_original_budget():
+    profile = replace(PROFILE, max_round_trips=2, max_output_tokens=2500,
+                      finalization_reserve_tokens=500)
+    tutor, sdk, traces, _ = setup([
+        Reply([tool("check_expression", {
+            "expression": "{-3-sqrt(5),-3+sqrt(5)}",
+            "reference": "{3-sqrt(5),3+sqrt(5)}"})], elapsed=3, output_tokens=1800),
+        final("The checker could not verify that notation.", submit=False, elapsed=1)],
+        profile=profile)
+
+    assert tutor.respond(make_context()).message == "The checker could not verify that notation."
+    continuation = sdk.requests[1]
+    assert continuation["messages"][0] == sdk.requests[0]["messages"][0]
+    pending = sdk.responses[0]["content"][0]
+    paired = results(continuation)
+    assert len(paired) == 1
+    assert paired[0]["tool_use_id"] == pending["id"]
+    assert paired[0]["is_error"] is True
+    assert json.loads(paired[0]["content"]) == {
+        "code": "expression_uncheckable",
+        "detail": "CAS could not check equivalence. Use supported mathematical expressions or "
+                  "relations; brace-delimited sets are unsupported. This is inconclusive, "
+                  "not a verdict on the mathematics."}
+    assert [request["max_tokens"] for request in sdk.requests] == [2000, 700]
+    assert continuation["tool_choice"] == {"type": "none"}
+    assert max(sdk.timeouts[1].values()) <= profile.hard_seconds - 3
+    assert len(traces) == 1
+    trace = traces[0]
+    assert trace.model_calls == 2 and trace.tool_calls == 1
+    assert trace.output_tokens == 1840 and trace.elapsed_seconds == 4
+    assert trace.format_retries == trace.validation_retries == 0
+
+
 def test_validation_retry_keeps_the_same_tool_exchange():
     tutor, sdk, traces, _ = setup([Reply([tool("check_expression", {"expression": "x", "reference": "x"})]),
         final("PRIVATE_REJECTED", "FULL_REVEAL"), final("Look at your earlier line.")])
