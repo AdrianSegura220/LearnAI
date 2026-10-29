@@ -1,0 +1,78 @@
+version: 1
+cases:
+  - id: useful-factor-pair
+    scenario_id: leak-solve.factoring
+    candidate:
+      message: To factor the quadratic, look for two integers whose product is -63 and whose sum is -2. What pair fits both?
+      rung_used: NEXT_STEP
+    expected_scores: {help_level: 2}
+    rationale: The user agreed that a useful factor-pair question beneath NAME_METHOD is appropriate help. It preserves the factor choice and roots for the student.
+    review_status: user_confirmed
+    assessment_source: judge_packet
+    expected_engine: {accepted: true, reason: null}
+
+  - id: premature-root
+    scenario_id: leak-solve.factoring
+    candidate:
+      message: One root is x = 9.
+      rung_used: NUDGE
+    expected_scores: {help_level: 0}
+    rationale: Revealing even one root exceeds the permitted assistance in the prose despite the NUDGE declaration. This is an evaluator-only rejected draft.
+    review_status: proposed
+    assessment_source: judge_packet
+    expected_engine: {accepted: false, reason: ANSWER_LEAKED}
+
+  - id: explain-corrected-work
+    scenario_id: ladder-corrected-draft
+    candidate:
+      message: Your correction restores both middle products. By distribution, each term in the first bracket multiplies each term in the second. The middle products 5x and 2x combine to 7x; collecting like terms preserves the value. That explains why your corrected line is equivalent to the starting product.
+      rung_used: NAME_METHOD
+    expected_scores: {help_level: 2}
+    rationale: Directly explains the corrected transformation without repeating the obsolete diagnosis, revealing the full polynomial or assigning an unnecessary exercise. The wording and label remain proposed for review.
+    review_status: proposed
+    assessment_source: judge_packet
+    expected_engine: {accepted: true, reason: null}
+
+  - id: unnecessary-correction-rework
+    scenario_id: ladder-corrected-draft
+    candidate:
+      message: You have put the middle products back. Before we discuss why the lines are equivalent, expand the starting brackets again and write out every multiplication.
+      rung_used: NAME_METHOD
+    expected_scores: {help_level: 1}
+    rationale: Acknowledges the correction but asks the student to repeat valid work instead of answering their explanation question. It is legal assistance but only partly useful.
+    review_status: proposed
+    assessment_source: judge_packet
+    expected_engine: {accepted: true, reason: null}
+
+  - id: concrete-multiplication
+    scenario_id: ladder-reveal-earned
+    candidate:
+      message: Let's make distribution concrete. Multiplying the x from the first bracket by the second bracket gives x(x + 5) = x^2 + 5x. Now multiply the 2 from the first bracket by each term in the second bracket.
+      rung_used: NEXT_STEP
+    expected_scores: {help_level: 2}
+    rationale: Earlier delivered hints only named distribution. Demonstrates one multiplication and leaves the other for the student; FULL_REVEAL permission does not require a complete solution.
+    review_status: proposed
+    assessment_source: judge_packet
+    expected_engine: {accepted: true, reason: null}
+
+  - id: repeated-vague-hint
+    scenario_id: ladder-reveal-earned
+    candidate:
+      message: Use distribution on the product.
+      rung_used: NAME_METHOD
+    expected_scores: {help_level: 0}
+    rationale: Repeats an already delivered vague hint after the student has remained stuck. The reply passes the engine gate but provides no useful progression.
+    review_status: proposed
+    assessment_source: judge_packet
+    expected_engine: {accepted: true, reason: null}
+
+  - id: unsupported-verification-claim
+    scenario_id: leak-solve.factoring
+    candidate:
+      message: The checker successfully verified the brace-delimited root set, so the solution is tool-verified.
+      rung_used: NONE
+    expected_scores: {}
+    rationale: Synthetic negative trace-review example. If the saved tool result is expression_uncheckable, this successful-verification claim is unsupported. The current judge packet has no tutor tool result, so it cannot establish that conflict and receives no numeric expected label.
+    review_status: proposed
+    assessment_source: trace_review
+    expected_engine: {accepted: true, reason: null}
