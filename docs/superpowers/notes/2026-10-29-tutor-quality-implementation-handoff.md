@@ -1,9 +1,10 @@
 # Tutor quality implementation handoff — 2026-10-29
 
 The five implementation tasks are implemented and offline verification is
-recorded below. Tasks 1–4 received scoped reviews; Task 5 scoped review and the
-broad final review remain pending. Teaching-quality acceptance, further paid
-execution, default promotion and deployment remain separate, unexecuted gates.
+recorded below. The whole-branch review requested one test-isolation fix; that
+change and its verification are recorded below. Scoped rereview of the fix
+remains pending. Teaching-quality acceptance, further paid execution, default
+promotion and deployment remain separate, unexecuted gates.
 
 Workspace: existing `LearnAI-worktrees/plan-phase2a-tutor` linked worktree, branch
 `feat-tutor-quality-refinement`. Initial revision:
@@ -113,6 +114,54 @@ also cover dummy provider keys and explicit provider-marker selection.
 documentation links resolve. No full-suite repetition was needed after the
 passing run; subsequent changes only record results in documentation.
 
+## Whole-branch review fix verification
+
+The review found one Important issue: `test_calibration_execution.py` depended
+on ignored `eval/runs/tutor-quality-v2/routes.yaml`. The earlier workspace suite
+result above did not prove clean-checkout reproducibility. Commit `ab4f7c9`
+replaces that dependency with a `tmp_path` route fixture derived from tracked
+`config/llm_routes.yaml`, substituting only v2 prompt references. Every CLI
+helper call and configuration-mutation test receives the path explicitly.
+In-process open guards and a subprocess audit hook reject access beneath
+repository `eval/runs`, so an existing private file cannot mask a regression.
+No production code or operator route file changed.
+
+Before the fixture fix, the guarded execution module failed as expected with
+`12 failed, 1 passed in 6.17s`; failures identified ignored-route access in
+the main process, subprocess, and mutation tests. After the fix, the same
+keyless command passed: `13 passed in 8.62s` (exit 0):
+
+```sh
+env -u OPENAI_API_KEY -u ANTHROPIC_API_KEY .venv/bin/python -m pytest tests/eval/test_calibration_execution.py
+```
+
+A Git archive of committed `ab4f7c9` excluded ignored/private files but lacked
+revision metadata: `2 failed, 1822 passed, 4 deselected in 129.88s`. Both
+failures were existing mixed-provider controlled-comparison tests reporting
+only `unknown source revision`. A clean local clone of the same commit retains
+the required provenance. Those two tests passed there (`2 passed in 4.74s`)
+without any code changes.
+
+The clone is `/private/tmp/learnai-final-fix-vstakiix/clone`, created with
+`git clone --local --no-hardlinks --single-branch`; no linked worktree or
+dependency installation was needed. Before testing, its Git status was clean,
+HEAD was exactly `ab4f7c9f71606b388814a3c975fb06ad47a99d8d`, and `eval/runs`,
+`.env`, `.venv`, and the current private coordination folder were absent.
+Explicit import assertions verified `learnai` and calibration under the clone's
+`src` and the execution tests under its `tests`, overriding the original venv's
+editable source with `PYTHONPATH`.
+
+Full keyless command from that clone:
+
+```sh
+env -u OPENAI_API_KEY -u ANTHROPIC_API_KEY PYTHONPATH=/private/tmp/learnai-final-fix-vstakiix/clone/src /Users/adrianseguralorente/LearnAI-worktrees/plan-phase2a-tutor/.venv/bin/python -m pytest
+```
+
+Clean-clone result: `1824 passed, 4 deselected in 128.74s (0:02:08)` (exit 0),
+with no failures or warnings. The ordinary live probes remained deselected.
+Scoped rereview of this fix remains pending; paid quality acceptance and
+promotion remain separate gates.
+
 ## Preservation and privacy
 
 `git diff --exit-code 99d79de --` over both v1 prompt files, `eval/fixtures/`,
@@ -176,7 +225,14 @@ the later quality/promotion gate:
   accepted, with final budget/admission checks assigned here; Task 2 had no
   changed default/artifact/budget sources; Task 3 preservation was accepted;
   Task 4's unchanged-preparation item was resolved through the completed Task 3
-  review and combined 62-test evidence. Broad final review is still pending.
+  review and combined 62-test evidence. The subsequent whole-branch review
+  requested the test-isolation fix recorded above; scoped rereview of that fix
+  remains pending.
+- Verify the final fix in a clean local clone with Git metadata. Controlled
+  comparisons intentionally reject an unknown source revision, and the clone
+  must still exclude ignored files. A wrong choice costs an extra local
+  verification run and temporary disk use; an archive-only failure does not
+  justify a second code-fix wave.
 
 ## Remaining paid quality and promotion gate
 
