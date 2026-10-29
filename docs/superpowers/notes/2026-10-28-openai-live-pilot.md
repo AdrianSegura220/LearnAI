@@ -149,3 +149,40 @@ worked solution.
 Review these findings before expanding paid evaluation. No prompt, engine,
 adapter or judge behavior was changed during this execution, and no additional
 paid cases were run after the pilot.
+
+## Offline implementation follow-up — 2026-10-29
+
+The agreed expectations above now have candidate `tutor_math@2` and
+`rubric_judge@2` policies, a shared adapter text guard using existing repair
+paths, clearer expression-check guidance and a standalone authored-calibration
+command. These are offline implementation changes made after the pilot; they
+do not rewrite the historical results or imply live quality acceptance. Default
+prompt references remain v1. See the
+[implementation handoff](2026-10-29-tutor-quality-implementation-handoff.md)
+for checks and pending review, and the
+[operator comparison gate](../../../eval/README.md#authored-calibration-and-the-tutor-quality-comparison-gate)
+for exact commands and the fixed fourteen-case selection.
+
+First review authored labels and dry-run replay/engine gates, then obtain explicit
+paid authorization before assessing the good and bad examples with judge v2.
+Keep proposed observations, confirmed-label disagreements, abstentions and errors
+visible. Optional rejudging of pilot `d3101f5d-36be-40a3-bef6-0f0517aea5ef`
+uses the original saved candidates, including their control characters; it makes
+judge calls only and must not demand uniform score increases.
+
+Any subsequent tutor comparison needs an agreed sample/spend scope and new v1/v2
+arms on the same final runtime, Luna low-effort settings, unchanged budgets and
+fixed judge v2. Use the ten IDs above plus `diagnosis-square-1-help`,
+`extra-nonmonic`, `ladder-after-rejected-help` and `leak-word.area`, with persona
+smoke skipped. Review responses and failures, repairs, useful progression,
+latency and usage symmetrically. Tool honesty must be checked against private
+traces; the judge packet has no tutor tool results. OpenAI price coverage remains
+incomplete, so a zero known subtotal does not establish free use.
+
+The contemporary v1 arm supplies the baseline. The historical pilot has different
+source/judge provenance and is not a controlled tutor-only comparison. Existing
+`compare` retains prompt-difference caveats; record the intended treatment and
+all actual differences in a paired human review. Default promotion is a separate
+explicit decision and change, including consistent YAML/cache-key naming and
+offline routing/admission rechecks. `.env` and raw run/config artifacts remain
+ignored; this offline follow-up authorizes no paid execution or deployment.

@@ -369,6 +369,29 @@ OpenAI costs remain incomplete until an applicable, verified provider-aware
 snapshot is supplied. A v2 price book may contain separate provider snapshots;
 matching model labels never make their prices interchangeable.
 
+## Authored calibration and the tutor-quality comparison gate
+
+The offline quality-refinement implementation adds a shared student-text guard,
+clearer checking-tool guidance, candidate `tutor_math@2` / `rubric_judge@2`
+policies and authored calibration. Checked-in defaults remain `tutor_math@1` /
+`rubric_judge@1`. Offline checks establish executable contracts, not improved
+teaching quality. See the
+[implementation handoff](../docs/superpowers/notes/2026-10-29-tutor-quality-implementation-handoff.md)
+for verification results and pending review.
+
+The offline gate uses real factory `prepare_tutor` / `prepare_judge` payloads
+including canonical tool descriptions, across v1/v2, both providers and checked-in
+and fallback budget profiles. It requires at least 8,192 conservative input units
+after reserving the next maximum output, without SDK or client construction or
+network. These units are an admission bound, not provider token counts or evidence
+of live latency. Run this gate and then the full keyless suite:
+
+```sh
+.venv/bin/python -m pytest tests/eval/test_provider_admission.py tests/eval/test_corpus_admission.py
+env -u OPENAI_API_KEY -u ANTHROPIC_API_KEY .venv/bin/python -m pytest
+git diff --check
+```
+
 Authored tutor calibration is a separate judge-only operation. Prepare every
 candidate against production replay and the engine gate, and validate the selected
 judge policy without keys, SDK clients or network:
@@ -412,3 +435,61 @@ calibration content and prepared cases, excluding generated execution IDs, timin
 and judge output. Completed results survive later failures or interruptions;
 reruns create new directories. These artifacts are separate from normal run
 reports and are not inputs to `run`, `rejudge` or `compare`.
+
+The paid quality gate remains unexecuted and requires explicit authorization:
+
+1. Review the authored labels first and retain unresolved disagreements. Run the
+   dry run above to verify exact replay contexts and actual engine outcomes. Then,
+   only within an authorized judge-call scope, omit `--dry-run` to assess good and
+   bad examples with `rubric_judge@2`. Review confirmed-label disagreements,
+   proposed observations, abstentions and errors before using it for comparison.
+   Optionally rejudge historical pilot
+   `d3101f5d-36be-40a3-bef6-0f0517aea5ef` with judge v2:
+
+   ```sh
+   .venv/bin/python -m learnai.eval rejudge eval/reports/d3101f5d-36be-40a3-bef6-0f0517aea5ef \
+     --routes eval/runs/tutor-quality-v2/routes.yaml --judge-route rubric_judge_openai
+   ```
+
+   This makes new judge calls only; historical candidates, including control
+   characters, remain unchanged. Compare reasons with human expectations rather
+   than requiring every score to rise.
+2. Agree the number of samples and spend scope before generating new tutor arms.
+   Prepare two private YAML copies with Luna (`gpt-6-luna`, low effort) for the job
+   routes and Sol (`gpt-6.1-sol`, low effort) for `rubric_judge_openai`, preserving
+   the pilot's models, settings and engineering budgets. Set the tutor references
+   to `tutor_math@1` in one copy and `tutor_math@2` in the other, with
+   `rubric_judge@2` fixed in both. The existing `tutor-quality-v2/routes.yaml`
+   selects v2 policies for calibration but retains Anthropic job defaults; it is
+   not already a Luna comparison arm. Keep relevant prompt files present and run
+   both arms from the same final source revision and fixtures.
+3. Use the same ordered selection for each arm, with `--no-smoke`:
+
+   ```text
+   diagnosis-cross-1-help,diagnosis-partial-1-help,extra-formula-b,leak-solve.factoring,ladder-edited-draft,ladder-corrected-draft,ladder-previous-exercise,ladder-long-conversation,ladder-reveal-earned,ladder-correct-expand.binomial,diagnosis-square-1-help,extra-nonmonic,ladder-after-rejected-help,leak-word.area
+   ```
+
+   These are the ten fixed pilot IDs plus the four untouched cases selected in
+   the design. Pass this list with `run --only ... --routes LOCAL_ARM_YAML
+   --judge-route rubric_judge_openai --no-smoke`. Repeated samples are an explicit
+   part of the paid scope, never an unlimited rerun loop.
+4. Review actual responses, acceptance/failures, repairs, mathematical correctness,
+   progression, latency, normalized usage and score disagreements under the same
+   criteria for both arms. Keep confirmed and uncalibrated judgments distinct;
+   retain every failure in the conclusion. Tool honesty requires manual trace
+   review because tutor tool results are absent from `JudgePacket`. OpenAI
+   commercial cost accounting is incomplete; a zero known subtotal is not free
+   usage or an agreed spend estimate.
+5. Use `load_saved_run` and read-only `compare` to inspect provenance. Existing
+   `compare --tutor-treatment` does not waive prompt differences; retain that
+   caveat and document the intended tutor-policy treatment and all actual
+   differences in a paired review. Changed source, judge, fixtures or returned
+   judge models prevent a controlled tutor-only claim. The new v1 arm is the
+   contemporary baseline; the saved pilot remains historical evidence.
+6. Decide explicitly whether to revise v2 or approve default promotion. Promotion
+   is a separate change updating applicable YAML references and cache-key names
+   consistently, followed by offline routing/admission checks. A higher average
+   score alone neither establishes learning gains nor authorizes rollout.
+
+Keep `.env`, `eval/runs/` and raw `eval/reports/` private and ignored. No paid
+execution, prompt-default promotion or deployment is part of the offline gate.

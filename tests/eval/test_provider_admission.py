@@ -1,6 +1,7 @@
 """Full-corpus admission through SDK-free production factory preparation."""
 import builtins
 from collections import Counter
+from dataclasses import replace
 import json
 from pathlib import Path
 import socket
@@ -8,12 +9,14 @@ import subprocess
 import sys
 
 import pytest
+import yaml
 
 from learnai.adapters.tutor.anthropic.wiring import AnthropicFactory
 from learnai.adapters.tutor.openai.wiring import OpenAIFactory
 from learnai.adapters.tutor.prompts import PROMPTS_ROOT
 from learnai.adapters.tutor.routing import load_budget_profiles, load_routes, resolve_tutor_route
 from learnai.adapters.tutor.runtime import DEFAULT_BUDGET_PROFILES, conservative_token_count
+from learnai.adapters.tutor.tools import tool_definitions
 from learnai.application.ports import TutorDependencies
 from learnai.domain.enums import HelpRung
 from learnai.domain.turn import TutorTurn, validate_turn
@@ -22,7 +25,7 @@ from learnai.eval.judge import JudgePacket
 from learnai.eval.reference import build_reference
 from learnai.eval.replay import prepare_scenario
 from tests.eval.test_fixture_corpus import dependencies
-from tests.support.provider_contracts import prepare_role, provider_route
+from tests.support.provider_contracts import prepare_role
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTINUATION_HEADROOM = 8192
@@ -61,10 +64,24 @@ def corpus_packets(dependencies):
 
 @pytest.mark.parametrize('provider', ['anthropic', 'openai'])
 @pytest.mark.parametrize('profile_source', ['checked-in', 'defaults'])
+@pytest.mark.parametrize('policy_version', [1, 2])
 def test_complete_corpus_admits_both_roles_with_continuation_headroom(
-        dependencies, corpus_packets, provider, profile_source, monkeypatch):
-    routes = load_routes(ROOT / 'config/llm_routes.yaml')
-    profiles = (load_budget_profiles(ROOT / 'config/llm_routes.yaml')
+        dependencies, corpus_packets, provider, profile_source, policy_version,
+        tmp_path, monkeypatch):
+    original = yaml.safe_load((ROOT / 'config/llm_routes.yaml').read_text())
+    candidate = yaml.safe_load((ROOT / 'config/llm_routes.yaml').read_text())
+    for entry in candidate['routes'].values():
+        if entry.get('prompt') in {'tutor_math@1', 'rubric_judge@1'}:
+            entry['prompt'] = entry['prompt'].replace('@1', f'@{policy_version}')
+    # Select policy copies without changing configured models, effort or budgets.
+    path = tmp_path / 'routes.yaml'
+    path.write_text(yaml.safe_dump(candidate))
+    assert candidate['budget_profiles'] == original['budget_profiles']
+    for name, entry in candidate['routes'].items():
+        assert {k: v for k, v in entry.items() if k != 'prompt'} == {
+            k: v for k, v in original['routes'][name].items() if k != 'prompt'}
+    routes = load_routes(path)
+    profiles = (load_budget_profiles(path)
                 if profile_source == 'checked-in' else DEFAULT_BUDGET_PROFILES)
     factory = AnthropicFactory() if provider == 'anthropic' else OpenAIFactory()
     deps = TutorDependencies(dependencies['items'], dependencies['catalogue'])
@@ -90,14 +107,26 @@ def test_complete_corpus_admits_both_roles_with_continuation_headroom(
         for role in measurements:
             route = (resolve_tutor_route(routes, packet.context.response_job)
                      if role == 'tutor' else routes['rubric_judge'])
-            config = factory.resolve_config(provider_route(route, provider), role=role,
+            if provider == 'openai':
+                example = routes['rubric_judge_openai' if role == 'judge' else 'tutor_openai']
+                route = replace(route, adapter=example.adapter, model=example.model,
+                    thinking=example.thinking, effort=example.effort,
+                    temperature=example.temperature, provider_options=example.provider_options)
+            config = factory.resolve_config(route, role=role,
                                             profiles=profiles, prompts_root=PROMPTS_ROOT)
+            assert config.route.prompt == f'{"tutor_math" if role == "tutor" else "rubric_judge"}@{policy_version}'
             if provider == 'openai':
                 assert config.route.provider_options['api_profile'] == ('reasoning' if role == 'judge' else 'current')
                 assert config.effective_settings['reasoning'] == {'effort': 'low'}
                 assert config.effective_settings['prompt_cache_options'] == {'mode': 'implicit', 'ttl': '30m'}
                 assert 'api_profile' not in config.effective_settings
             prepared = prepare_role(factory, config, context=packet.context, dependencies=deps, packet=packet)
+            if role == 'tutor':
+                check = next(tool for tool in prepared.payload['tools']
+                             if tool['name'] == 'check_expression')
+                assert check['description'] == next(
+                    tool.description for tool in tool_definitions()
+                    if tool.name == 'check_expression')
             # Recount the actual encoder output with the production counter.
             assert prepared.input_units == conservative_token_count(json.dumps(
                 prepared.payload, ensure_ascii=False, separators=(',', ':')))
@@ -108,7 +137,8 @@ def test_complete_corpus_admits_both_roles_with_continuation_headroom(
                 failures.append((role, scenario.id, size, margin, prepared.admitted))
     for role, rows in measurements.items():
         assert len(rows) == 54
-        print(provider, profile_source, role, 'max=', max(rows), 'min_margin=', min(r[1] for r in rows))
+        print(provider, profile_source, f'v{policy_version}', role,
+              'max=', max(rows), 'min_margin=', min(r[1] for r in rows))
     print('actual_jobs=', dict(Counter(packet.context.response_job.name for _, packet in corpus_packets)))
     assert forbidden == []
     assert failures == []
