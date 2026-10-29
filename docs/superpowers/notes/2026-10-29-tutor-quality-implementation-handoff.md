@@ -1,10 +1,11 @@
 # Tutor quality implementation handoff — 2026-10-29
 
-The five implementation tasks are implemented and offline verification is
-recorded below. The whole-branch review requested one test-isolation fix; that
-change and its verification are recorded below. Scoped rereview of the fix
-remains pending. Teaching-quality acceptance, further paid execution, default
-promotion and deployment remain separate, unexecuted gates.
+All five implementation tasks and their scoped reviews are complete. The
+whole-branch review found one Important test-isolation issue; commits `ab4f7c9`
+and `8cbc2da` addressed it. Independent scoped re-review closed the finding with
+no new breakage and no open findings. Offline implementation is accepted.
+Teaching-quality acceptance, further paid execution, default promotion and
+deployment remain separate, unexecuted gates.
 
 Workspace: existing `LearnAI-worktrees/plan-phase2a-tutor` linked worktree, branch
 `feat-tutor-quality-refinement`. Initial revision:
@@ -159,8 +160,8 @@ env -u OPENAI_API_KEY -u ANTHROPIC_API_KEY PYTHONPATH=/private/tmp/learnai-final
 
 Clean-clone result: `1824 passed, 4 deselected in 128.74s (0:02:08)` (exit 0),
 with no failures or warnings. The ordinary live probes remained deselected.
-Scoped rereview of this fix remains pending; paid quality acceptance and
-promotion remain separate gates.
+Independent scoped re-review confirmed the fix is addressed with no new
+breakage. Paid quality acceptance and promotion remain separate gates.
 
 ## Preservation and privacy
 
@@ -188,51 +189,27 @@ UI, pricing snapshot, session detours or deployment were changed.
 
 ## Controller rulings retained
 
-These decisions come from this plan's local progress ledger; they do not change
-the later quality/promotion gate:
+The following ledger decisions are retained verbatim, in their original order.
 
-- Keep the existing linked worktree, create local
-  `feat-tutor-quality-refinement`, and commit approved documentation/ignore
-  changes as the implementation baseline. This protects the pushed migration
-  branch and preserves authored decisions; an incorrect choice costs reversible
-  local branch/commit cleanup. Implementation proceeds sequentially where tasks
-  share provider test files.
-- Use the existing Python 3.12 venv without installing Poetry: packaging uses
-  Hatchling and dependencies already exist. Any correction is local dependency
-  work, not an authorized dependency upgrade.
-- Move reusable `PreparedCalibrationCase` / `prepare_calibration` construction
-  into Task 3 for its real-gate tests. Task 4 consumes that unchanged production
-  helper for CLI/runner/artifacts, avoiding a duplicate test-only loader; a wrong
-  boundary would need only bounded task rework.
-- Judge v2 covers accepted replies and evaluator-authored undelivered drafts
-  without being told gate outcomes, resolving the conflict between
-  accepted-only wording and negative calibration. Exact authored text still
-  passes the shared parser; intentional engine rejections stay evaluator-only,
-  never delivered or added to history. The engine is never weakened.
-- Keep the planned standalone calibration module with explicit helper
-  boundaries despite a projected roughly 400 lines; line count alone does not
-  justify a new abstraction. It finished at 314 lines. A necessary correction
-  would be a focused split before final acceptance.
-- Preserve raw rejected traces, canonical error codes and existing verification
-  capability. Tool evidence is absent from the judge packet, so trace review
-  stays manual. Updated tool descriptions must be part of real admission
-  payloads. Candidate v2 uses private local YAML; checked-in defaults stay v1.
-- Keep calibration artifacts distinct without existing-reader/schema changes.
-  Run focused checks per task and reserve the full suite for Task 5. No
-  additional paid execution is authorized. Task 5 owns final frozen-byte,
-  unchanged-default/budget and whole-corpus headroom checks.
-- Tasks 1–4 scoped reviews were clean. Task 1 preservation/privacy evidence was
-  accepted, with final budget/admission checks assigned here; Task 2 had no
-  changed default/artifact/budget sources; Task 3 preservation was accepted;
-  Task 4's unchanged-preparation item was resolved through the completed Task 3
-  review and combined 62-test evidence. The subsequent whole-branch review
-  requested the test-isolation fix recorded above; scoped rereview of that fix
-  remains pending.
-- Verify the final fix in a clean local clone with Git metadata. Controlled
-  comparisons intentionally reject an unknown source revision, and the clone
-  must still exclude ignored files. A wrong choice costs an extra local
-  verification run and temporary disk use; an archive-only failure does not
-  justify a second code-fix wave.
+Ruling: Keep the existing worktree, create local feat-tutor-quality-refinement branch, and commit the existing approved documentation/ignore changes as the implementation baseline — protects the pushed model-migration branch and preserves authored decisions — cost if wrong is reversible local branch/commit cleanup.
+
+Ruling: Use existing Python 3.12 venv without Poetry installation — pyproject uses Hatchling and dependencies are already present — cost if wrong is a local dependency correction.
+
+Ruling: Task 3 creates reusable PreparedCalibrationCase/prepare_calibration in calibration.py for its real-gate tests; Task 4 adds CLI/runner/artifacts to that module — resolves task dependency without duplicate validation — cost if wrong is small task-boundary rework.
+
+Ruling: Judge v2 must allow assessment of authored evaluator-only drafts as well as accepted replies, without receiving gate outcomes — otherwise the prior accepted-response wording contradicts negative calibration cases — cost if wrong is a bounded prompt adjustment.
+
+Ruling: Task4 may keep its projected ~400-line standalone calibration module with explicit helper boundaries — matches planned calibration-only scope, line count alone does not justify a new abstraction — cost if wrong is a focused split before final acceptance. Implementer will report final size/concerns.
+
+Ruling: Verify the final fix in a clean local clone with Git metadata, rather than a source archive — controlled-comparison tests intentionally reject an unknown source revision, while ignored-file isolation is still required — cost if wrong is an extra local verification run and temporary disk use.
+
+Review boundaries were examined explicitly: live quality/cost/latency remain
+paid and human gates; proposed labels remain unconfirmed; promotion and Git
+publication remain separate user actions; browser sanitization/fake turns and
+retroactive cleanup are outside the parser guard; new CAS answer-set support,
+session detours and diagnosis-ID redesign are deferred; actual corpus admission
+proves NORMAL opportunities only. No defect in the implemented contract was
+dismissed under these boundaries.
 
 ## Remaining paid quality and promotion gate
 

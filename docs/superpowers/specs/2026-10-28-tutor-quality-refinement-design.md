@@ -1,8 +1,10 @@
 # Tutor quality refinement design
 
-Status: proposed design for review; implementation and further paid evaluation
-have not started. Teaching expectations below were agreed with the user;
-technical choices and calibration examples are proposals for this pass.
+Status: implemented and offline-verified on 2026-10-29 after user-authorized
+subagent-driven development. All scoped and final reviews are complete; see
+the [implementation handoff](../notes/2026-10-29-tutor-quality-implementation-handoff.md).
+Further paid evaluation and default promotion remain unexecuted. Calibration
+examples retain their explicit confirmed/proposed label status.
 
 ## Purpose and evidence
 
