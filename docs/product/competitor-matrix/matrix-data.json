@@ -1,0 +1,1438 @@
+{
+  "as_of": "2026-11-01",
+  "intro": "A persistent, curriculum-linked learning home: each student has personal topics, progress and next steps across subjects. Compare LearnAI's implemented engine separately from its full intended platform.",
+  "caution": "Snapshot: 1 November 2026. First-party documentation review, not hands-on benchmarking. Not verified means unknown, not absent. Subject breadth is not the same as validated teaching or assessment. No weighted scores or winner ranking. Competitors will also evolve.",
+  "statuses": {
+    "D": [
+      "Documented",
+      "Public first-party documentation describes the capability; not independently tested."
+    ],
+    "S": [
+      "Scoped",
+      "Related capability exists, but with the limitation described in the cell."
+    ],
+    "N": [
+      "Not verified",
+      "Not established in the reviewed sources. This does not mean absent."
+    ],
+    "F": [
+      "Foundation",
+      "LearnAI engine/code exists, with no complete student product for this capability."
+    ],
+    "P": [
+      "Planned",
+      "LearnAI roadmap or stated product intent; not a shipped capability."
+    ],
+    "B": [
+      "Not built",
+      "Known implementation gap in the current LearnAI workspace."
+    ],
+    "O": [
+      "Open decision",
+      "Possible extension or integration whose scope is not committed."
+    ]
+  },
+  "features": [
+    {
+      "id": "subjects",
+      "label": "Subject coverage",
+      "group": "platform",
+      "definition": "Distinguish curated subject content, uploaded material, and an LMS hosting arbitrary courses."
+    },
+    {
+      "id": "curriculum",
+      "label": "School / university curriculum",
+      "group": "platform",
+      "definition": "Actual syllabus/course alignment, not merely asking a chatbot about a topic."
+    },
+    {
+      "id": "workspace",
+      "label": "Persistent student workspace",
+      "group": "platform",
+      "definition": "Saved personal courses, topics and progress across visits; session memory alone is narrower."
+    },
+    {
+      "id": "next",
+      "label": "What to study next",
+      "group": "platform",
+      "definition": "Recommendations or automatic sequencing without needing a fresh prompt each session."
+    },
+    {
+      "id": "diagnostic",
+      "label": "Placement / knowledge gaps",
+      "group": "platform",
+      "definition": "Assessment of starting knowledge and readiness; recommendation logic need not be a prerequisite graph."
+    },
+    {
+      "id": "tutor",
+      "label": "Contextual tutoring",
+      "group": "learning",
+      "definition": "Interactive or instructional support, with the actual scope described."
+    },
+    {
+      "id": "modes",
+      "label": "Learn / practise / review / test",
+      "group": "learning",
+      "definition": "Functional coverage, not matching product feature names or equal mode permissions."
+    },
+    {
+      "id": "retention",
+      "label": "Spaced / delayed review",
+      "group": "learning",
+      "definition": "Distinguish memory-based scheduling from periodic reassessment or a flashcard button."
+    },
+    {
+      "id": "independence",
+      "label": "Assistance vs independence",
+      "group": "learning",
+      "definition": "Evidence of unaided competence, separately from success while receiving tutoring."
+    },
+    {
+      "id": "assessment",
+      "label": "Subject-appropriate assessment",
+      "group": "learning",
+      "definition": "Supported grading/checks/rubrics; not a guarantee of correctness across every discipline."
+    },
+    {
+      "id": "materials",
+      "label": "Course materials / rich content",
+      "group": "delivery",
+      "definition": "Files, images, other inputs and subject/topic-specific presentation."
+    },
+    {
+      "id": "institution",
+      "label": "School / university workflows",
+      "group": "delivery",
+      "definition": "Assignments, reporting and integrations; not all products are full LMS alternatives."
+    }
+  ],
+  "products": [
+    {
+      "name": "LearnAI — current",
+      "group": "LearnAI",
+      "audience": "Development engine; no deployed student UI",
+      "scope": "Current worktree, including work awaiting integration.",
+      "cells": {
+        "subjects": {
+          "status": "F",
+          "detail": "Maths: 12 quadratics skills.",
+          "sources": [
+            "L1"
+          ]
+        },
+        "curriculum": {
+          "status": "B",
+          "detail": "No operational curriculum overlay or enrolment.",
+          "sources": [
+            "L1",
+            "L2"
+          ]
+        },
+        "workspace": {
+          "status": "B",
+          "detail": "In-memory state; no persistent student dashboard.",
+          "sources": [
+            "L1"
+          ]
+        },
+        "next": {
+          "status": "F",
+          "detail": "Prerequisite frontier selection; difficulty bands still missing.",
+          "sources": [
+            "L1",
+            "L3"
+          ]
+        },
+        "diagnostic": {
+          "status": "F",
+          "detail": "Skill graph/state; full placement experience pending.",
+          "sources": [
+            "L1",
+            "L2"
+          ]
+        },
+        "tutor": {
+          "status": "F",
+          "detail": "Anthropic/OpenAI; revision-aware current-session tutoring.",
+          "sources": [
+            "L1"
+          ]
+        },
+        "modes": {
+          "status": "F",
+          "detail": "Practice engine; other complete modes pending.",
+          "sources": [
+            "L1"
+          ]
+        },
+        "retention": {
+          "status": "F",
+          "detail": "Memory/due-time calculations; no Review scheduler.",
+          "sources": [
+            "L1"
+          ]
+        },
+        "independence": {
+          "status": "F",
+          "detail": "Assistance-aware evidence and mastery updates.",
+          "sources": [
+            "L1"
+          ]
+        },
+        "assessment": {
+          "status": "F",
+          "detail": "Supported maths forms/steps checked with SymPy.",
+          "sources": [
+            "L1"
+          ]
+        },
+        "materials": {
+          "status": "F",
+          "detail": "Text/formula items; richer tutor blocks are a design draft.",
+          "sources": [
+            "L1",
+            "L4"
+          ]
+        },
+        "institution": {
+          "status": "B",
+          "detail": "No institutional service, teacher UI or LMS integration.",
+          "sources": [
+            "L1"
+          ]
+        }
+      }
+    },
+    {
+      "name": "LearnAI — full roadmap",
+      "group": "LearnAI",
+      "audience": "Primary → high school → early university",
+      "scope": "Target product, not availability, validated effectiveness or a dated commitment.",
+      "cells": {
+        "subjects": {
+          "status": "P",
+          "detail": "Any-subject ambition: maths, chemistry, history, English, more.",
+          "sources": [
+            "L2",
+            "L5"
+          ]
+        },
+        "curriculum": {
+          "status": "P",
+          "detail": "Student's actual school/uni curriculum, syllabus and exams.",
+          "sources": [
+            "L2",
+            "L5"
+          ]
+        },
+        "workspace": {
+          "status": "P",
+          "detail": "Dedicated home, personal topics and durable cross-session progress.",
+          "sources": [
+            "L5"
+          ]
+        },
+        "next": {
+          "status": "P",
+          "detail": "Choose next learning/review from readiness, retention and curriculum.",
+          "sources": [
+            "L2",
+            "L5"
+          ]
+        },
+        "diagnostic": {
+          "status": "P",
+          "detail": "Locate knowledge frontier; repair prerequisites and advance.",
+          "sources": [
+            "L2",
+            "L5"
+          ]
+        },
+        "tutor": {
+          "status": "P",
+          "detail": "Tutor grounded in course, current work and longitudinal evidence.",
+          "sources": [
+            "L2",
+            "L5"
+          ]
+        },
+        "modes": {
+          "status": "P",
+          "detail": "Integrated Learn, Practice, Review and Test/mock exams.",
+          "sources": [
+            "L2"
+          ]
+        },
+        "retention": {
+          "status": "P",
+          "detail": "Scheduled retrieval, cards and fresh procedural checks.",
+          "sources": [
+            "L2"
+          ]
+        },
+        "independence": {
+          "status": "P",
+          "detail": "Keep assistance visible; later unaided evidence of competence.",
+          "sources": [
+            "L2"
+          ]
+        },
+        "assessment": {
+          "status": "P",
+          "detail": "Subject-specific verifiers/rubrics; quality validated per subject.",
+          "sources": [
+            "L2",
+            "L5"
+          ]
+        },
+        "materials": {
+          "status": "P",
+          "detail": "Own problems later; extensible blocks. Photo/interactive scope open.",
+          "sources": [
+            "L2",
+            "L4"
+          ]
+        },
+        "institution": {
+          "status": "O",
+          "detail": "Curriculum-linked experience intended; LMS sync/admin scope undecided.",
+          "sources": [
+            "L5"
+          ]
+        }
+      }
+    },
+    {
+      "name": "StudyFetch",
+      "group": "AI study tools",
+      "audience": "Students and institutional offerings",
+      "scope": "Course-material-based platform; Canvas integration requires institutional setup.",
+      "cells": {
+        "subjects": {
+          "status": "S",
+          "detail": "Broad subject reach through supplied course materials.",
+          "sources": [
+            "S2"
+          ]
+        },
+        "curriculum": {
+          "status": "D",
+          "detail": "Syllabus and exam dates shape topic order.",
+          "sources": [
+            "S1"
+          ]
+        },
+        "workspace": {
+          "status": "D",
+          "detail": "Saved Study Sets, topic progress and mastery markers.",
+          "sources": [
+            "S1",
+            "S3"
+          ]
+        },
+        "next": {
+          "status": "D",
+          "detail": "Recommended topics and an ordered continuing study plan.",
+          "sources": [
+            "S1"
+          ]
+        },
+        "diagnostic": {
+          "status": "S",
+          "detail": "Topic pre-assessments; full prerequisite graph not verified.",
+          "sources": [
+            "S1"
+          ]
+        },
+        "tutor": {
+          "status": "D",
+          "detail": "Sparky and Tutor Me support course-material study.",
+          "sources": [
+            "S2"
+          ]
+        },
+        "modes": {
+          "status": "D",
+          "detail": "Tutoring, quizzes, flashcards and practice exams.",
+          "sources": [
+            "S2"
+          ]
+        },
+        "retention": {
+          "status": "D",
+          "detail": "Flashcard scheduling based on recall ratings.",
+          "sources": [
+            "S3"
+          ]
+        },
+        "independence": {
+          "status": "N",
+          "detail": "Assistance-weighted mastery rules not established.",
+          "sources": [
+            "S1"
+          ]
+        },
+        "assessment": {
+          "status": "S",
+          "detail": "Topic assessments/tests; independent subject verifiers not established.",
+          "sources": [
+            "S1",
+            "S2"
+          ]
+        },
+        "materials": {
+          "status": "D",
+          "detail": "Materials, lecture capture and generated audio/visual study aids.",
+          "sources": [
+            "S2"
+          ]
+        },
+        "institution": {
+          "status": "S",
+          "detail": "Canvas login and course-material import; not full LMS parity.",
+          "sources": [
+            "S4"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Khan Academy + Khanmigo",
+      "group": "Adaptive learning",
+      "audience": "School learners; subject/level and tutor access vary",
+      "scope": "Compare the combined learning platform and tutor, not Khanmigo chat alone.",
+      "cells": {
+        "subjects": {
+          "status": "S",
+          "detail": "Multi-subject course/tutoring offer; coverage varies.",
+          "sources": [
+            "K4"
+          ]
+        },
+        "curriculum": {
+          "status": "S",
+          "detail": "Teachers assign goals within available Khan courses.",
+          "sources": [
+            "K2"
+          ]
+        },
+        "workspace": {
+          "status": "D",
+          "detail": "Continuing course mastery goals and learner history.",
+          "sources": [
+            "K1",
+            "K2"
+          ]
+        },
+        "next": {
+          "status": "S",
+          "detail": "Mastery challenges and prerequisite-oriented tutor interventions.",
+          "sources": [
+            "K1",
+            "K3"
+          ]
+        },
+        "diagnostic": {
+          "status": "S",
+          "detail": "Course mastery and prerequisite evidence; scope varies.",
+          "sources": [
+            "K1",
+            "K2"
+          ]
+        },
+        "tutor": {
+          "status": "D",
+          "detail": "Tutor sees exercises; history and maths-checking work documented.",
+          "sources": [
+            "K1"
+          ]
+        },
+        "modes": {
+          "status": "S",
+          "detail": "Course mastery/practice, review challenges and tutoring.",
+          "sources": [
+            "K1",
+            "K2",
+            "K3"
+          ]
+        },
+        "retention": {
+          "status": "D",
+          "detail": "Personalised spaced review through mastery challenges.",
+          "sources": [
+            "K3"
+          ]
+        },
+        "independence": {
+          "status": "S",
+          "detail": "Tracks unaided next-item performance; full help-weight policy unverified.",
+          "sources": [
+            "K1"
+          ]
+        },
+        "assessment": {
+          "status": "S",
+          "detail": "Maths verification reported; not all-subject proof of correctness.",
+          "sources": [
+            "K1"
+          ]
+        },
+        "materials": {
+          "status": "N",
+          "detail": "Arbitrary school-syllabus ingestion not established in this review.",
+          "sources": [
+            "K2",
+            "K4"
+          ]
+        },
+        "institution": {
+          "status": "D",
+          "detail": "Teacher class/course goals and learner monitoring.",
+          "sources": [
+            "K2",
+            "K4"
+          ]
+        }
+      }
+    },
+    {
+      "name": "ALEKS",
+      "group": "Adaptive learning",
+      "audience": "School and higher education; course dependent",
+      "scope": "Course-based adaptive learning in its supported subject catalogue.",
+      "cells": {
+        "subjects": {
+          "status": "S",
+          "detail": "Maths and chemistry; not an all-subject catalogue.",
+          "sources": [
+            "A1"
+          ]
+        },
+        "curriculum": {
+          "status": "D",
+          "detail": "Course learning paths plus instructor assignments.",
+          "sources": [
+            "A1",
+            "A3"
+          ]
+        },
+        "workspace": {
+          "status": "D",
+          "detail": "Personal knowledge state and continuing learning/review paths.",
+          "sources": [
+            "A2"
+          ]
+        },
+        "next": {
+          "status": "D",
+          "detail": "Individual paths; unretained topics return for relearning.",
+          "sources": [
+            "A2"
+          ]
+        },
+        "diagnostic": {
+          "status": "D",
+          "detail": "Initial and recurring knowledge checks identify gaps.",
+          "sources": [
+            "A1",
+            "A2"
+          ]
+        },
+        "tutor": {
+          "status": "N",
+          "detail": "General conversational tutor not established by reviewed pages.",
+          "sources": [
+            "A1"
+          ]
+        },
+        "modes": {
+          "status": "D",
+          "detail": "Learning, review, knowledge checks, quizzes/tests/homework.",
+          "sources": [
+            "A2",
+            "A3"
+          ]
+        },
+        "retention": {
+          "status": "S",
+          "detail": "Periodic retention checks and review; not the same as card scheduling.",
+          "sources": [
+            "A2"
+          ]
+        },
+        "independence": {
+          "status": "S",
+          "detail": "Knowledge checks re-establish competence; exact help-weight rules unverified.",
+          "sources": [
+            "A2"
+          ]
+        },
+        "assessment": {
+          "status": "D",
+          "detail": "Supported maths/chemistry assessments and algorithmic questions.",
+          "sources": [
+            "A1",
+            "A3"
+          ]
+        },
+        "materials": {
+          "status": "S",
+          "detail": "Course questions; arbitrary learner-material ingestion not established.",
+          "sources": [
+            "A1",
+            "A3"
+          ]
+        },
+        "institution": {
+          "status": "D",
+          "detail": "Instructor assignments and progress/gap reporting.",
+          "sources": [
+            "A1",
+            "A3"
+          ]
+        }
+      }
+    },
+    {
+      "name": "CENTURY",
+      "group": "Adaptive learning",
+      "audience": "Primary/secondary and specified post-16 content",
+      "scope": "Catalogue, curriculum and exam-board scope vary by offering.",
+      "cells": {
+        "subjects": {
+          "status": "S",
+          "detail": "English, maths, science; selected geography, PE and post-16 content.",
+          "sources": [
+            "C1"
+          ]
+        },
+        "curriculum": {
+          "status": "D",
+          "detail": "National-curriculum/exam-board courses and teacher-set work.",
+          "sources": [
+            "C1"
+          ]
+        },
+        "workspace": {
+          "status": "D",
+          "detail": "Learner dashboard, usage and personal recommendations.",
+          "sources": [
+            "C3"
+          ]
+        },
+        "next": {
+          "status": "D",
+          "detail": "Continuously adapting pathways and prerequisite links.",
+          "sources": [
+            "C1",
+            "C2"
+          ]
+        },
+        "diagnostic": {
+          "status": "D",
+          "detail": "Identifies knowledge gaps to target resources.",
+          "sources": [
+            "C1"
+          ]
+        },
+        "tutor": {
+          "status": "S",
+          "detail": "Instruction, feedback and misconception remediation; chat unverified.",
+          "sources": [
+            "C1",
+            "C2"
+          ]
+        },
+        "modes": {
+          "status": "S",
+          "detail": "Learning content, assessments and recommended review; exams scope unverified.",
+          "sources": [
+            "C2"
+          ]
+        },
+        "retention": {
+          "status": "D",
+          "detail": "Memory Boost incorporates spaced retrieval.",
+          "sources": [
+            "C2"
+          ]
+        },
+        "independence": {
+          "status": "N",
+          "detail": "Explicit assisted-vs-unaided mastery accounting not established.",
+          "sources": [
+            "C2"
+          ]
+        },
+        "assessment": {
+          "status": "S",
+          "detail": "Question feedback and performance analytics; subject scope bounded.",
+          "sources": [
+            "C2"
+          ]
+        },
+        "materials": {
+          "status": "S",
+          "detail": "Authored learning content; arbitrary learner uploads not established.",
+          "sources": [
+            "C1",
+            "C2"
+          ]
+        },
+        "institution": {
+          "status": "D",
+          "detail": "Classes, assignments, teacher and learner dashboards.",
+          "sources": [
+            "C1",
+            "C2",
+            "C3"
+          ]
+        }
+      }
+    },
+    {
+      "name": "IXL",
+      "group": "Adaptive learning",
+      "audience": "Primarily school-level personalised practice",
+      "scope": "Diagnostic coverage is narrower than overall subject coverage.",
+      "cells": {
+        "subjects": {
+          "status": "S",
+          "detail": "Maths, language arts, science, social studies and Spanish.",
+          "sources": [
+            "I1"
+          ]
+        },
+        "curriculum": {
+          "status": "D",
+          "detail": "Skills mapped to standards and textbook chapters.",
+          "sources": [
+            "I1"
+          ]
+        },
+        "workspace": {
+          "status": "D",
+          "detail": "Saved practice and personalised recommendation wall.",
+          "sources": [
+            "I4",
+            "I5"
+          ]
+        },
+        "next": {
+          "status": "D",
+          "detail": "Recommendations update as the student practises.",
+          "sources": [
+            "I2",
+            "I4"
+          ]
+        },
+        "diagnostic": {
+          "status": "S",
+          "detail": "Diagnostic and action plans in maths and language arts.",
+          "sources": [
+            "I2"
+          ]
+        },
+        "tutor": {
+          "status": "S",
+          "detail": "Worked examples/error explanations; conversational tutor unverified.",
+          "sources": [
+            "I3"
+          ]
+        },
+        "modes": {
+          "status": "S",
+          "detail": "Lessons, adaptive practice and diagnostics; full mock-exam scope unverified.",
+          "sources": [
+            "I2",
+            "I3"
+          ]
+        },
+        "retention": {
+          "status": "N",
+          "detail": "Memory-timed spaced-review scheduler not established.",
+          "sources": [
+            "I2",
+            "I3"
+          ]
+        },
+        "independence": {
+          "status": "N",
+          "detail": "Explicit help-weighted competence model not established.",
+          "sources": [
+            "I2",
+            "I3"
+          ]
+        },
+        "assessment": {
+          "status": "D",
+          "detail": "Skill questions, immediate feedback and diagnostics.",
+          "sources": [
+            "I2",
+            "I3"
+          ]
+        },
+        "materials": {
+          "status": "S",
+          "detail": "Lessons/examples and textbook mapping; arbitrary uploads unverified.",
+          "sources": [
+            "I1",
+            "I3"
+          ]
+        },
+        "institution": {
+          "status": "D",
+          "detail": "Teacher analytics and implementation workflows.",
+          "sources": [
+            "I4",
+            "I5"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Quizlet",
+      "group": "AI study tools",
+      "audience": "Broad study use; feature/region/age restrictions",
+      "scope": "Plus study paths; Ask Quizlet currently US age 14+; spaced repetition web-only in reviewed docs.",
+      "cells": {
+        "subjects": {
+          "status": "S",
+          "detail": "Broad subject coverage via sets, guides and uploaded materials.",
+          "sources": [
+            "Q2",
+            "Q4"
+          ]
+        },
+        "curriculum": {
+          "status": "S",
+          "detail": "Teacher/user sets can match class content; full syllabus orchestration unverified.",
+          "sources": [
+            "Q2",
+            "Q5"
+          ]
+        },
+        "workspace": {
+          "status": "S",
+          "detail": "Study-path progress saved; Ask Quizlet chat resets across pages.",
+          "sources": [
+            "Q1",
+            "Q4"
+          ]
+        },
+        "next": {
+          "status": "S",
+          "detail": "Adaptive sequence within sets; broader course sequencing unverified.",
+          "sources": [
+            "Q1"
+          ]
+        },
+        "diagnostic": {
+          "status": "S",
+          "detail": "Adapts to familiarity with a set; prerequisite placement unverified.",
+          "sources": [
+            "Q1",
+            "Q2"
+          ]
+        },
+        "tutor": {
+          "status": "S",
+          "detail": "Ask Quizlet explanations and follow-ups, with access restrictions.",
+          "sources": [
+            "Q4"
+          ]
+        },
+        "modes": {
+          "status": "D",
+          "detail": "Learn, flashcards, tests, study guides and AI explanations.",
+          "sources": [
+            "Q2",
+            "Q4"
+          ]
+        },
+        "retention": {
+          "status": "D",
+          "detail": "Recall-rated spaced repetition for flashcards on web.",
+          "sources": [
+            "Q3"
+          ]
+        },
+        "independence": {
+          "status": "N",
+          "detail": "Longitudinal help-weighted mastery accounting not established.",
+          "sources": [
+            "Q1",
+            "Q2"
+          ]
+        },
+        "assessment": {
+          "status": "S",
+          "detail": "Smart grading and expert solutions; not universal verification.",
+          "sources": [
+            "Q2"
+          ]
+        },
+        "materials": {
+          "status": "D",
+          "detail": "Files/images, audio and diagram sets; feature limits apply.",
+          "sources": [
+            "Q2",
+            "Q4"
+          ]
+        },
+        "institution": {
+          "status": "S",
+          "detail": "Classes and Class Progress; full LMS workflows not established.",
+          "sources": [
+            "Q5"
+          ]
+        }
+      }
+    },
+    {
+      "name": "ChatGPT / Study mode",
+      "group": "AI study tools",
+      "audience": "Broad subject conversation; access and memory settings vary",
+      "scope": "Study mode is a conversational learning experience. Do not equate optional memory with a curriculum mastery database.",
+      "cells": {
+        "subjects": {
+          "status": "S",
+          "detail": "Broad topic reach through the model and supplied material.",
+          "sources": [
+            "O1"
+          ]
+        },
+        "curriculum": {
+          "status": "S",
+          "detail": "Uses a supplied syllabus/materials; managed curriculum mapping unverified.",
+          "sources": [
+            "O1"
+          ]
+        },
+        "workspace": {
+          "status": "S",
+          "detail": "Chat and optional memory; dedicated course-mastery dashboard unverified.",
+          "sources": [
+            "O1"
+          ]
+        },
+        "next": {
+          "status": "S",
+          "detail": "Can guide the next step in dialogue; persistent curriculum scheduler unverified.",
+          "sources": [
+            "O1"
+          ]
+        },
+        "diagnostic": {
+          "status": "S",
+          "detail": "Asks understanding questions; validated prerequisite placement unverified.",
+          "sources": [
+            "O1"
+          ]
+        },
+        "tutor": {
+          "status": "D",
+          "detail": "Guided questions, layered explanations and feedback.",
+          "sources": [
+            "O1"
+          ]
+        },
+        "modes": {
+          "status": "S",
+          "detail": "Learning, practice, quizzes and review via conversation.",
+          "sources": [
+            "O1"
+          ]
+        },
+        "retention": {
+          "status": "N",
+          "detail": "Automatic memory-based review scheduler not established for Study mode.",
+          "sources": [
+            "O1"
+          ]
+        },
+        "independence": {
+          "status": "N",
+          "detail": "Separate assisted/independent mastery ledger not established.",
+          "sources": [
+            "O1"
+          ]
+        },
+        "assessment": {
+          "status": "S",
+          "detail": "Model feedback can be wrong; checked all-subject grading unverified.",
+          "sources": [
+            "O1"
+          ]
+        },
+        "materials": {
+          "status": "D",
+          "detail": "Course files, images, PDFs and supported voice input.",
+          "sources": [
+            "O1"
+          ]
+        },
+        "institution": {
+          "status": "S",
+          "detail": "Edu/teen controls documented; full course-LMS workflows not assessed.",
+          "sources": [
+            "O1"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Canvas LMS + IgniteAI",
+      "group": "Institutional LMS",
+      "audience": "Institution-managed school/university courses",
+      "scope": "AI and Mastery Paths depend on institution enablement/configuration; compare documented native features.",
+      "cells": {
+        "subjects": {
+          "status": "S",
+          "detail": "Hosts institution-authored courses across subjects; not a vetted content catalogue.",
+          "sources": [
+            "V1",
+            "V2"
+          ]
+        },
+        "curriculum": {
+          "status": "D",
+          "detail": "Institution's actual courses, assignments and learning content.",
+          "sources": [
+            "V1",
+            "V2"
+          ]
+        },
+        "workspace": {
+          "status": "D",
+          "detail": "Persistent student courses, work and gradebook context.",
+          "sources": [
+            "V1",
+            "V2"
+          ]
+        },
+        "next": {
+          "status": "S",
+          "detail": "Instructor-configured score-based Mastery Paths.",
+          "sources": [
+            "V1"
+          ]
+        },
+        "diagnostic": {
+          "status": "S",
+          "detail": "Assignment-score branching; autonomous prerequisite diagnosis unverified.",
+          "sources": [
+            "V1"
+          ]
+        },
+        "tutor": {
+          "status": "S",
+          "detail": "Course-grounded AI study aids; full mastery-aware tutor unverified.",
+          "sources": [
+            "V2"
+          ]
+        },
+        "modes": {
+          "status": "D",
+          "detail": "Course content, quizzes, assessments and AI study materials.",
+          "sources": [
+            "V1",
+            "V2"
+          ]
+        },
+        "retention": {
+          "status": "N",
+          "detail": "Native student-memory spaced-review scheduler not established.",
+          "sources": [
+            "V2"
+          ]
+        },
+        "independence": {
+          "status": "N",
+          "detail": "Tutor-assistance-weighted mastery ledger not established.",
+          "sources": [
+            "V1",
+            "V2"
+          ]
+        },
+        "assessment": {
+          "status": "S",
+          "detail": "Quizzes, rubrics and educator grading; varies by course design.",
+          "sources": [
+            "V1",
+            "V2"
+          ]
+        },
+        "materials": {
+          "status": "D",
+          "detail": "Course files/pages; AI summaries, quizzes and flashcards.",
+          "sources": [
+            "V2"
+          ]
+        },
+        "institution": {
+          "status": "D",
+          "detail": "Full LMS setting; tiers and enabled AI options vary.",
+          "sources": [
+            "V2",
+            "V3"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Blackboard LMS + AI",
+      "group": "Institutional LMS",
+      "audience": "Institution-managed school/university courses",
+      "scope": "AVA, AI Conversation and Outcomes availability depends on institutional/course configuration.",
+      "cells": {
+        "subjects": {
+          "status": "S",
+          "detail": "Hosts any course subject; learning content supplied by institution.",
+          "sources": [
+            "B1",
+            "B2"
+          ]
+        },
+        "curriculum": {
+          "status": "D",
+          "detail": "Actual course content, assignments and institutional outcomes.",
+          "sources": [
+            "B1",
+            "B3"
+          ]
+        },
+        "workspace": {
+          "status": "D",
+          "detail": "Persistent course progress, grades and enabled Outcomes views.",
+          "sources": [
+            "B1",
+            "B3"
+          ]
+        },
+        "next": {
+          "status": "S",
+          "detail": "Modules/instructor workflow; autonomous skill scheduler unverified.",
+          "sources": [
+            "B1"
+          ]
+        },
+        "diagnostic": {
+          "status": "S",
+          "detail": "Outcome mastery from aligned assessments; prerequisite placement unverified.",
+          "sources": [
+            "B3"
+          ]
+        },
+        "tutor": {
+          "status": "S",
+          "detail": "Instructor-defined Socratic/role-play/quiz AI activities; AVA has scope limits.",
+          "sources": [
+            "B1",
+            "B2"
+          ]
+        },
+        "modes": {
+          "status": "D",
+          "detail": "Course activities/assessments plus configured AI conversations.",
+          "sources": [
+            "B2",
+            "B3"
+          ]
+        },
+        "retention": {
+          "status": "N",
+          "detail": "Student-memory spaced-review scheduler not established.",
+          "sources": [
+            "B1",
+            "B3"
+          ]
+        },
+        "independence": {
+          "status": "N",
+          "detail": "Tutor-assistance-weighted mastery ledger not established.",
+          "sources": [
+            "B3"
+          ]
+        },
+        "assessment": {
+          "status": "S",
+          "detail": "Outcome-aligned educator assessments; course-specific rubrics/processes.",
+          "sources": [
+            "B3"
+          ]
+        },
+        "materials": {
+          "status": "S",
+          "detail": "Course materials supported; AVA document access has explicit limits.",
+          "sources": [
+            "B1"
+          ]
+        },
+        "institution": {
+          "status": "D",
+          "detail": "Institutional courses, instructor workflows and grade/outcome records.",
+          "sources": [
+            "B1",
+            "B3"
+          ]
+        }
+      }
+    }
+  ],
+  "sources": {
+    "O1": {
+      "title": "OpenAI — Using study mode",
+      "url": "https://help.openai.com/en/articles/11780217-using-study-mode-in-chatgpt",
+      "reviewed": "2026-11-01",
+      "kind": "first-party documentation"
+    },
+    "S1": {
+      "title": "StudyFetch — Study Plan",
+      "url": "https://sso.studyfetch.com/docs/docs/product-docs/6a519349893cd6f616be1054",
+      "reviewed": "2026-11-01",
+      "kind": "first-party documentation"
+    },
+    "S2": {
+      "title": "StudyFetch — Product overview",
+      "url": "https://www.studyfetch.com/",
+      "reviewed": "2026-11-01",
+      "kind": "first-party documentation"
+    },
+    "S3": {
+      "title": "StudyFetch — Flashcards and spaced repetition",
+      "url": "https://sso.studyfetch.com/docs/docs/product-docs/6a52628f02a11a95bc7fcc0e",
+      "reviewed": "2026-11-01",
+      "kind": "first-party documentation"
+    },
+    "S4": {
+      "title": "StudyFetch — Canvas integration",
+      "url": "https://sso.studyfetch.com/docs/docs/product-docs/6a067a051289ddc3f19038b2",
+      "reviewed": "2026-11-01",
+      "kind": "first-party documentation"
+    },
+    "Q1": {
+      "title": "Quizlet — Study paths",
+      "url": "https://help.quizlet.com/hc/en-us/articles/360048314692-Setting-up-a-study-path",
+      "reviewed": "2026-11-01",
+      "kind": "first-party documentation"
+    },
+    "Q2": {
+      "title": "Quizlet — Study activities and grading",
+      "url": "https://help.quizlet.com/hc/en-au/articles/360030841732-Studying-on-Quizlet",
+      "reviewed": "2026-11-01",
+      "kind": "first-party documentation"
+    },
+    "Q3": {
+      "title": "Quizlet — Spaced repetition",
+      "url": "https://help.quizlet.com/hc/en-us/articles/48324742264077-Studying-with-Spaced-Repetition",
+      "reviewed": "2026-11-01",
+      "kind": "first-party documentation"
+    },
+    "Q4": {
+      "title": "Quizlet — Ask Quizlet and current restrictions",
+      "url": "https://help.quizlet.com/hc/en-us/articles/42790350723725-Studying-with-Ask-Quizlet",
+      "reviewed": "2026-11-01",
+      "kind": "first-party documentation"
+    },
+    "Q5": {
+      "title": "Quizlet — Class Progress",
+      "url": "https://quizlet.com/features/class-progress",
+      "reviewed": "2026-11-01",
+      "kind": "first-party documentation"
+    },
+    "K1": {
+      "title": "Khan Academy — Khanmigo development report, May 2026",
+      "url": "https://blog.khanacademy.org/how-khan-academy-is-building-a-better-ai-tutor-our-most-recent-learnings/",
+      "reviewed": "2026-11-01",
+      "kind": "first-party documentation"
+    },
+    "K2": {
+      "title": "Khan Academy — Course mastery goals",
+      "url": "https://en.khanacademy.org/khan-for-educators/khan-for-educators-advanced-course/x2e5750eab575b791%3Akhan-for-educators-advanced/x2e5750eab575b791%3Amastery-learning-on-khan-academy/a/how-to-assign-mastery-goals-a9",
+      "reviewed": "2026-11-01",
+      "kind": "first-party documentation"
+    },
+    "K3": {
+      "title": "Khan Academy — Mastery challenges (2020 guide)",
+      "url": "https://www.khanacademy.org/resources/teacher-essentials/product-tour-videos/a/mastery-challenges-course-mastery",
+      "reviewed": "2026-11-01",
+      "kind": "first-party documentation"
+    },
+    "K4": {
+      "title": "Khan Academy — Khanmigo overview",
+      "url": "https://www.khanacademy.org/khan-labs",
+      "reviewed": "2026-11-01",
+      "kind": "first-party documentation"
+    },
+    "A1": {
+      "title": "McGraw Hill — ALEKS platform",
+      "url": "https://www.mheducation.com/highered/digital-products/aleks.html",
+      "reviewed": "2026-11-01",
+      "kind": "first-party documentation"
+    },
+    "A2": {
+      "title": "McGraw Hill — ALEKS learner FAQ",
+      "url": "https://www.mheducation.com/prek-12/support/knowledge/aleks-frequently-asked-questions-faq-for-students.html",
+      "reviewed": "2026-11-01",
+      "kind": "first-party documentation"
+    },
+    "A3": {
+      "title": "McGraw Hill — ALEKS quizzes, tests and homework",
+      "url": "https://www.mheducation.com/prek-12/support/knowledge/new-aleks---quiz-test-homework.html",
+      "reviewed": "2026-11-01",
+      "kind": "first-party documentation"
+    },
+    "C1": {
+      "title": "CENTURY — Teacher introduction",
+      "url": "https://knowledge.century.tech/teacher-introduction-to-century",
+      "reviewed": "2026-11-01",
+      "kind": "first-party documentation"
+    },
+    "C2": {
+      "title": "CENTURY — Science and Memory Boost",
+      "url": "https://www.century.tech/news/the-science-behind-century/",
+      "reviewed": "2026-11-01",
+      "kind": "first-party documentation"
+    },
+    "C3": {
+      "title": "CENTURY — Student workspace",
+      "url": "https://knowledge.century.tech/what-do-students-see",
+      "reviewed": "2026-11-01",
+      "kind": "first-party documentation"
+    },
+    "I1": {
+      "title": "IXL — Curriculum and textbook alignment",
+      "url": "https://www.ixl.com/",
+      "reviewed": "2026-11-01",
+      "kind": "first-party documentation"
+    },
+    "I2": {
+      "title": "IXL — Diagnostic",
+      "url": "https://www.ixl.com/diagnostic/info?lmsPlatform=1",
+      "reviewed": "2026-11-01",
+      "kind": "first-party documentation"
+    },
+    "I3": {
+      "title": "IXL — Instructional resources",
+      "url": "https://blog.ixl.com/2021/12/02/ixls-instructional-resources-tools-to-power-learning-at-home/",
+      "reviewed": "2026-11-01",
+      "kind": "first-party documentation"
+    },
+    "I4": {
+      "title": "IXL — Personalized practice guide",
+      "url": "https://www.ixl.com/materials/i_guides/IXL_for_Personalized_Practice_Implementation_Guide.pdf",
+      "reviewed": "2026-11-01",
+      "kind": "first-party documentation"
+    },
+    "I5": {
+      "title": "IXL — EU teacher guide; saved practice",
+      "url": "https://eu.ixl.com/userguides/eu/IXLUserGuide.pdf",
+      "reviewed": "2026-11-01",
+      "kind": "first-party documentation"
+    },
+    "V1": {
+      "title": "Canvas — Mastery Paths",
+      "url": "https://community.canvaslms.com/t5/Canvas-Basics-Guide/What-is-Mastery-Paths/ta-p/404483",
+      "reviewed": "2026-11-01",
+      "kind": "first-party documentation"
+    },
+    "V2": {
+      "title": "Canvas — Available IgniteAI features",
+      "url": "https://community.instructure.com/en/kb/articles/664510-what-are-the-available-ai-features-in-canvas",
+      "reviewed": "2026-11-01",
+      "kind": "first-party documentation"
+    },
+    "V3": {
+      "title": "Canvas — LMS tiers and availability",
+      "url": "https://www.instructure.com/products/canvas-tiers",
+      "reviewed": "2026-11-01",
+      "kind": "first-party documentation"
+    },
+    "B1": {
+      "title": "Blackboard — AVA student assistant",
+      "url": "https://help.anthology.com/blackboard/student/en/course-content-and-materials/ava-ai-virtual-assistant.html",
+      "reviewed": "2026-11-01",
+      "kind": "first-party documentation"
+    },
+    "B2": {
+      "title": "Blackboard — AI Conversation",
+      "url": "https://help.anthology.com/blackboard/student/en/course-content-and-materials/ai-conversation.html",
+      "reviewed": "2026-11-01",
+      "kind": "first-party documentation"
+    },
+    "B3": {
+      "title": "Blackboard — Outcomes and mastery",
+      "url": "https://help.anthology.com/blackboard/student/en/grades/blackboard-outcomes.html",
+      "reviewed": "2026-11-01",
+      "kind": "first-party documentation"
+    },
+    "L1": {
+      "title": "LearnAI — Implemented state / cofounder brief",
+      "url": "../2026-11-01-cofounder-brief.md",
+      "reviewed": "2026-11-01",
+      "kind": "repository/founder"
+    },
+    "L2": {
+      "title": "LearnAI — Product design and roadmap",
+      "url": "../../superpowers/specs/2026-09-14-ai-tutoring-platform-design.md",
+      "reviewed": "2026-11-01",
+      "kind": "repository/founder"
+    },
+    "L3": {
+      "title": "LearnAI — Difficulty implementation gaps",
+      "url": "../../superpowers/notes/2026-11-01-exercise-difficulty-follow-up.md",
+      "reviewed": "2026-11-01",
+      "kind": "repository/founder"
+    },
+    "L4": {
+      "title": "LearnAI — Structured content proposal",
+      "url": "../../superpowers/specs/2026-10-31-structured-tutor-content-design.md",
+      "reviewed": "2026-11-01",
+      "kind": "repository/founder"
+    },
+    "L5": {
+      "title": "Founder clarification — persistent curriculum-linked platform",
+      "url": "../2026-11-01-competitor-matrix.md#product-intent",
+      "reviewed": "2026-11-01",
+      "kind": "repository/founder"
+    }
+  },
+  "roadmap": [
+    [
+      "Now",
+      "Practice engine",
+      "Quadratics, supported verification, tutor context, evidence and evaluation. No persistent student UI."
+    ],
+    [
+      "Near term",
+      "Usable continuous product",
+      "Quality/content presentation, authentication, storage, student workspace and resumable learning."
+    ],
+    [
+      "Planned",
+      "Review + Learn",
+      "Scheduled retrieval; knowledge-frontier placement and teaching with fading support."
+    ],
+    [
+      "Planned",
+      "Curriculum-linked study",
+      "Course overlays, syllabus topics, school/uni progression, exams and ongoing next-step planning. Mapping/import workflow still needs design."
+    ],
+    [
+      "Long term",
+      "Any subject",
+      "Maths, chemistry, history, English and other disciplines. Original sequence proposes physics as the first second-subject test; each needs content and suitable assessment."
+    ],
+    [
+      "Later / open",
+      "Materials and richer interaction",
+      "Bring-your-own problems with follow-up practice; subject-specific blocks. Photo input, interactive elements and exact timing remain open."
+    ],
+    [
+      "Open",
+      "Institutional delivery model",
+      "Decide LMS complement versus replacement, integrations, teacher/parent views and administration. Student curriculum alignment does not settle these."
+    ]
+  ]
+}
