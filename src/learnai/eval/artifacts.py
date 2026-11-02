@@ -122,6 +122,12 @@ def decode(value: Any) -> Any:
         if cls is None or not is_dataclass(cls):
             raise ValueError('unknown artifact type')
         names = {field.name for field in fields(cls)}
+        # Exact pre-work-notes snapshot shape remains readable; no other missing
+        # fields are defaulted and the caller's saved dictionary is not mutated.
+        if (cls is interaction.VerificationSnapshot and set(value) == {'$type', 'fields'}
+                and isinstance(value['fields'], dict)
+                and set(value['fields']) == names - {'work_notes'}):
+            value = {**value, 'fields': {**value['fields'], 'work_notes': {'$tuple': []}}}
         if set(value) != {'$type', 'fields'} or not isinstance(value['fields'], dict) or set(value['fields']) != names:
             raise ValueError('artifact fields do not match versioned type')
         restored = {name: decode(entry) for name, entry in value['fields'].items()}

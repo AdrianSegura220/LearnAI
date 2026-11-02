@@ -1,0 +1,172 @@
+version: 1
+items:
+- id: eval.authored.independent.01
+  skill_id: quad.solve.factoring
+  statement:
+  - text: Solve over the real numbers. Any valid method.
+  - formula: x^2 + 6x + 5 = 0
+  answer:
+    expression: -1, -5
+    kind: VALUE_SET
+    form_constraints: []
+    label: x =
+  worked_steps: []
+  difficulty: 0.0
+- id: eval.authored.independent.02
+  skill_id: quad.solve.factoring
+  statement:
+  - text: Solve over the real numbers.
+  - formula: 2x^2 + 7x = 4
+  answer:
+    expression: -4, 1/2
+    kind: VALUE_SET
+    form_constraints: []
+    label: x =
+  worked_steps: []
+  difficulty: 0.0
+- id: eval.authored.independent.03
+  skill_id: quad.solve.factoring
+  statement:
+  - text: Solve over the real numbers.
+  - formula: x^2 - 5x + 6 = 0
+  answer:
+    expression: 2, 3
+    kind: VALUE_SET
+    form_constraints: []
+    label: x =
+  worked_steps: []
+  difficulty: 0.0
+- id: eval.authored.independent.04
+  skill_id: quad.expand.binomial
+  statement:
+  - text: Expand and simplify.
+  - formula: (2x - 3)(x + 4)
+  answer:
+    expression: 2x^2 + 5x - 12
+    kind: SINGLE_VALUE
+    form_constraints:
+    - expanded
+    label: null
+  worked_steps: []
+  difficulty: 0.0
+- id: eval.authored.independent.05
+  skill_id: quad.formula.apply
+  statement:
+  - text: Solve over the real numbers.
+  - formula: x^2 - 6x + 9 = 0
+  answer:
+    expression: '3'
+    kind: VALUE_SET
+    form_constraints: []
+    label: x =
+  worked_steps: []
+  difficulty: 0.0
+- id: eval.authored.independent.06
+  skill_id: quad.solve.factoring
+  statement:
+  - text: Solve over the real numbers.
+  - formula: x^2 - x - 12 = 0
+  answer:
+    expression: 4, -3
+    kind: VALUE_SET
+    form_constraints: []
+    label: x =
+  worked_steps: []
+  difficulty: 0.0
+- id: eval.authored.independent.07
+  skill_id: quad.formula.apply
+  statement:
+  - text: Solve over the real numbers.
+  - formula: x^2 - 4x - 5 = 0
+  answer:
+    expression: -1, 5
+    kind: VALUE_SET
+    form_constraints: []
+    label: x =
+  worked_steps: []
+  difficulty: 0.0
+- id: eval.authored.independent.08
+  skill_id: quad.formula.apply
+  statement:
+  - text: Solve over the real numbers.
+  - formula: 2x^2 - 3x - 2 = 0
+  answer:
+    expression: -1/2, 2
+    kind: VALUE_SET
+    form_constraints: []
+    label: x =
+  worked_steps: []
+  difficulty: 0.0
+- id: eval.authored.independent.09
+  skill_id: quad.completesquare
+  statement:
+  - text: Rewrite in completed-square form.
+  - formula: x^2 + 8x + 3
+  answer:
+    expression: (x + 4)^2 - 13
+    kind: SINGLE_VALUE
+    form_constraints:
+    - completed_square
+    label: null
+  worked_steps: []
+  difficulty: 0.0
+- id: eval.authored.independent.10
+  skill_id: quad.formula.apply
+  statement:
+  - text: Solve over the real numbers. Any valid method.
+  - formula: 3x^2 + x - 2 = 0
+  answer:
+    expression: -1, 2/3
+    kind: VALUE_SET
+    form_constraints: []
+    label: x =
+  worked_steps: []
+  difficulty: 0.0
+- id: eval.authored.independent.11
+  skill_id: quad.word.area
+  statement:
+  - text: A rectangle has area 40 cm². Its length is 3 cm greater than its width.
+      Find its width.
+  answer:
+    expression: '5'
+    kind: SINGLE_VALUE
+    form_constraints: []
+    label: 'Width (cm):'
+  worked_steps: []
+  difficulty: 0.0
+- id: eval.authored.independent.12
+  skill_id: quad.solve.factoring
+  statement:
+  - text: Solve over the real numbers.
+  - formula: x^2 - 6x + 8 = 0
+  answer:
+    expression: 2, 4
+    kind: VALUE_SET
+    form_constraints: []
+    label: x =
+  worked_steps: []
+  difficulty: 0.0
+- id: eval.authored.independent.13
+  skill_id: quad.solve.factoring
+  statement:
+  - text: Find all real solutions.
+  - formula: x^2 = 9
+  answer:
+    expression: -3, 3
+    kind: VALUE_SET
+    form_constraints: []
+    label: x =
+  worked_steps: []
+  difficulty: 0.0
+- id: eval.authored.independent.14
+  skill_id: quad.solve.factoring
+  statement:
+  - text: Solve over the real numbers.
+  - formula: x^2 + 5x + 6 = 0
+  answer:
+    expression: -2, -3
+    kind: VALUE_SET
+    form_constraints: []
+    label: x =
+  worked_steps: []
+  difficulty: 0.0

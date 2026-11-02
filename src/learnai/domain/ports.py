@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Protocol
 
 from learnai.domain.ids import SkillId
 from learnai.domain.items import AnswerSpec, FormConstraint, Item, StepDiff, Submission
-from learnai.domain.verification import CheckResult
+from learnai.domain.verification import CheckResult, WorkCheck
 
 if TYPE_CHECKING:
     from learnai.domain.events import EvidenceEvent
@@ -36,6 +36,10 @@ class Verifier(Protocol):
         ...
 
     def diff_steps(self, steps: Sequence[str]) -> StepDiff | None: ...
+
+    def check_work(self, steps: Sequence[str], *, item: Item, allow_partial: bool) -> WorkCheck:
+        """Check work in task context; notes retain partial or limited scope."""
+        ...
 
     def extract_candidate_expressions(self, text: str) -> tuple[str, ...]: ...
 

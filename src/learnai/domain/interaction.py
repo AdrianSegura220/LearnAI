@@ -9,6 +9,7 @@ from learnai.domain.ids import MisconceptionId, TaskId
 from learnai.domain.items import FormConstraint, Item, StepDiff, Submission
 from learnai.domain.misconceptions import MisconceptionMatcher, diagnose
 from learnai.domain.skills import Misconception
+from learnai.domain.verification import WorkCheck
 
 if TYPE_CHECKING:
     from learnai.domain.ports import Verifier
@@ -60,6 +61,7 @@ class VerificationSnapshot:
     step_diff: StepDiff | None
     diagnosis: MisconceptionId | None
     failed_constraints: tuple[FormConstraint, ...] = ()
+    work_notes: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.revision < 0:
@@ -107,10 +109,13 @@ def prepare_verification(
     steps_checked = check_steps and bool(interaction.steps)
     if check_answer and verdict is not Verdict.WRONG:
         steps_checked = False
-    diff = verifier.diff_steps(interaction.steps) if steps_checked else None
+    work = (verifier.check_work(interaction.steps, item=item,
+                               allow_partial=not check_answer and interaction.kind is InteractionKind.TASK_QUESTION)
+            if steps_checked else WorkCheck())
+    diff = work.step_diff
     diagnosis = diagnose(diff, catalogue, matcher)
     if steps_checked and check_answer and diff is None and len(interaction.steps) >= 2:
         last = StepDiff(len(interaction.steps) - 1, interaction.steps[-2], interaction.steps[-1])
         diagnosis = diagnosis or diagnose(last, catalogue, matcher)
     return VerificationSnapshot(interaction.revision, check_answer, steps_checked,
-                                verdict, diff, diagnosis, failed_constraints)
+                                verdict, diff, diagnosis, failed_constraints, work.notes)

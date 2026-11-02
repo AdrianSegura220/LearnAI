@@ -16,8 +16,13 @@ ten-case Luna tutor / Sol judge pilot completed: nine accepted and scored tutor
 responses, one expected non-tutored completion, and no operational failures.
 See the [live pilot review](../docs/superpowers/notes/2026-10-28-openai-live-pilot.md)
 for measured latency and the formatting, judge-calibration and checking-tool
-findings. Full paid corpus evaluation, Anthropic live verification and human
-judge calibration remain unexecuted. Additional paid execution requires explicit
+findings. On 2026-10-31, human review and a six-case judge-v2 calibration batch
+completed with 5/6 exact helpfulness-label matches. Human review subsequently
+resolved the 0/1 disagreement by clarifying the rubric and revising one label;
+the revised rubric has not been tested live. See the
+[calibration review](../docs/superpowers/notes/2026-10-31-judge-v2-calibration.md).
+Full paid corpus evaluation and Anthropic live verification remain unexecuted.
+Additional paid execution requires explicit
 authorization. This small sample does not establish production latency or broad
 teaching quality; OpenAI commercial cost coverage remains incomplete.
 
@@ -371,6 +376,43 @@ matching model labels never make their prices interchangeable.
 
 ## Authored calibration and the tutor-quality comparison gate
 
+### Fresh independent scenario fixtures
+
+The approved fourteen fresh scenarios are executable separately from the original
+71-case corpus. Their exact items are in `eval/independent/items.yaml`; replay
+fixtures are in `eval/independent/scenarios/cases.yaml`. Authored items retain
+AUTHORED provenance and HUMAN_REVIEWED vetting, without invented generator seeds
+or machine-derived keys. Seed 0 is only the fixture lookup convention.
+
+Run the keyless readiness check:
+
+```sh
+env -u OPENAI_API_KEY -u ANTHROPIC_API_KEY .venv/bin/python -m learnai.eval.independent
+```
+
+It validates real replay, answer references, the fixed judge hash and both
+providers' tutor payload admission without SDK imports, clients or network.
+All fourteen have a NAME_METHOD tutor opportunity and fit the input budget.
+The check exits **0**: **fourteen ready, no semantic blockers**. Cases 05, 07,
+08, 10 and 12 originally exposed limitations in strict pairwise equivalence.
+Contextual work verification now validates coefficient definitions, calculation
+chains and formula claims against the exercise. A valid partial factor branch
+carries an explicit remaining-branches note; submitted answers still require
+complete solutions. The fixtures retain their original work and questions.
+Do not silently drop or rewrite cases to obtain a green check. This set is
+different from the fourteen-case regression selection later in this guide.
+
+The ordinary `run` command now accepts `--items PATH` alongside `--fixtures DIR`.
+Its manifest captures the exact loaded authored catalogue and resolved items.
+This flag does not enforce the independent set's semantic-readiness procedure;
+run the dedicated check first. No live execution is part of fixture preparation.
+The command's payload admission covers tutor requests; actual generated replies
+must be admitted separately when composing judge requests.
+
+See the [briefs and representation limitations](../docs/superpowers/specs/2026-10-31-independent-judge-evaluation-design.md).
+
+### Development calibration and policy comparison
+
 The offline quality-refinement implementation adds a shared student-text guard,
 clearer checking-tool guidance, candidate `tutor_math@2` / `rubric_judge@2`
 policies and authored calibration. Checked-in defaults remain `tutor_math@1` /
@@ -426,6 +468,34 @@ with actual scores; abstentions and errors retain explicit excluded denominators
 Proposed labels have separate observations and no agreement aggregate. Offline
 fake-judge results establish execution behavior, not teacher quality.
 
+Human review on 2026-10-31 confirmed all six authored `help_level` labels
+(2, 0, 2, 1, 2, 0 in collection order) and the separate manual trace-review
+criterion. No mathematics, diagnosis or tone labels were confirmed, and no
+actual trace check or paid judge evaluation was performed by that review.
+The subsequent authorized six-case judge batch completed with 5/6 agreement
+against those initial labels. Follow-up human review revised the rework score
+from 1 to 0 and clarified the rubric: partial credit requires useful explanation
+or guidance, while acknowledgment followed by redundant work provides no useful
+progress. A seventh judge case, `incomplete-corrected-work-explanation`, has a
+human-confirmed help score of 1 for naming the relevant rule without explaining
+the corrected transformation. Current confirmed labels are (2, 0, 2, 0, 2, 0, 1).
+The current collection prepares seven judge cases and one manual case. The
+[results and follow-up decision](../docs/superpowers/notes/2026-10-31-judge-v2-calibration.md)
+preserve the initial run's labels, prompt and disagreement; no paid rerun of the
+revised rubric has occurred.
+
+This authored collection is a development set used to clarify the rubric.
+Agreement on it measures adherence to those examples, not independent judge
+quality. For independent evaluation, freeze the judge prompt and settings before
+selecting fresh cases and generating actual tutor responses. Use different
+student situations and reasoning demands, not merely new coefficients or
+paraphrases of development cases. Record human scores and reasons before showing
+the reviewer any judge scores. Preserve all disagreements and abstentions. If
+the results inform prompt changes, treat those cases as development material
+and select a fresh evaluation set. The frozen candidate prompt hash is recorded
+in the calibration review linked above. This is an operator procedure, not an
+automatically enforced split in the evaluation runner.
+
 Each invocation creates a private `calibration-<uuid>/calibration.json` under
 the output directory. Its `kind: tutor_calibration`, `schema_version: 1` envelope
 contains captured calibration content/hash, typed packets and engine results,
@@ -436,7 +506,9 @@ and judge output. Completed results survive later failures or interruptions;
 reruns create new directories. These artifacts are separate from normal run
 reports and are not inputs to `run`, `rejudge` or `compare`.
 
-The paid quality gate remains unexecuted and requires explicit authorization:
+The six-case authored judge calibration has run, and follow-up human review
+resolved its scoring disagreement. The revised rubric still awaits live
+evaluation. Remaining paid quality steps require explicit authorization:
 
 1. Review the authored labels first and retain unresolved disagreements. Run the
    dry run above to verify exact replay contexts and actual engine outcomes. Then,
@@ -475,7 +547,9 @@ The paid quality gate remains unexecuted and requires explicit authorization:
    part of the paid scope, never an unlimited rerun loop.
 4. Review actual responses, acceptance/failures, repairs, mathematical correctness,
    progression, latency, normalized usage and score disagreements under the same
-   criteria for both arms. Keep confirmed and uncalibrated judgments distinct;
+   criteria for both arms. The fourteen-case selection includes known development
+   scenarios and is a regression comparison, not an independent judge evaluation.
+   Keep confirmed and uncalibrated judgments distinct;
    retain every failure in the conclusion. Tool honesty requires manual trace
    review because tutor tool results are absent from `JudgePacket`. OpenAI
    commercial cost accounting is incomplete; a zero known subtotal is not free

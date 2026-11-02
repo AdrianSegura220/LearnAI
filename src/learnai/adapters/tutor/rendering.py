@@ -56,6 +56,7 @@ def _verification_data(verification: VerificationSnapshot) -> dict[str, Any]:
         "step_diff": asdict(verification.step_diff) if verification.step_diff else None,
         "diagnosis": verification.diagnosis,
         "failed_constraints": list(verification.failed_constraints),
+        **({"work_notes": list(verification.work_notes)} if verification.work_notes else {}),
     }
 
 

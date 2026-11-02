@@ -55,6 +55,7 @@ def _parser() -> argparse.ArgumentParser:
     operations = parser.add_subparsers(dest='operation', required=True)
     run = operations.add_parser('run')
     run.add_argument('--fixtures', type=Path, default=ROOT / 'eval/fixtures')
+    run.add_argument('--items', type=Path, help='Explicit authored evaluation item catalogue')
     run.add_argument('--only', help='Comma-separated ids, evaluated in the supplied order')
     run.add_argument('--no-smoke', action='store_true')
     rejudge = operations.add_parser('rejudge')
@@ -103,6 +104,9 @@ def _preflight(args: argparse.Namespace, registry: ProviderRegistry) -> dict[str
         return values
     cluster = load_cluster(ROOT / 'content/quadratics/skills.yaml')
     items, verifier, matcher = GeneratorRegistry(QUADRATICS_TEMPLATES), SympyVerifier(), SympyMisconceptionRules()
+    if getattr(args, 'items', None) is not None:
+        from learnai.eval.authored import load_authored_items
+        items = load_authored_items(args.items)
     scenarios = load_scenarios_dir(args.fixtures)
     by_id = {scenario.id: scenario for scenario in scenarios}
     if args.only:
@@ -134,6 +138,8 @@ def _preflight(args: argparse.Namespace, registry: ProviderRegistry) -> dict[str
         'eval/fixtures/selected/' + path.name: path.read_text(encoding='utf-8') for path in sorted(args.fixtures.iterdir())
         if path.is_file() and path.suffix in {'.yaml', '.yml', '.json'}}
     values['supplemental_inputs']['config/selected/routes.yaml'] = args.routes.read_text(encoding='utf-8')
+    if getattr(args, 'items', None) is not None:
+        values['supplemental_inputs']['eval/fixtures/selected-authored/items.yaml'] = items.source_content
     return values
 
 

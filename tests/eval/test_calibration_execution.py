@@ -96,7 +96,7 @@ def test_dry_run_requires_no_keys_clients_network_or_artifacts(tmp_path, quality
     assert calibration.main(argv(tmp_path, routes=quality_routes, dry=True)) == 0
     output = json.loads(capsys.readouterr().out)
     assert output['status'] == 'dry_run'
-    assert output['judge_cases'] == 6 and output['manual_review_cases'] == 1
+    assert output['judge_cases'] == 7 and output['manual_review_cases'] == 1
     assert not (tmp_path / 'runs').exists()
 
 
@@ -127,7 +127,7 @@ raise SystemExit(main(sys.argv[1:]))
         capture_output=True, text=True, env={key: value for key, value in os.environ.items()
         if key not in ('OPENAI_API_KEY', 'ANTHROPIC_API_KEY')})
     assert result.returncode == 0, result.stderr
-    assert json.loads(result.stdout)['judge_cases'] == 6
+    assert json.loads(result.stdout)['judge_cases'] == 7
 
 
 @pytest.mark.parametrize('change', ['unknown_route', 'missing_prompt', 'bad_prompt'])
@@ -146,11 +146,11 @@ def test_dry_run_validates_selected_judge_configuration(tmp_path, quality_routes
 
 
 def test_live_is_judge_only_keeps_rejected_prose_and_isolates_labels(tmp_path, quality_routes, monkeypatch):
-    sdk, constructed = install_provider(monkeypatch, [scored() for _ in range(6)])
+    sdk, constructed = install_provider(monkeypatch, [scored() for _ in range(7)])
     assert calibration.main(argv(tmp_path, routes=quality_routes)) == 0
     directory, saved = artifact(tmp_path)
     assert constructed == [('openai', 'scripted-key')]
-    assert sdk.client.is_closed() and len(sdk.requests) == 6
+    assert sdk.client.is_closed() and len(sdk.requests) == 7
     assert directory.name.startswith('calibration-')
     assert saved['kind'] == 'tutor_calibration' and saved['schema_version'] == 1
     assert saved['status'] == 'complete'
@@ -166,7 +166,7 @@ def test_live_is_judge_only_keeps_rejected_prose_and_isolates_labels(tmp_path, q
         for private in ('expected_scores', 'rationale', 'review_status', 'expected_engine', 'validation', 'accepted'):
             assert private not in json.dumps(payload)
         assert request['instructions'] == saved['material']['base']['prompts']['rubric_judge@2']
-    assert len(saved['requests']) == len(saved['traces']) == 6
+    assert len(saved['requests']) == len(saved['traces']) == 7
     assert all(r['phase'] == 'judge' and r['raw_usage'] for r in saved['requests'])
     assert saved['material']['base']['role_dependencies'].keys() == {'judge'}
     assert saved['material']['base']['identities']['judge'].keys() == {'rubric_judge_openai'}

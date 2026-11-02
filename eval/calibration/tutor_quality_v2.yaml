@@ -17,8 +17,8 @@ cases:
       message: One root is x = 9.
       rung_used: NUDGE
     expected_scores: {help_level: 0}
-    rationale: Revealing even one root exceeds the permitted assistance in the prose despite the NUDGE declaration. This is an evaluator-only rejected draft.
-    review_status: proposed
+    rationale: The user confirmed help_level 0 because revealing even one root exceeds the permitted assistance despite the NUDGE declaration. Mathematical correctness does not make the help appropriate. This is an evaluator-only rejected draft.
+    review_status: user_confirmed
     assessment_source: judge_packet
     expected_engine: {accepted: false, reason: ANSWER_LEAKED}
 
@@ -28,8 +28,8 @@ cases:
       message: Your correction restores both middle products. By distribution, each term in the first bracket multiplies each term in the second. The middle products 5x and 2x combine to 7x; collecting like terms preserves the value. That explains why your corrected line is equivalent to the starting product.
       rung_used: NAME_METHOD
     expected_scores: {help_level: 2}
-    rationale: Directly explains the corrected transformation without repeating the obsolete diagnosis, revealing the full polynomial or assigning an unnecessary exercise. The wording and label remain proposed for review.
-    review_status: proposed
+    rationale: The user confirmed help_level 2 because the reply directly explains the corrected transformation without repeating the obsolete diagnosis or assigning an unnecessary exercise. This confirms helpfulness, not an exact tone score or preferred wording.
+    review_status: user_confirmed
     assessment_source: judge_packet
     expected_engine: {accepted: true, reason: null}
 
@@ -38,9 +38,9 @@ cases:
     candidate:
       message: You have put the middle products back. Before we discuss why the lines are equivalent, expand the starting brackets again and write out every multiplication.
       rung_used: NAME_METHOD
-    expected_scores: {help_level: 1}
-    rationale: Acknowledges the correction but asks the student to repeat valid work instead of answering their explanation question. It is legal assistance but only partly useful.
-    review_status: proposed
+    expected_scores: {help_level: 0}
+    rationale: After reviewing the live judge disagreement on 2026-10-31, the user revised the initially confirmed help_level 1 to 0. Acknowledging the correction alone does not provide useful progress; repeating valid work delays the explanation without new guidance. Partial credit requires some useful explanation or guidance with a material gap. The original run retains its initial label and disagreement.
+    review_status: user_confirmed
     assessment_source: judge_packet
     expected_engine: {accepted: true, reason: null}
 
@@ -50,8 +50,8 @@ cases:
       message: Let's make distribution concrete. Multiplying the x from the first bracket by the second bracket gives x(x + 5) = x^2 + 5x. Now multiply the 2 from the first bracket by each term in the second bracket.
       rung_used: NEXT_STEP
     expected_scores: {help_level: 2}
-    rationale: Earlier delivered hints only named distribution. Demonstrates one multiplication and leaves the other for the student; FULL_REVEAL permission does not require a complete solution.
-    review_status: proposed
+    rationale: The user confirmed help_level 2 because earlier delivered hints only named distribution and this reply demonstrates one multiplication while leaving the other for the student. FULL_REVEAL permission does not require a complete solution.
+    review_status: user_confirmed
     assessment_source: judge_packet
     expected_engine: {accepted: true, reason: null}
 
@@ -61,8 +61,19 @@ cases:
       message: Use distribution on the product.
       rung_used: NAME_METHOD
     expected_scores: {help_level: 0}
-    rationale: Repeats an already delivered vague hint after the student has remained stuck. The reply passes the engine gate but provides no useful progression.
-    review_status: proposed
+    rationale: The user confirmed help_level 0 because this repeats an already delivered vague hint after the student has remained stuck. The reply passes the engine gate but provides no useful progression.
+    review_status: user_confirmed
+    assessment_source: judge_packet
+    expected_engine: {accepted: true, reason: null}
+
+  - id: incomplete-corrected-work-explanation
+    scenario_id: ladder-corrected-draft
+    candidate:
+      message: Your corrected line follows the distributive property.
+      rung_used: NAME_METHOD
+    expected_scores: {help_level: 1}
+    rationale: The user confirmed help_level 1 as a development example. Naming a relevant rule supplies some orientation, but does not explain how distribution produces the corrected terms or preserves value. The response was authored for this existing scripted scenario, not generated in a live tutor run. Agreement on this example is not independent evidence of judge quality.
+    review_status: user_confirmed
     assessment_source: judge_packet
     expected_engine: {accepted: true, reason: null}
 
@@ -72,7 +83,7 @@ cases:
       message: The checker successfully verified the brace-delimited root set, so the solution is tool-verified.
       rung_used: NONE
     expected_scores: {}
-    rationale: Synthetic negative trace-review example. If the saved tool result is expression_uncheckable, this successful-verification claim is unsupported. The current judge packet has no tutor tool result, so it cannot establish that conflict and receives no numeric expected label.
-    review_status: proposed
+    rationale: The user confirmed this synthetic negative example belongs in separate manual trace review without a numeric expected label. If the saved tool result is expression_uncheckable, the successful-verification claim is unsupported. The current judge packet has no tutor tool result and cannot establish that conflict. Confirmation approves the review criterion, not an executed trace check.
+    review_status: user_confirmed
     assessment_source: trace_review
     expected_engine: {accepted: true, reason: null}

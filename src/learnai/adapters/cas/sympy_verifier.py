@@ -24,8 +24,8 @@ from learnai.adapters.cas.vocabulary import (
     UnsupportedAnswerKindError,
 )
 from learnai.domain.enums import AnswerKind, Verdict
-from learnai.domain.items import AnswerSpec, FormConstraint, StepDiff, Submission
-from learnai.domain.verification import CheckResult
+from learnai.domain.items import AnswerSpec, FormConstraint, Item, StepDiff, Submission
+from learnai.domain.verification import CheckResult, WorkCheck
 
 _SUPPORTED_KINDS = frozenset({AnswerKind.SINGLE_VALUE, AnswerKind.RELATION, AnswerKind.VALUE_SET})
 
@@ -99,6 +99,10 @@ class SympyVerifier:
             if not follows:
                 return StepDiff(index=i, previous=previous, current=steps[i])
         return None
+
+    def check_work(self, steps: Sequence[str], *, item: Item, allow_partial: bool) -> WorkCheck:
+        from learnai.adapters.cas.work import check_work
+        return check_work(steps, item=item, allow_partial=allow_partial, strict=self.diff_steps)
 
     def extract_candidate_expressions(self, text: str) -> tuple[str, ...]:
         """Every stretch of maths in a piece of prose, and its parts.

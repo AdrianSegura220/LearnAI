@@ -50,15 +50,17 @@ def test_authored_collection_labels_and_real_engine_outcomes(scenarios, dependen
     assert [p.id for p in prepared] == [
         "useful-factor-pair", "premature-root", "explain-corrected-work",
         "unnecessary-correction-rework", "concrete-multiplication",
-        "repeated-vague-hint", "unsupported-verification-claim"]
+        "repeated-vague-hint", "incomplete-corrected-work-explanation",
+        "unsupported-verification-claim"]
     assert [dict(p.expected_scores) for p in prepared] == [
         {"help_level": 2}, {"help_level": 0}, {"help_level": 2},
-        {"help_level": 1}, {"help_level": 2}, {"help_level": 0}, {}]
-    assert [p.review_status for p in prepared] == ["user_confirmed"] + ["proposed"] * 6
-    assert [p.validation.accepted for p in prepared] == [True, False, True, True, True, True, True]
+        {"help_level": 0}, {"help_level": 2}, {"help_level": 0},
+        {"help_level": 1}, {}]
+    assert [p.review_status for p in prepared] == ["user_confirmed"] * 8
+    assert [p.validation.accepted for p in prepared] == [True, False, True, True, True, True, True, True]
     assert prepared[1].validation.reason is RejectionReason.ANSWER_LEAKED
     assert prepared[-1].assessment_source == "trace_review"
-    assert [p.assessment_source for p in prepared[:-1]] == ["judge_packet"] * 6
+    assert [p.assessment_source for p in prepared[:-1]] == ["judge_packet"] * 7
     assert prepared[0].packet.context.permitted_rung is HelpRung.NAME_METHOD
     assert prepared[4].packet.context.permitted_rung is HelpRung.FULL_REVEAL
     assert prepared[4].packet.turn.rung_used is HelpRung.NEXT_STEP
